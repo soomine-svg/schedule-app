@@ -514,20 +514,17 @@ function addCase(){
 }
 
 // ===== 案件描画 =====
-// ===== データ永続化（Google Drive appdata） =====
-var DRIVE_FILE_NAME = 'schedule_cases.json';
-var driveFileId = null;
+// ===== データ永続化（Google Sheets） =====
+var SHEET_NAME = 'スケジュール案件データ';
+var sheetId = localStorage.getItem('schedule_sheetId') || null;
 
 function saveCases(){
-  // localStorageにも保存（オフライン用）
   try{ localStorage.setItem('schedule_cases', JSON.stringify(cases));
        localStorage.setItem('schedule_seq', String(seq)); } catch(e){}
-  // Driveに保存
-  if(gcalToken) saveCasesToDrive();
+  if(gcalToken && sheetId) saveCasesToSheet();
 }
 
 function loadCases(){
-  // まずlocalStorageから読み込む
   try{
     var s=localStorage.getItem('schedule_cases');
     var q=localStorage.getItem('schedule_seq');
@@ -536,63 +533,62 @@ function loadCases(){
   } catch(e){}
 }
 
-function saveCasesToDrive(){
+function saveCasesToSheet(){
+  if(!sheetId) return;
+  // 全案件をJSON文字列で1セルに保存（シンプル方式）
   var data = JSON.stringify({cases:cases, seq:seq});
-  var boundary = '-------314159265358979323846';
-  var body;
-  var metadata = JSON.stringify({name: DRIVE_FILE_NAME, parents: ['appDataFolder']});
-
-  if(driveFileId){
-    // 既存ファイルを更新
-    fetch('https://www.googleapis.com/upload/drive/v3/files/'+driveFileId+'?uploadType=media', {
-      method:'PATCH',
-      headers:{'Authorization':'Bearer '+gcalToken,'Content-Type':'application/json'},
-      body: data
-    }).catch(function(e){ console.log('Drive save error:', e); });
-  } else {
-    // 新規作成
-    var form = new FormData();
-    form.append('metadata', new Blob([metadata],{type:'application/json'}));
-    form.append('file', new Blob([data],{type:'application/json'}));
-    fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
-      method:'POST',
-      headers:{'Authorization':'Bearer '+gcalToken},
-      body: form
-    }).then(function(r){ return r.json(); })
-    .then(function(d){ driveFileId = d.id; })
-    .catch(function(e){ console.log('Drive create error:', e); });
-  }
+  fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sheetId+'/values/A1?valueInputOption=RAW', {
+    method:'PUT',
+    headers:{'Authorization':'Bearer '+gcalToken,'Content-Type':'application/json'},
+    body: JSON.stringify({values:[[data]]})
+  }).catch(function(e){ console.log('Sheet save error:', e); });
 }
 
-function loadCasesFromDrive(callback){
+function loadCasesFromSheet(callback){
   if(!gcalToken){ if(callback) callback(); return; }
-  // appDataフォルダからファイルを検索
-  fetch('https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name%3D%22'+DRIVE_FILE_NAME+'%22&fields=files(id)', {
+  if(!sheetId){
+    // シートを新規作成
+    createSheet(callback);
+    return;
+  }
+  fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sheetId+'/values/A1', {
     headers:{'Authorization':'Bearer '+gcalToken}
   }).then(function(r){ return r.json(); })
   .then(function(d){
-    if(d.files && d.files.length > 0){
-      driveFileId = d.files[0].id;
-      return fetch('https://www.googleapis.com/drive/v3/files/'+driveFileId+'?alt=media', {
-        headers:{'Authorization':'Bearer '+gcalToken}
-      });
-    }
-    if(callback) callback();
-    return null;
-  }).then(function(r){
-    if(!r) return null;
-    return r.json();
-  }).then(function(d){
-    if(d && d.cases){
-      cases = d.cases;
-      seq = d.seq || 1;
-      renderCases();
-      var st = document.getElementById('gcal-status');
-      if(st) st.textContent = '✅ 接続済み（案件データを同期しました）';
+    if(d.values && d.values[0] && d.values[0][0]){
+      try{
+        var saved = JSON.parse(d.values[0][0]);
+        if(saved.cases){ cases=saved.cases; seq=saved.seq||1; renderCases(); }
+        var st=document.getElementById('gcal-status');
+        if(st) st.textContent='✅ 接続済み（案件データを同期しました）';
+      } catch(e){ console.log('Sheet parse error:',e); }
     }
     if(callback) callback();
   }).catch(function(e){
-    console.log('Drive load error:', e);
+    console.log('Sheet load error:',e);
+    // シートが見つからない場合は再作成
+    sheetId = null;
+    localStorage.removeItem('schedule_sheetId');
+    createSheet(callback);
+  });
+}
+
+function createSheet(callback){
+  fetch('https://sheets.googleapis.com/v4/spreadsheets', {
+    method:'POST',
+    headers:{'Authorization':'Bearer '+gcalToken,'Content-Type':'application/json'},
+    body: JSON.stringify({properties:{title:SHEET_NAME}})
+  }).then(function(r){ return r.json(); })
+  .then(function(d){
+    sheetId = d.spreadsheetId;
+    localStorage.setItem('schedule_sheetId', sheetId);
+    // 現在の案件データを保存
+    saveCasesToSheet();
+    var st=document.getElementById('gcal-status');
+    if(st) st.textContent='✅ 接続済み（新しいデータシートを作成しました）';
+    if(callback) callback();
+  }).catch(function(e){
+    console.log('Sheet create error:',e);
     if(callback) callback();
   });
 }
@@ -1336,7 +1332,7 @@ function buildAll(){
 
 // ===== Googleカレンダー連携 =====
 var GCAL_CLIENT_ID = "396614864076-ihqg39rk00vmfmgi2amd0iq5p9kfdfjl.apps.googleusercontent.com";
-var GCAL_SCOPES    = "https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/drive.appdata";
+var GCAL_SCOPES    = "https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file";
 var gcalToken      = null;  // アクセストークン
 var gcalReady      = false; // Geocoding完了フラグ
 var gcalEvents     = [];    // 取得した予定リスト
@@ -1358,8 +1354,8 @@ function gcalInit(){
       document.getElementById('gcal-status').textContent = '✅ 接続済み　データを同期中...';
       document.getElementById('gcal-btn').style.display = 'none';
       document.getElementById('gcal-disconnect').style.display = '';
-      // Driveから案件データを読み込んでからカレンダーを取得
-      loadCasesFromDrive(function(){
+      // Sheetsから案件データを読み込んでからカレンダーを取得
+      loadCasesFromSheet(function(){
         document.getElementById('gcal-status').textContent = '✅ 接続済み　カレンダーを取得中...';
         gcalFetchEvents();
       });
