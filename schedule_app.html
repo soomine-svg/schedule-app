@@ -515,9 +515,16 @@ function addCase(){
   geocodeAddress(adr, function(lat,lng,err){
     if(lat&&lng){
       caseRef.lat=lat; caseRef.lng=lng; caseRef.geocoded=true;
-      document.getElementById("geocode-status-add").textContent="✅ 座標取得完了";
+      document.getElementById("geocode-status-add").textContent="✅ 座標取得完了（精密）";
     } else {
-      document.getElementById("geocode-status-add").textContent="⚠️ 座標取得失敗（住所を確認してください）";
+      // APIが失敗した場合は内部キーワードテーブルで補完
+      var pos = getPos(adr, null);
+      if(pos && pos.lat){
+        caseRef.lat=pos.lat; caseRef.lng=pos.lng; caseRef.geocoded=true;
+        document.getElementById("geocode-status-add").textContent="📍 座標取得完了（概算）";
+      } else {
+        document.getElementById("geocode-status-add").textContent="⚠️ 座標取得失敗（宮崎県外の住所？）";
+      }
     }
     renderCases();
     saveCases();
@@ -612,11 +619,17 @@ function reGeocase(i){
   geocodeAddress(c.adr, function(lat,lng,err){
     if(lat&&lng){
       cases[i].lat=lat; cases[i].lng=lng; cases[i].geocoded=true;
-      document.getElementById("geocode-status").textContent="✅ "+c.id+" 座標取得完了 ("+lat.toFixed(4)+","+lng.toFixed(4)+")";
-      saveCases();
+      document.getElementById("geocode-status").textContent="✅ "+c.id+" 座標取得完了（精密）("+lat.toFixed(4)+","+lng.toFixed(4)+")";
     } else {
-      document.getElementById("geocode-status").textContent="❌ "+c.id+" 座標取得失敗 ("+err+")";
+      var pos=getPos(c.adr,null);
+      if(pos&&pos.lat){
+        cases[i].lat=pos.lat; cases[i].lng=pos.lng; cases[i].geocoded=true;
+        document.getElementById("geocode-status").textContent="📍 "+c.id+" 座標取得完了（概算）("+pos.lat.toFixed(4)+","+pos.lng.toFixed(4)+")";
+      } else {
+        document.getElementById("geocode-status").textContent="❌ "+c.id+" 座標取得失敗";
+      }
     }
+    saveCases();
     renderCases();
     setTimeout(function(){document.getElementById("geocode-status").textContent="";},5000);
   });
@@ -631,6 +644,7 @@ function reGeoAll(){
   targets.forEach(function(c){
     geocodeAddress(c.adr,function(lat,lng,err){
       if(lat&&lng){c.lat=lat;c.lng=lng;c.geocoded=true;}
+      else{var pos=getPos(c.adr,null);if(pos&&pos.lat){c.lat=pos.lat;c.lng=pos.lng;c.geocoded=true;}}
       done2++;
       if(done2>=targets.length){
         var ok=cases.filter(function(x){return x.geocoded;}).length;
@@ -1515,7 +1529,23 @@ function gcalHasMorningEvent(dateStr){
 // window.onload でGIS初期化
 window.addEventListener('load', function(){
   loadCases();
+  // 座標未取得の案件をキーワードテーブルで補完
+  cases.forEach(function(c){
+    if(!c.geocoded){
+      var pos = getPos(c.adr, null);
+      if(pos && pos.lat){ c.lat=pos.lat; c.lng=pos.lng; c.geocoded=true; }
+    }
+  });
   renderCases();
+  // 読み込み件数を表示
+  var el = document.getElementById('sync-sheet-status');
+  if(el){
+    if(cases.length > 0){
+      el.textContent = '📂 前回の ' + cases.length + ' 件を読み込みました';
+    } else {
+      el.textContent = '新規データ（案件を追加すると自動保存されます）';
+    }
+  }
   setTimeout(gcalInit, 500);
 });
 
