@@ -576,23 +576,31 @@ function fetchSheetData(callback){
   });
 }
 
+function setStatus(msg){
+  var st=document.getElementById('gcal-status');
+  if(st) st.textContent=msg;
+}
+
 function findOrCreateSheet(callback){
-  // Driveでシート名で検索
+  setStatus('🔍 データシートを検索中...');
   fetch('https://www.googleapis.com/drive/v3/files?q=name%3D%22'+encodeURIComponent(SHEET_NAME)+'%22+and+mimeType%3D%22application%2Fvnd.google-apps.spreadsheet%22+and+trashed%3Dfalse&fields=files(id,name)', {
     headers:{'Authorization':'Bearer '+gcalToken}
-  }).then(function(r){ return r.json(); })
+  }).then(function(r){
+    if(!r.ok){ setStatus('❌ Drive検索エラー: '+r.status); throw new Error(r.status); }
+    return r.json();
+  })
   .then(function(d){
     if(d.files && d.files.length > 0){
-      // 既存シートが見つかった
       sheetId = d.files[0].id;
       localStorage.setItem('schedule_sheetId', sheetId);
+      setStatus('📂 シートを見つけました。データ読み込み中...');
       fetchSheetData(callback);
     } else {
-      // 新規作成
+      setStatus('📝 シートを新規作成中...');
       createSheet(callback);
     }
   }).catch(function(e){
-    console.log('Drive search error:',e);
+    setStatus('❌ エラー: '+e.message);
     createSheet(callback);
   });
 }
