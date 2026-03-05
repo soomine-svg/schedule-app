@@ -80,6 +80,22 @@ header h1{font-size:1.1rem;font-weight:700}
     <div style="font-size:.72rem;opacity:.8">宮崎県エリア ｜ 08:30〜20:15 ｜ 自宅：都城市南鷹尾町33-11</div>
   </div>
 </header>
+
+<!-- Google同期バー（全タブ共通） -->
+<div id="sync-bar" style="background:white;border-bottom:2px solid #ebf4ff;padding:9px 20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+  <span style="font-size:.78rem;font-weight:600;color:#4a5568">🔗 Google連携：</span>
+  <span id="sync-status" style="font-size:.8rem;color:#a0aec0">未ログイン　（案件データの保存とカレンダー連携に必要）</span>
+  <button id="sync-login-btn" onclick="gcalConnect()"
+    style="background:#4285f4;color:white;border:none;padding:6px 14px;border-radius:7px;font-size:.8rem;font-weight:600;cursor:pointer">
+    🔗 Googleでログイン
+  </button>
+  <button id="sync-logout-btn" onclick="gcalDisconnect()"
+    style="display:none;background:#e2e8f0;color:#4a5568;border:none;padding:6px 12px;border-radius:7px;font-size:.8rem;cursor:pointer">
+    切断
+  </button>
+  <span id="sync-sheet-status" style="font-size:.78rem;color:#718096;margin-left:4px"></span>
+</div>
+
 <div class="wrap">
   <div class="tabs">
     <button class="tab on" onclick="tab('input')">📋 案件入力</button>
@@ -146,7 +162,7 @@ header h1{font-size:1.1rem;font-weight:700}
         <button class="btn bb" onclick="addCase()">＋ 追加</button>
         <button class="btn bg" onclick="loadSample()">サンプル</button>
       </div>
-      <div id="geocode-status" style="margin-top:8px;font-size:.82rem;color:#2b6cb0;min-height:18px"></div>
+      <div id="geocode-status-add" style="margin-top:8px;font-size:.82rem;color:#2b6cb0;min-height:18px"></div>
     </div>
 
     <div class="card">
@@ -168,6 +184,10 @@ header h1{font-size:1.1rem;font-weight:700}
 
     <div class="card">
       <h2>📋 案件一覧（<span id="cnt">0</span>件）</h2>
+      <div id="geocode-status" style="margin-bottom:8px;font-size:.82rem;color:#2b6cb0;min-height:18px"></div>
+      <div style="margin-bottom:10px">
+        <button class="btn bt" onclick="reGeoAll()" style="font-size:.8rem">📍 座標未取得の案件を一括再取得</button>
+      </div>
       <div id="clist"><div class="empty">案件がありません</div></div>
     </div>
   </div>
@@ -487,19 +507,21 @@ function addCase(){
   if(!d2){alert("最終納期を入力してください");return;}
   var newCase={no:seq++,id:id,adr:adr,d1:d1,d2:d2,tm:tm,dur:dur,ely:ely,lat:null,lng:null,geocoded:false};
   cases.push(newCase);
+  saveCases();
   renderCases();
   // Geocoding APIで座標取得
   var caseRef=newCase;
-  document.getElementById("geocode-status").textContent="📍 座標取得中...";
+  document.getElementById("geocode-status-add").textContent="📍 座標取得中...";
   geocodeAddress(adr, function(lat,lng,err){
     if(lat&&lng){
       caseRef.lat=lat; caseRef.lng=lng; caseRef.geocoded=true;
-      document.getElementById("geocode-status").textContent="✅ 座標取得完了";
+      document.getElementById("geocode-status-add").textContent="✅ 座標取得完了";
     } else {
-      document.getElementById("geocode-status").textContent="⚠️ 座標取得失敗（住所を確認してください）";
+      document.getElementById("geocode-status-add").textContent="⚠️ 座標取得失敗（住所を確認してください）";
     }
     renderCases();
-    setTimeout(function(){document.getElementById("geocode-status").textContent="";},3000);
+    saveCases();
+    setTimeout(function(){document.getElementById("geocode-status-add").textContent="";},3000);
   });
   document.getElementById("fid").value="";
   document.getElementById("fzip").value="";
@@ -516,7 +538,8 @@ function addCase(){
 // ===== 案件描画 =====
 // ===== データ永続化（Google Sheets） =====
 var SHEET_NAME = 'スケジュール案件データ';
-var sheetId = localStorage.getItem('schedule_sheetId') || null;
+var FIXED_SHEET_ID = '1VQH-Yaa4-L9XJUn8hZGlBZl6rHuzFNQI4UCXRPLlcDc';
+var sheetId = localStorage.getItem('schedule_sheetId') || FIXED_SHEET_ID;
 
 function saveCases(){
   try{ localStorage.setItem('schedule_cases', JSON.stringify(cases));
@@ -534,23 +557,28 @@ function loadCases(){
 }
 
 function saveCasesToSheet(){
-  if(!sheetId) return;
+  if(!sheetId || !gcalToken) return;
   // 全案件をJSON文字列で1セルに保存（シンプル方式）
   var data = JSON.stringify({cases:cases, seq:seq});
+  document.getElementById('sync-sheet-status').textContent = '💾 保存中...';
   fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sheetId+'/values/A1?valueInputOption=RAW', {
     method:'PUT',
     headers:{'Authorization':'Bearer '+gcalToken,'Content-Type':'application/json'},
     body: JSON.stringify({values:[[data]]})
-  }).catch(function(e){ console.log('Sheet save error:', e); });
+  }).then(function(r){
+    if(!r.ok){ return r.json().then(function(e){ throw new Error(e.error&&e.error.message||r.status); }); }
+    var now = new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    document.getElementById('sync-sheet-status').textContent = '✅ シート保存完了 '+now;
+  }).catch(function(e){
+    console.log('Sheet save error:', e);
+    document.getElementById('sync-sheet-status').textContent = '⚠️ 保存エラー: '+e.message;
+  });
 }
 
 function loadCasesFromSheet(callback){
   if(!gcalToken){ if(callback) callback(); return; }
-  if(!sheetId){
-    // まずDriveで既存シートを検索
-    findOrCreateSheet(callback);
-    return;
-  }
+  // sheetIdは常に設定済み（FIXED_SHEET_IDがデフォルト）
+  localStorage.setItem('schedule_sheetId', sheetId);
   fetchSheetData(callback);
 }
 
@@ -563,35 +591,64 @@ function fetchSheetData(callback){
       try{
         var saved = JSON.parse(d.values[0][0]);
         if(saved.cases && saved.cases.length > 0){
-          // シートにデータあり → シートのデータを使う
-          cases=saved.cases; seq=saved.seq||1; renderCases();
-          var st=document.getElementById('gcal-status');
-          if(st) st.textContent='✅ 接続済み（案件データを同期しました）';
+          // シートにデータあり → シートのデータを使う（件数が多い方を採用）
+          if(saved.cases.length >= cases.length){
+            cases=saved.cases; seq=saved.seq||1; renderCases();
+            setSyncBar('✅ ログイン済み（シートから '+saved.cases.length+' 件を読み込みました）', true);
+          } else {
+            // ローカルの方が新しい → シートに書き込む
+            saveCasesToSheet();
+            setSyncBar('✅ ログイン済み（ローカルデータ '+cases.length+' 件をシートに保存しました）', true);
+          }
         } else if(cases.length > 0){
           // シートが空でローカルにデータあり → ローカルデータをシートに保存
           saveCasesToSheet();
-          var st=document.getElementById('gcal-status');
-          if(st) st.textContent='✅ 接続済み（ローカルデータをシートに保存しました）';
+          setSyncBar('✅ ログイン済み（ローカルデータ '+cases.length+' 件をシートに保存しました）', true);
+        } else {
+          setSyncBar('✅ ログイン済み（シートは空・新規案件を追加すると自動保存されます）', true);
         }
-      } catch(e){ console.log('Sheet parse error:',e); }
+      } catch(e){
+        console.log('Sheet parse error:',e);
+        setSyncBar('✅ ログイン済み（シートデータの解析に失敗）', true);
+      }
     } else if(cases.length > 0){
       // シートが空でローカルにデータあり → ローカルデータをシートに保存
       saveCasesToSheet();
-      var st=document.getElementById('gcal-status');
-      if(st) st.textContent='✅ 接続済み（ローカルデータをシートに保存しました）';
+      setSyncBar('✅ ログイン済み（ローカルデータ '+cases.length+' 件をシートに保存しました）', true);
+    } else {
+      setSyncBar('✅ ログイン済み（新規案件を追加すると自動保存されます）', true);
     }
     if(callback) callback();
   }).catch(function(e){
     console.log('Sheet load error:',e);
-    sheetId = null;
-    localStorage.removeItem('schedule_sheetId');
-    findOrCreateSheet(callback);
+    if(sheetId !== FIXED_SHEET_ID){
+      // localStorageの古いIDが原因の可能性 → 固定IDにリセットして再試行
+      sheetId = FIXED_SHEET_ID;
+      localStorage.setItem('schedule_sheetId', FIXED_SHEET_ID);
+      fetchSheetData(callback);
+    } else {
+      setSyncBar('⚠️ シート読み込みエラー: '+e.message, true);
+      if(callback) callback();
+    }
   });
 }
 
 function setStatus(msg){
   var st=document.getElementById('gcal-status');
   if(st) st.textContent=msg;
+}
+
+function setSyncBar(msg, loggedIn){
+  document.getElementById('sync-status').textContent = msg;
+  document.getElementById('sync-login-btn').style.display  = loggedIn ? 'none' : '';
+  document.getElementById('sync-logout-btn').style.display = loggedIn ? '' : 'none';
+  // スケジュールタブのステータスにも反映
+  var st=document.getElementById('gcal-status');
+  if(st) st.textContent = loggedIn ? msg : '未接続　スケジュール作成時にカレンダーの予定を自動反映します';
+  // スケジュールタブのボタン表示も同期
+  var lb=document.getElementById('gcal-btn'), db=document.getElementById('gcal-disconnect');
+  if(lb) lb.style.display = loggedIn ? 'none' : '';
+  if(db) db.style.display = loggedIn ? '' : 'none';
 }
 
 function findOrCreateSheet(callback){
@@ -642,18 +699,59 @@ function renderCases(){
   var el=document.getElementById("clist");
   if(!cases.length){el.innerHTML='<div class="empty">案件がありません</div>';return;}
   el.innerHTML=cases.map(function(c,i){
+    var geoTag = c.geocoded
+      ? '<span style="color:#38a169;font-size:.7rem" title="'+c.lat.toFixed(5)+', '+c.lng.toFixed(5)+'">📍 '+c.lat.toFixed(4)+','+c.lng.toFixed(4)+'</span>'
+      : '<span style="color:#e53e3e;font-size:.7rem">📍 座標未取得</span>';
     return '<div class="ci'+(c.ely?" ely":"")+'">'+
       '<div class="ci-body">'+
       '<div class="ci-name">'+c.id+'　'+c.adr+'</div>'+
-      '<div class="ci-sub">納期:'+c.d2+(c.tm?"　指定:"+c.tm:"")+"　所要:"+c.dur+"分"+(c.ely?"　⭐":"")+(c.geocoded?'　<span style="color:#38a169;font-size:.7rem">📍</span>':'　<span style="color:#a0aec0;font-size:.7rem">📍?</span>')+"</div>"+
+      '<div class="ci-sub">納期:'+c.d2+(c.tm?"　指定:"+c.tm:"")+"　所要:"+c.dur+"分"+(c.ely?"　⭐":"")+"　"+geoTag+"</div>"+
       "</div>"+
       '<div class="ci-btns">'+
       '<button class="bg" onclick="editCase('+i+')">✏️</button>'+
       '<button class="bo" onclick="copyCase('+i+')">📋</button>'+
+      (!c.geocoded ? '<button style="background:#bee3f8;color:#2b6cb0" title="座標を再取得" onclick="reGeocase('+i+')">📍</button>' : '')+
       '<button style="background:#c6f6d5;color:#276749" onclick="doneCase('+i+')">✅</button>'+
       '<button class="br" onclick="delCase('+i+')">🗑</button>'+
       "</div></div>";
   }).join("");
+}
+
+// ===== 座標再取得 =====
+function reGeocase(i){
+  var c=cases[i];
+  document.getElementById("geocode-status").textContent="📍 "+c.id+" の座標を取得中...";
+  geocodeAddress(c.adr, function(lat,lng,err){
+    if(lat&&lng){
+      cases[i].lat=lat; cases[i].lng=lng; cases[i].geocoded=true;
+      document.getElementById("geocode-status").textContent="✅ "+c.id+" 座標取得完了 ("+lat.toFixed(4)+","+lng.toFixed(4)+")";
+      saveCases();
+    } else {
+      document.getElementById("geocode-status").textContent="❌ "+c.id+" 座標取得失敗 ("+err+")";
+    }
+    renderCases();
+    setTimeout(function(){document.getElementById("geocode-status").textContent="";},5000);
+  });
+}
+
+// ===== 全案件の座標を一括再取得 =====
+function reGeoAll(){
+  var targets=cases.filter(function(c){return !c.geocoded;});
+  if(!targets.length){document.getElementById("geocode-status").textContent="✅ 全案件の座標取得済み";return;}
+  document.getElementById("geocode-status").textContent="📍 "+targets.length+"件の座標を取得中...";
+  var done2=0;
+  targets.forEach(function(c){
+    geocodeAddress(c.adr,function(lat,lng,err){
+      if(lat&&lng){c.lat=lat;c.lng=lng;c.geocoded=true;}
+      done2++;
+      if(done2>=targets.length){
+        var ok=cases.filter(function(x){return x.geocoded;}).length;
+        document.getElementById("geocode-status").textContent="✅ 座標取得完了 "+ok+"/"+cases.length+"件";
+        saveCases(); renderCases();
+        setTimeout(function(){document.getElementById("geocode-status").textContent="";},5000);
+      }
+    });
+  });
 }
 
 // ===== 編集 =====
@@ -714,6 +812,7 @@ function saveEdit(){
     });
   }
   renderCases();closeModal("editModal");
+  saveCases();
 }
 
 // ===== コピー（枝番付き） =====
@@ -724,6 +823,7 @@ function copyCase(i){
   while(cases.some(function(x){return x.id===baseId+"-"+n;}))n++;
   cases.push(Object.assign({},c,{no:seq++,id:baseId+"-"+n}));
   renderCases();
+  saveCases();
 }
 
 // ===== 完了・削除・復元 =====
@@ -732,11 +832,13 @@ function doneCase(i){
   c.doneAt=new Date().toLocaleString("ja-JP");
   done.push(c);renderCases();
   document.getElementById("hcnt").textContent=done.length;
+  saveCases();
 }
-function delCase(i){if(confirm("削除しますか？")){cases.splice(i,1);renderCases();}}
+function delCase(i){if(confirm("削除しますか？")){cases.splice(i,1);renderCases();saveCases();}}
 function restoreCase(i){
   var c=done.splice(i,1)[0];delete c.doneAt;
   cases.push(c);renderCases();renderHist();
+  saveCases();
 }
 function renderHist(){
   document.getElementById("hcnt").textContent=done.length;
@@ -781,6 +883,7 @@ function parseCSV(text){
     added++;
   });
   renderCases();
+  saveCases();
   var skipTxt=skip?" ("+skip+"件スキップ)":"";
   csvMsg(added?"✅ "+added+"件を読み込みました"+skipTxt:"❌ 読み込めませんでした");
 }
@@ -1391,16 +1494,14 @@ function gcalInit(){
     scope: GCAL_SCOPES,
     callback: function(resp){
       if(resp.error){
-        document.getElementById('gcal-status').textContent = '❌ 認証エラー: ' + resp.error;
+        setSyncBar('❌ 認証エラー: ' + resp.error, false);
         return;
       }
       gcalToken = resp.access_token;
-      document.getElementById('gcal-status').textContent = '✅ 接続済み　データを同期中...';
-      document.getElementById('gcal-btn').style.display = 'none';
-      document.getElementById('gcal-disconnect').style.display = '';
+      setSyncBar('✅ ログイン済み　シートと同期中...', true);
       // Sheetsから案件データを読み込んでからカレンダーを取得
       loadCasesFromSheet(function(){
-        document.getElementById('gcal-status').textContent = '✅ 接続済み　カレンダーを取得中...';
+        setSyncBar('✅ ログイン済み　カレンダーを取得中...', true);
         gcalFetchEvents();
       });
     }
@@ -1424,9 +1525,9 @@ function gcalConnect(){
 function gcalDisconnect(){
   gcalToken  = null;
   gcalEvents = [];
-  document.getElementById('gcal-status').textContent = '未接続　スケジュール作成時にカレンダーの予定を自動反映します';
-  document.getElementById('gcal-btn').style.display = '';
-  document.getElementById('gcal-disconnect').style.display = 'none';
+  setSyncBar('未ログイン　（案件データの保存とカレンダー連携に必要）', false);
+  var st=document.getElementById('gcal-status');
+  if(st) st.textContent = '未接続　スケジュール作成時にカレンダーの予定を自動反映します';
   document.getElementById('gcal-events-preview').textContent = '';
 }
 
