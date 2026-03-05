@@ -77,7 +77,7 @@ header h1{font-size:1.1rem;font-weight:700}
   <span style="font-size:1.4rem">🚗</span>
   <div>
     <h1>訪問スケジュール最適化</h1>
-    <div style="font-size:.72rem;opacity:.8">宮崎県エリア ｜ 08:30〜20:15 ｜ 自宅：都城市南鷹尾町33-11</div>
+    <div style="font-size:.72rem;opacity:.8">宮崎県エリア ｜ 08:30〜20:00 ｜ 自宅：都城市南鷹尾町33-11</div>
   </div>
 </header>
 
@@ -199,7 +199,7 @@ header h1{font-size:1.1rem;font-weight:700}
       <div style="margin-bottom:12px">
         <div style="font-size:.75rem;font-weight:600;color:#718096;margin-bottom:6px">モード選択</div>
         <div class="sched-mode">
-          <button class="smode on" id="mode-tomorrow" onclick="setMode('tomorrow')">🌅 翌日スケジュール<br><span style="font-size:.72rem;font-weight:400">08:30〜 自宅出発</span></button>
+          <button class="smode on" id="mode-tomorrow" onclick="setMode('tomorrow')">🌅 翌日スケジュール<br><span style="font-size:.72rem;font-weight:400">08:30〜 訪問開始</span></button>
           <button class="smode" id="mode-now" onclick="setMode('now')">⚡ 今からスケジュール<br><span style="font-size:.72rem;font-weight:400">現在時刻・現在地から</span></button>
         </div>
       </div>
@@ -1102,21 +1102,41 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks){
   calBlocks = calBlocks || [];
   // 出発時刻の計算
   var departureTime = null;
-  var departureLabel = '1件目に間に合う時刻';
-  if(sched.length > 0){
+  var departureLabel = '出発時刻';
+
+  // カレンダーに午前中の予定（11時より前に開始）があれば、その15分前到着を優先
+  var morningCalBlock = null;
+  if(calBlocks && calBlocks.length > 0){
+    for(var ci=0; ci<calBlocks.length; ci++){
+      if(calBlocks[ci].start < 11*60){ morningCalBlock = calBlocks[ci]; break; }
+    }
+  }
+
+  if(morningCalBlock){
+    // 午前カレンダー予定がある → その開始15分前に到着できる出発時刻
+    var targetArrival = morningCalBlock.start - 15; // 開始15分前
+    if(morningCalBlock.lat && morningCalBlock.lng){
+      var homePos3 = getPos('宮崎県都城市南鷹尾町33-11', null);
+      var blockPos3 = {lat:morningCalBlock.lat, lng:morningCalBlock.lng};
+      var trvMin3 = Math.round(km(homePos3, blockPos3) / (parseInt(document.getElementById('sspd').value)||40) * 60);
+      departureTime = targetArrival - trvMin3;
+    } else {
+      departureTime = targetArrival - 30; // 座標不明なら30分前出発
+    }
+    departureLabel = '📅 '+morningCalBlock.title+' 開始'+fmt(morningCalBlock.start)+'の15分前到着';
+  } else if(sched.length > 0){
+    // 通常：1件目の訪問案件に間に合う出発時刻
     var first = sched[0];
     departureTime = first.st - first.trv;
-  } else if(calBlocks.length > 0){
-    // 案件がなくカレンダー予定のみの日: 予定場所への出発時刻
+    departureLabel = '1件目（'+first.id+'）に間に合う出発時刻';
+  } else if(calBlocks && calBlocks.length > 0){
     var firstBlock = calBlocks[0];
     if(firstBlock.lat && firstBlock.lng){
-      // 座標から移動時間計算（簡易）
-      var homePos2 = {lat:31.715, lng:131.08}; // 都城デフォルト
+      var homePos2 = getPos('宮崎県都城市南鷹尾町33-11', null);
       var blockPos2 = {lat:firstBlock.lat, lng:firstBlock.lng};
-      var d2 = Math.sqrt(Math.pow((homePos2.lat-blockPos2.lat)*111,2)+Math.pow((homePos2.lng-blockPos2.lng)*91,2));
-      var trvMin2 = Math.round(d2/40*60);
-      departureTime = firstBlock.start - trvMin2 - 30;
-      departureLabel = firstBlock.title+'への出発時刻';
+      var trvMin2 = Math.round(km(homePos2, blockPos2) / (parseInt(document.getElementById('sspd').value)||40) * 60);
+      departureTime = firstBlock.start - 15 - trvMin2;
+      departureLabel = firstBlock.title+' 開始15分前到着';
     }
   }
   if(isNow){
