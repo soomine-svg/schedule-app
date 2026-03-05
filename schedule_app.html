@@ -83,11 +83,11 @@ header h1{font-size:1.1rem;font-weight:700}
 
 <!-- Google同期バー（全タブ共通） -->
 <div id="sync-bar" style="background:white;border-bottom:2px solid #ebf4ff;padding:9px 20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-  <span style="font-size:.78rem;font-weight:600;color:#4a5568">🔗 Google連携：</span>
-  <span id="sync-status" style="font-size:.8rem;color:#a0aec0">未ログイン　（案件データの保存とカレンダー連携に必要）</span>
+  <span style="font-size:.78rem;font-weight:600;color:#4a5568">🔗 💾 データ保存：</span>
+  <span id="sync-status" style="font-size:.8rem;color:#a0aec0">案件データは自動保存されます　Googleログインはカレンダー連携のみ（任意）</span>
   <button id="sync-login-btn" onclick="gcalConnect()"
     style="background:#4285f4;color:white;border:none;padding:6px 14px;border-radius:7px;font-size:.8rem;font-weight:600;cursor:pointer">
-    🔗 Googleでログイン
+    📅 Googleカレンダーと連携
   </button>
   <button id="sync-logout-btn" onclick="gcalDisconnect()"
     style="display:none;background:#e2e8f0;color:#4a5568;border:none;padding:6px 12px;border-radius:7px;font-size:.8rem;cursor:pointer">
@@ -535,102 +535,33 @@ function addCase(){
   document.getElementById("fid").focus();
 }
 
-// ===== 案件描画 =====
-// ===== データ永続化（Google Sheets） =====
-var SHEET_NAME = 'スケジュール案件データ';
-var FIXED_SHEET_ID = '1VQH-Yaa4-L9XJUn8hZGlBZl6rHuzFNQI4UCXRPLlcDc';
-var sheetId = localStorage.getItem('schedule_sheetId') || FIXED_SHEET_ID;
+// ===== データ永続化（localStorage） =====
+var STORAGE_KEY = 'schedule_v2';
 
 function saveCases(){
-  try{ localStorage.setItem('schedule_cases', JSON.stringify(cases));
-       localStorage.setItem('schedule_seq', String(seq)); } catch(e){}
-  if(gcalToken && sheetId) saveCasesToSheet();
+  try{
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({cases:cases, seq:seq}));
+    var now = new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    var el = document.getElementById('sync-sheet-status');
+    if(el) el.textContent = '✅ 保存済み '+now+'（'+cases.length+'件）';
+  } catch(e){ console.log('save error',e); }
 }
 
 function loadCases(){
   try{
-    var s=localStorage.getItem('schedule_cases');
-    var q=localStorage.getItem('schedule_seq');
-    if(s){ cases=JSON.parse(s); }
-    if(q){ seq=parseInt(q)||1; }
+    var s = localStorage.getItem(STORAGE_KEY);
+    if(s){
+      var d = JSON.parse(s);
+      if(d.cases){ cases = d.cases; }
+      if(d.seq){ seq = d.seq; }
+    } else {
+      // 旧キーからの移行
+      var old = localStorage.getItem('schedule_cases');
+      if(old){ cases = JSON.parse(old); }
+      var oldSeq = localStorage.getItem('schedule_seq');
+      if(oldSeq){ seq = parseInt(oldSeq)||1; }
+    }
   } catch(e){}
-}
-
-function saveCasesToSheet(){
-  if(!sheetId || !gcalToken) return;
-  // 全案件をJSON文字列で1セルに保存（シンプル方式）
-  var data = JSON.stringify({cases:cases, seq:seq});
-  document.getElementById('sync-sheet-status').textContent = '💾 保存中...';
-  fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sheetId+'/values/A1?valueInputOption=RAW', {
-    method:'PUT',
-    headers:{'Authorization':'Bearer '+gcalToken,'Content-Type':'application/json'},
-    body: JSON.stringify({values:[[data]]})
-  }).then(function(r){
-    if(!r.ok){ return r.json().then(function(e){ throw new Error(e.error&&e.error.message||r.status); }); }
-    var now = new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-    document.getElementById('sync-sheet-status').textContent = '✅ シート保存完了 '+now;
-  }).catch(function(e){
-    console.log('Sheet save error:', e);
-    document.getElementById('sync-sheet-status').textContent = '⚠️ 保存エラー: '+e.message;
-  });
-}
-
-function loadCasesFromSheet(callback){
-  if(!gcalToken){ if(callback) callback(); return; }
-  // sheetIdは常に設定済み（FIXED_SHEET_IDがデフォルト）
-  localStorage.setItem('schedule_sheetId', sheetId);
-  fetchSheetData(callback);
-}
-
-function fetchSheetData(callback){
-  fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sheetId+'/values/A1', {
-    headers:{'Authorization':'Bearer '+gcalToken}
-  }).then(function(r){ return r.json(); })
-  .then(function(d){
-    if(d.values && d.values[0] && d.values[0][0]){
-      try{
-        var saved = JSON.parse(d.values[0][0]);
-        if(saved.cases && saved.cases.length > 0){
-          // シートにデータあり → シートのデータを使う（件数が多い方を採用）
-          if(saved.cases.length >= cases.length){
-            cases=saved.cases; seq=saved.seq||1; renderCases();
-            setSyncBar('✅ ログイン済み（シートから '+saved.cases.length+' 件を読み込みました）', true);
-          } else {
-            // ローカルの方が新しい → シートに書き込む
-            saveCasesToSheet();
-            setSyncBar('✅ ログイン済み（ローカルデータ '+cases.length+' 件をシートに保存しました）', true);
-          }
-        } else if(cases.length > 0){
-          // シートが空でローカルにデータあり → ローカルデータをシートに保存
-          saveCasesToSheet();
-          setSyncBar('✅ ログイン済み（ローカルデータ '+cases.length+' 件をシートに保存しました）', true);
-        } else {
-          setSyncBar('✅ ログイン済み（シートは空・新規案件を追加すると自動保存されます）', true);
-        }
-      } catch(e){
-        console.log('Sheet parse error:',e);
-        setSyncBar('✅ ログイン済み（シートデータの解析に失敗）', true);
-      }
-    } else if(cases.length > 0){
-      // シートが空でローカルにデータあり → ローカルデータをシートに保存
-      saveCasesToSheet();
-      setSyncBar('✅ ログイン済み（ローカルデータ '+cases.length+' 件をシートに保存しました）', true);
-    } else {
-      setSyncBar('✅ ログイン済み（新規案件を追加すると自動保存されます）', true);
-    }
-    if(callback) callback();
-  }).catch(function(e){
-    console.log('Sheet load error:',e);
-    if(sheetId !== FIXED_SHEET_ID){
-      // localStorageの古いIDが原因の可能性 → 固定IDにリセットして再試行
-      sheetId = FIXED_SHEET_ID;
-      localStorage.setItem('schedule_sheetId', FIXED_SHEET_ID);
-      fetchSheetData(callback);
-    } else {
-      setSyncBar('⚠️ シート読み込みエラー: '+e.message, true);
-      if(callback) callback();
-    }
-  });
 }
 
 function setStatus(msg){
@@ -639,59 +570,16 @@ function setStatus(msg){
 }
 
 function setSyncBar(msg, loggedIn){
-  document.getElementById('sync-status').textContent = msg;
-  document.getElementById('sync-login-btn').style.display  = loggedIn ? 'none' : '';
-  document.getElementById('sync-logout-btn').style.display = loggedIn ? '' : 'none';
-  // スケジュールタブのステータスにも反映
-  var st=document.getElementById('gcal-status');
-  if(st) st.textContent = loggedIn ? msg : '未接続　スケジュール作成時にカレンダーの予定を自動反映します';
-  // スケジュールタブのボタン表示も同期
-  var lb=document.getElementById('gcal-btn'), db=document.getElementById('gcal-disconnect');
+  var ss = document.getElementById('sync-status');
+  if(ss) ss.textContent = msg;
+  var lb=document.getElementById('sync-login-btn'), db=document.getElementById('sync-logout-btn');
   if(lb) lb.style.display = loggedIn ? 'none' : '';
   if(db) db.style.display = loggedIn ? '' : 'none';
-}
-
-function findOrCreateSheet(callback){
-  setStatus('🔍 データシートを検索中...');
-  fetch('https://www.googleapis.com/drive/v3/files?q=name%3D%22'+encodeURIComponent(SHEET_NAME)+'%22+and+mimeType%3D%22application%2Fvnd.google-apps.spreadsheet%22+and+trashed%3Dfalse&fields=files(id,name)', {
-    headers:{'Authorization':'Bearer '+gcalToken}
-  }).then(function(r){
-    if(!r.ok){ setStatus('❌ Drive検索エラー: '+r.status); throw new Error(r.status); }
-    return r.json();
-  })
-  .then(function(d){
-    if(d.files && d.files.length > 0){
-      sheetId = d.files[0].id;
-      localStorage.setItem('schedule_sheetId', sheetId);
-      setStatus('📂 シートを見つけました。データ読み込み中...');
-      fetchSheetData(callback);
-    } else {
-      setStatus('📝 シートを新規作成中...');
-      createSheet(callback);
-    }
-  }).catch(function(e){
-    setStatus('❌ エラー: '+e.message);
-    createSheet(callback);
-  });
-}
-
-function createSheet(callback){
-  fetch('https://sheets.googleapis.com/v4/spreadsheets', {
-    method:'POST',
-    headers:{'Authorization':'Bearer '+gcalToken,'Content-Type':'application/json'},
-    body: JSON.stringify({properties:{title:SHEET_NAME}})
-  }).then(function(r){ return r.json(); })
-  .then(function(d){
-    sheetId = d.spreadsheetId;
-    localStorage.setItem('schedule_sheetId', sheetId);
-    saveCasesToSheet();
-    var st=document.getElementById('gcal-status');
-    if(st) st.textContent='✅ 接続済み（新しいデータシートを作成しました）';
-    if(callback) callback();
-  }).catch(function(e){
-    console.log('Sheet create error:',e);
-    if(callback) callback();
-  });
+  var st=document.getElementById('gcal-status');
+  if(st) st.textContent = loggedIn ? msg : '未接続　スケジュール作成時にカレンダーの予定を自動反映します';
+  var lb2=document.getElementById('gcal-btn'), db2=document.getElementById('gcal-disconnect');
+  if(lb2) lb2.style.display = loggedIn ? 'none' : '';
+  if(db2) db2.style.display = loggedIn ? '' : 'none';
 }
 
 function renderCases(){
@@ -1498,12 +1386,8 @@ function gcalInit(){
         return;
       }
       gcalToken = resp.access_token;
-      setSyncBar('✅ ログイン済み　シートと同期中...', true);
-      // Sheetsから案件データを読み込んでからカレンダーを取得
-      loadCasesFromSheet(function(){
-        setSyncBar('✅ ログイン済み　カレンダーを取得中...', true);
-        gcalFetchEvents();
-      });
+      setSyncBar('✅ Googleカレンダー接続済み', true);
+      gcalFetchEvents();
     }
   });
 }
@@ -1525,7 +1409,7 @@ function gcalConnect(){
 function gcalDisconnect(){
   gcalToken  = null;
   gcalEvents = [];
-  setSyncBar('未ログイン　（案件データの保存とカレンダー連携に必要）', false);
+  setSyncBar('案件データは自動保存されます　Googleログインはカレンダー連携のみ（任意）', false);
   var st=document.getElementById('gcal-status');
   if(st) st.textContent = '未接続　スケジュール作成時にカレンダーの予定を自動反映します';
   document.getElementById('gcal-events-preview').textContent = '';
