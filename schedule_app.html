@@ -547,10 +547,14 @@ function saveCasesToSheet(){
 function loadCasesFromSheet(callback){
   if(!gcalToken){ if(callback) callback(); return; }
   if(!sheetId){
-    // シートを新規作成
-    createSheet(callback);
+    // まずDriveで既存シートを検索
+    findOrCreateSheet(callback);
     return;
   }
+  fetchSheetData(callback);
+}
+
+function fetchSheetData(callback){
   fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sheetId+'/values/A1', {
     headers:{'Authorization':'Bearer '+gcalToken}
   }).then(function(r){ return r.json(); })
@@ -566,9 +570,29 @@ function loadCasesFromSheet(callback){
     if(callback) callback();
   }).catch(function(e){
     console.log('Sheet load error:',e);
-    // シートが見つからない場合は再作成
     sheetId = null;
     localStorage.removeItem('schedule_sheetId');
+    findOrCreateSheet(callback);
+  });
+}
+
+function findOrCreateSheet(callback){
+  // Driveでシート名で検索
+  fetch('https://www.googleapis.com/drive/v3/files?q=name%3D%22'+encodeURIComponent(SHEET_NAME)+'%22+and+mimeType%3D%22application%2Fvnd.google-apps.spreadsheet%22+and+trashed%3Dfalse&fields=files(id,name)', {
+    headers:{'Authorization':'Bearer '+gcalToken}
+  }).then(function(r){ return r.json(); })
+  .then(function(d){
+    if(d.files && d.files.length > 0){
+      // 既存シートが見つかった
+      sheetId = d.files[0].id;
+      localStorage.setItem('schedule_sheetId', sheetId);
+      fetchSheetData(callback);
+    } else {
+      // 新規作成
+      createSheet(callback);
+    }
+  }).catch(function(e){
+    console.log('Drive search error:',e);
     createSheet(callback);
   });
 }
@@ -582,7 +606,6 @@ function createSheet(callback){
   .then(function(d){
     sheetId = d.spreadsheetId;
     localStorage.setItem('schedule_sheetId', sheetId);
-    // 現在の案件データを保存
     saveCasesToSheet();
     var st=document.getElementById('gcal-status');
     if(st) st.textContent='✅ 接続済み（新しいデータシートを作成しました）';
