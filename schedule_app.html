@@ -562,10 +562,23 @@ function fetchSheetData(callback){
     if(d.values && d.values[0] && d.values[0][0]){
       try{
         var saved = JSON.parse(d.values[0][0]);
-        if(saved.cases){ cases=saved.cases; seq=saved.seq||1; renderCases(); }
-        var st=document.getElementById('gcal-status');
-        if(st) st.textContent='✅ 接続済み（案件データを同期しました）';
+        if(saved.cases && saved.cases.length > 0){
+          // シートにデータあり → シートのデータを使う
+          cases=saved.cases; seq=saved.seq||1; renderCases();
+          var st=document.getElementById('gcal-status');
+          if(st) st.textContent='✅ 接続済み（案件データを同期しました）';
+        } else if(cases.length > 0){
+          // シートが空でローカルにデータあり → ローカルデータをシートに保存
+          saveCasesToSheet();
+          var st=document.getElementById('gcal-status');
+          if(st) st.textContent='✅ 接続済み（ローカルデータをシートに保存しました）';
+        }
       } catch(e){ console.log('Sheet parse error:',e); }
+    } else if(cases.length > 0){
+      // シートが空でローカルにデータあり → ローカルデータをシートに保存
+      saveCasesToSheet();
+      var st=document.getElementById('gcal-status');
+      if(st) st.textContent='✅ 接続済み（ローカルデータをシートに保存しました）';
     }
     if(callback) callback();
   }).catch(function(e){
