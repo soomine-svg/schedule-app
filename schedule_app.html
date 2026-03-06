@@ -799,7 +799,7 @@ function renderCases(){
       : '<span style="color:#e53e3e;font-size:.7rem">📍 座標未取得</span>';
     return '<div class="ci'+(c.ely?" ely":"")+'">'+
       '<div class="ci-body">'+
-      '<div class="ci-name">'+c.id+'　'+c.adr+'</div>'+
+      '<div class="ci-name">'+c.id+'　<a href="https://maps.google.com/?q='+encodeURIComponent(c.adr)+'" target="_blank" style="color:inherit;text-decoration:none">'+c.adr+' 🗺️</a></div>'+
       '<div class="ci-sub">納期:'+c.d2+(c.tm?"　指定:"+c.tm:"")+"　所要:"+c.dur+"分"+(c.ely?"　⭐":"")+"　"+geoTag+"</div>"+
       "</div>"+
       '<div class="ci-btns">'+
@@ -1418,7 +1418,7 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks){
         '<div class="tl-b">'+
         '<div class="tl-name">'+(c.ely?'⭐ ':'')+
         (hasTm?'<span style="background:#f6ad55;color:#744210;font-size:.72rem;padding:1px 6px;border-radius:10px;margin-right:4px;font-weight:700">'+c.tm+'</span>':'')+
-        (i+1)+'. '+c.id+'　'+c.adr+'</div>'+
+        (i+1)+'. '+c.id+'　<a href="https://maps.google.com/?q='+encodeURIComponent(c.adr)+'" target="_blank" style="color:inherit;text-decoration:none">'+c.adr+' 🗺️</a></div>'+
         '<div class="tl-sub">納期:'+c.d2+'　所要:'+c.dur+'分'+
         (c.wait>0?'　<span style="color:#d69e2e">⏳待機'+c.wait+'分</span>':'')+
         '</div></div></div>';
@@ -1633,7 +1633,7 @@ function buildAll(){
       '<div style="font-size:.8rem;color:#718096;margin-bottom:8px">※ 時間指定と出発地の距離的な制約で3日以内に消化できなかった案件です</div>'+
       remaining.map(function(c){
         return '<div class="ci"><div class="ci-body">'+
-          '<div class="ci-name">'+c.id+'　'+c.adr+'</div>'+
+          '<div class="ci-name">'+c.id+'　<a href="https://maps.google.com/?q='+encodeURIComponent(c.adr)+'" target="_blank" style="color:inherit;text-decoration:none">'+c.adr+' 🗺️</a></div>'+
           '<div class="ci-sub">納期:'+c.d2+(c.tm?'　指定:'+c.tm:'')+'</div></div></div>';
       }).join('')+'</div>';
   }
