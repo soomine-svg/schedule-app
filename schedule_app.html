@@ -84,7 +84,7 @@ header h1{font-size:1.1rem;font-weight:700}
 <!-- Google同期バー（全タブ共通） -->
 <div id="sync-bar" style="background:white;border-bottom:2px solid #ebf4ff;padding:9px 20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
   <span style="font-size:.78rem;font-weight:600;color:#4a5568">🔗 💾 データ保存：</span>
-  <span id="sync-status" style="font-size:.8rem;color:#a0aec0">案件データは自動保存されます　Googleログインはカレンダー連携のみ（任意）</span>
+  <span id="sync-status" style="font-size:.8rem;color:#a0aec0">案件データはローカル保存中　Googleログインでスマホと同期可能</span>
   <button id="sync-login-btn" onclick="gcalConnect()"
     style="background:#4285f4;color:white;border:none;padding:6px 14px;border-radius:7px;font-size:.8rem;font-weight:600;cursor:pointer">
     📅 Googleカレンダーと連携
@@ -652,16 +652,27 @@ function addCase(){
   document.getElementById("fid").focus();
 }
 
-// ===== データ永続化（localStorage） =====
-var STORAGE_KEY = 'schedule_v2';
+// ===== データ永続化（localStorage + Google Sheets同期） =====
+var STORAGE_KEY  = 'schedule_v2';
+var SHEET_ID_KEY = 'schedule_sheetId';
+var FIXED_SHEET_ID = '1VQH-Yaa4-L9XJUn8hZGlBZl6rHuzFNQI4UCXRPLlcDc';
+var sheetSyncTimer = null;
 
 function saveCases(){
+  // ① localStorageに即時保存
   try{
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({cases:cases, seq:seq}));
+    var payload = {cases:cases, seq:seq, updatedAt: Date.now()};
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     var now = new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
     var el = document.getElementById('sync-sheet-status');
-    if(el) el.textContent = '✅ 保存済み '+now+'（'+cases.length+'件）';
+    if(el) el.textContent = '💾 ローカル保存済み '+now+'（'+cases.length+'件）';
   } catch(e){ console.log('save error',e); }
+
+  // ② Googleログイン済みならシートにも保存（1秒後にデバウンス）
+  if(gcalToken){
+    clearTimeout(sheetSyncTimer);
+    sheetSyncTimer = setTimeout(saveCasesToSheet, 1000);
+  }
 }
 
 function loadCases(){
@@ -672,13 +683,85 @@ function loadCases(){
       if(d.cases){ cases = d.cases; }
       if(d.seq){ seq = d.seq; }
     } else {
-      // 旧キーからの移行
-      var old = localStorage.getItem('schedule_cases');
-      if(old){ cases = JSON.parse(old); }
+      var oldC = localStorage.getItem('schedule_cases');
+      if(oldC){ cases = JSON.parse(oldC); }
       var oldSeq = localStorage.getItem('schedule_seq');
       if(oldSeq){ seq = parseInt(oldSeq)||1; }
     }
   } catch(e){}
+}
+
+// Sheetsに保存
+function saveCasesToSheet(){
+  if(!gcalToken) return;
+  var sid = localStorage.getItem(SHEET_ID_KEY) || FIXED_SHEET_ID;
+  var data = JSON.stringify({cases:cases, seq:seq, updatedAt: Date.now()});
+  var el = document.getElementById('sync-sheet-status');
+  if(el) el.textContent = '☁️ シートに同期中...';
+  fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sid+'/values/A1?valueInputOption=RAW',{
+    method:'PUT',
+    headers:{'Authorization':'Bearer '+gcalToken,'Content-Type':'application/json'},
+    body: JSON.stringify({values:[[data]]})
+  }).then(function(r){
+    if(!r.ok) throw new Error(r.status);
+    var now = new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    if(el) el.textContent = '✅ シート同期済み '+now+'（'+cases.length+'件）';
+  }).catch(function(e){
+    console.log('Sheet save error:',e);
+    if(el) el.textContent = '⚠️ シート保存失敗（ローカルには保存済み）';
+  });
+}
+
+// Sheetsから読み込んでローカルとマージ（新しい方を採用）
+function loadCasesFromSheet(callback){
+  if(!gcalToken){ if(callback) callback(); return; }
+  var sid = localStorage.getItem(SHEET_ID_KEY) || FIXED_SHEET_ID;
+  var el = document.getElementById('sync-sheet-status');
+  if(el) el.textContent = '☁️ シートからデータ取得中...';
+  fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sid+'/values/A1',{
+    headers:{'Authorization':'Bearer '+gcalToken}
+  }).then(function(r){ return r.json(); })
+  .then(function(d){
+    if(d.values && d.values[0] && d.values[0][0]){
+      try{
+        var remote = JSON.parse(d.values[0][0]);
+        var localRaw = localStorage.getItem(STORAGE_KEY);
+        var local = localRaw ? JSON.parse(localRaw) : null;
+        var localTime = local && local.updatedAt ? local.updatedAt : 0;
+        var remoteTime = remote.updatedAt || 0;
+        if(remote.cases && remote.cases.length > 0){
+          if(remoteTime >= localTime){
+            // シートが新しい → シートのデータを使用
+            cases = remote.cases; seq = remote.seq||1;
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(remote));
+            renderCases();
+            if(el) el.textContent = '✅ シートから'+cases.length+'件を読み込みました';
+          } else {
+            // ローカルが新しい → シートに上書き保存
+            saveCasesToSheet();
+            if(el) el.textContent = '✅ ローカルデータ（'+cases.length+'件）をシートに同期しました';
+          }
+        } else if(cases.length > 0){
+          saveCasesToSheet();
+          if(el) el.textContent = '✅ ローカルデータ（'+cases.length+'件）をシートに同期しました';
+        } else {
+          if(el) el.textContent = '✅ シート接続済み（データなし）';
+        }
+      } catch(e){
+        if(el) el.textContent = '⚠️ シートデータの解析失敗';
+      }
+    } else if(cases.length > 0){
+      saveCasesToSheet();
+      if(el) el.textContent = '✅ ローカルデータ（'+cases.length+'件）をシートに初回同期しました';
+    } else {
+      if(el) el.textContent = '✅ シート接続済み（新規）';
+    }
+    if(callback) callback();
+  }).catch(function(e){
+    console.log('Sheet load error:',e);
+    if(el) el.textContent = '⚠️ シート読込失敗（ローカルデータで動作中）';
+    if(callback) callback();
+  });
 }
 
 function setStatus(msg){
@@ -1572,13 +1655,16 @@ function gcalInit(){
       if(resp.error){
         // 自動連携失敗はサイレントに（手動ボタンで再試行可能）
         if(resp.error !== 'access_denied'){
-          setSyncBar('案件データは自動保存されます　Googleログインはカレンダー連携のみ（任意）', false);
+          setSyncBar('案件データはローカル保存中　Googleログインでスマホと同期可能', false);
         }
         return;
       }
       gcalToken = resp.access_token;
-      setSyncBar('✅ Googleカレンダー接続済み', true);
-      gcalFetchEvents();
+      setSyncBar('✅ Google接続済み　データ同期中...', true);
+      // シートからデータ読み込み → その後カレンダー取得
+      loadCasesFromSheet(function(){
+        gcalFetchEvents();
+      });
     }
   });
   // 初期化後に自動でサイレント連携を試みる（ポップアップなし）
@@ -1608,7 +1694,7 @@ function gcalDisconnect(){
   gcalToken  = null;
   gcalEvents = [];
   gcalAllDayDates = [];
-  setSyncBar('案件データは自動保存されます　Googleログインはカレンダー連携のみ（任意）', false);
+  setSyncBar('案件データはローカル保存中　Googleログインでスマホと同期可能', false);
   var st=document.getElementById('gcal-status');
   if(st) st.textContent = '未接続　スケジュール作成時にカレンダーの予定を自動反映します';
   document.getElementById('gcal-events-preview').textContent = '';
