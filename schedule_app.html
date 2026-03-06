@@ -1804,6 +1804,11 @@ function gcalFetchEvents(){
       geoTargets.forEach(function(ev){
         geocodeAddress(ev.location, function(lat,lng,err){
           if(lat&&lng){ ev.lat=lat; ev.lng=lng; }
+          else {
+            // Geocoding失敗 → ARテーブルでフォールバック
+            var fallback = getPos(ev.location, null);
+            if(fallback && fallback.lat){ ev.lat=fallback.lat; ev.lng=fallback.lng; }
+          }
           geoCount++;
           if(geoCount >= geoTargets.length){
             gcalReady = true;
