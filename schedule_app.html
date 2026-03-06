@@ -760,6 +760,9 @@ function loadCasesFromSheet(callback){
   }).catch(function(e){
     console.log('Sheet load error:',e);
     if(el) el.textContent = '⚠️ シート読込失敗（ローカルデータで動作中）';
+    // エラーでもsync-statusを正常表示に戻す
+    var ss = document.getElementById('sync-status');
+    if(ss && ss.textContent.indexOf('同期中') >= 0) ss.textContent = '✅ Google接続済み';
     if(callback) callback();
   });
 }
@@ -1663,6 +1666,7 @@ function gcalInit(){
       setSyncBar('✅ Google接続済み　データ同期中...', true);
       // シートからデータ読み込み → その後カレンダー取得
       loadCasesFromSheet(function(){
+        setSyncBar('✅ Google接続済み', true);
         gcalFetchEvents();
       });
     }
