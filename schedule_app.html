@@ -1602,18 +1602,18 @@ function buildAll(){
         if(block.lat && block.lng){
           // プール内の案件でイベントに最も近い場所からの距離で計算
           var blockPos = {lat: block.lat, lng: block.lng};
+          // todayPoolの中でイベントに最も近い案件からの距離で計算
           var minDist = null;
-          freePool.forEach(function(c){
+          todayPool.forEach(function(c){
             var cPos = c.lat && c.lng ? {lat:c.lat, lng:c.lng} : getPos(c.adr, null);
             if(cPos && cPos.lat){
               var d = km(cPos, blockPos);
               if(minDist === null || d < minDist) minDist = d;
             }
           });
-          // プール案件がなければ出発地から計算
           if(minDist === null){
-            var startPos = getPos(startAdr, null) || {lat:31.7150, lng:131.0800};
-            minDist = km(startPos, blockPos);
+            var homePos2 = {lat:31.7150, lng:131.0800};
+            minDist = km(homePos2, blockPos);
           }
           var travelMin = Math.max(5, Math.round(minDist / spd * 60));
           bufMin = travelMin + 15; // 15分バッファ（出発準備）
