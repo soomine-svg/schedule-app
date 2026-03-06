@@ -1218,18 +1218,28 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
       if(targetPos && fromPos && fromPos.lat){
         var cPos = c.lat&&c.lng ? {lat:c.lat,lng:c.lng} : getPos(c.adr,null);
         if(cPos && cPos.lat){
-          // 寄り道距離 = （現在地→案件→目標）-（現在地→目標）
-          var directD = km(fromPos, targetPos);
-          var viaD = km(fromPos, cPos) + km(cPos, targetPos);
-          var detour = Math.max(0, viaD - directD);
-          // スコア：寄り道重視 + 納期ボーナス
-          score = detour * 3 - Math.max(0, 5-dl) * 8;
+          if(eveningDest){
+            // 夕方目的地がある日：自宅からの距離順で訪問（近い順に回る）
+            // 自宅座標
+            var homeBase = getPos(startAdr, null) || {lat:31.7150, lng:131.0800};
+            var distFromHome = km(homeBase, cPos);
+            // 目的地への寄り道も加味（完全に逆方向は避ける）
+            var directD = km(homeBase, targetPos);
+            var viaD = km(homeBase, cPos) + km(cPos, targetPos);
+            var detour = Math.max(0, viaD - directD);
+            // 自宅からの距離を主スコアに（近い順）+ 大きな迂回はペナルティ
+            score = distFromHome * 2 + detour * 1 - Math.max(0, 5-dl) * 8;
+          } else {
+            // 通常日：残り案件重心への寄り道最小
+            var directD = km(fromPos, targetPos);
+            var viaD = km(fromPos, cPos) + km(cPos, targetPos);
+            var detour = Math.max(0, viaD - directD);
+            score = detour * 3 - Math.max(0, 5-dl) * 8;
+          }
         } else {
-          // 座標なし：距離フォールバック
           score = dist(fromAdr, fromC, c.adr, c) * 2 - Math.max(0, 5-dl)*8;
         }
       } else {
-        // 目標座標なし：近傍優先
         score = dist(fromAdr, fromC, c.adr, c) * 2 - Math.max(0, 5-dl)*8;
       }
 
