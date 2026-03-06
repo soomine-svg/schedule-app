@@ -1218,14 +1218,13 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
       if(targetPos && fromPos && fromPos.lat){
         var cPos = c.lat&&c.lng ? {lat:c.lat,lng:c.lng} : getPos(c.adr,null);
         if(cPos && cPos.lat){
-          // 現在地から一番近い案件を選ぶ（シンプル近傍法）
-          // 目的地への大きな迂回（逆方向）はペナルティ
+          // 現在地からの距離 + 目的地への迂回ペナルティ（強め）
           var distFromCur = km(fromPos, cPos);
           var directD = km(fromPos, targetPos);
           var viaD = km(fromPos, cPos) + km(cPos, targetPos);
           var detour = Math.max(0, viaD - directD);
-          // 現在地からの距離優先 + 逆方向ペナルティ + 納期ボーナス
-          score = distFromCur * 2 + detour * 0.5 - Math.max(0, 5-dl) * 8;
+          // 迂回ペナルティを強くして「福岡方向」の案件を優先
+          score = distFromCur + detour * 3 - Math.max(0, 5-dl) * 8;
         } else {
           score = dist(fromAdr, fromC, c.adr, c) * 2 - Math.max(0, 5-dl)*8;
         }
