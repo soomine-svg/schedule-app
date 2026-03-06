@@ -1112,18 +1112,24 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks){
     }
   }
 
+  // 自宅座標（都城市南鷹尾町）を直接指定
+  var HOME_POS = {lat:31.7150, lng:131.0800};
+  var spd = parseInt(document.getElementById('sspd').value) || 40;
+
   if(morningCalBlock){
     // 午前カレンダー予定がある → その開始15分前に到着できる出発時刻
-    var targetArrival = morningCalBlock.start - 15; // 開始15分前
+    var targetArrival = morningCalBlock.start - 15; // 開始15分前に現地到着
     if(morningCalBlock.lat && morningCalBlock.lng){
-      var homePos3 = getPos('宮崎県都城市南鷹尾町33-11', null);
       var blockPos3 = {lat:morningCalBlock.lat, lng:morningCalBlock.lng};
-      var trvMin3 = Math.round(km(homePos3, blockPos3) / (parseInt(document.getElementById('sspd').value)||40) * 60);
+      var distKm3 = km(HOME_POS, blockPos3);
+      var trvMin3 = Math.max(5, Math.round(distKm3 / spd * 60));
       departureTime = targetArrival - trvMin3;
+      departureLabel = '📅 '+morningCalBlock.title+' 開始'+fmt(morningCalBlock.start)+'の15分前到着（約'+distKm3.toFixed(0)+'km／'+trvMin3+'分）';
     } else {
-      departureTime = targetArrival - 30; // 座標不明なら30分前出発
+      // 場所未設定の予定：移動時間不明なので開始15分前出発
+      departureTime = targetArrival;
+      departureLabel = '📅 '+morningCalBlock.title+' 開始'+fmt(morningCalBlock.start)+'の15分前（場所未設定のため移動時間なし）';
     }
-    departureLabel = '📅 '+morningCalBlock.title+' 開始'+fmt(morningCalBlock.start)+'の15分前到着';
   } else if(sched.length > 0){
     // 通常：1件目の訪問案件に間に合う出発時刻
     var first = sched[0];
@@ -1132,11 +1138,11 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks){
   } else if(calBlocks && calBlocks.length > 0){
     var firstBlock = calBlocks[0];
     if(firstBlock.lat && firstBlock.lng){
-      var homePos2 = getPos('宮崎県都城市南鷹尾町33-11', null);
       var blockPos2 = {lat:firstBlock.lat, lng:firstBlock.lng};
-      var trvMin2 = Math.round(km(homePos2, blockPos2) / (parseInt(document.getElementById('sspd').value)||40) * 60);
+      var distKm2 = km(HOME_POS, blockPos2);
+      var trvMin2 = Math.max(5, Math.round(distKm2 / spd * 60));
       departureTime = firstBlock.start - 15 - trvMin2;
-      departureLabel = firstBlock.title+' 開始15分前到着';
+      departureLabel = firstBlock.title+' 開始15分前到着（約'+distKm2.toFixed(0)+'km／'+trvMin2+'分）';
     }
   }
   if(isNow){
@@ -1268,6 +1274,14 @@ function buildAll(){
     if(!remaining.length){
       html+='<div class="card"><h2>'+['🌅 1日目','☀️ 2日目','🌆 3日目'][d]+'　'+dStr+
         '</h2><div class="empty">残り案件なし ✅</div></div>';
+      continue;
+    }
+
+    // 終日予定チェック：終日予定がある日はスキップ
+    var isAllDay = gcalAllDayDates.indexOf(dStr) >= 0;
+    if(isAllDay){
+      html+='<div class="card"><h2>'+['🌅 1日目','☀️ 2日目','🌆 3日目'][d]+'　'+dStr+'</h2>'+
+        '<div class="al al-y">📅 終日予定があるためスキップ（案件は翌日以降に繰越）</div></div>';
       continue;
     }
 
@@ -1405,6 +1419,7 @@ var GCAL_SCOPES    = "https://www.googleapis.com/auth/calendar.readonly https://
 var gcalToken      = null;  // アクセストークン
 var gcalReady      = false; // Geocoding完了フラグ
 var gcalEvents     = [];    // 取得した予定リスト
+var gcalAllDayDates = [];   // 終日予定がある日付リスト（例: ["2026-03-07"]）
 
 // Google Identity Services でトークン取得
 var gcalTokenClient = null;
@@ -1443,6 +1458,7 @@ function gcalConnect(){
 function gcalDisconnect(){
   gcalToken  = null;
   gcalEvents = [];
+  gcalAllDayDates = [];
   setSyncBar('案件データは自動保存されます　Googleログインはカレンダー連携のみ（任意）', false);
   var st=document.getElementById('gcal-status');
   if(st) st.textContent = '未接続　スケジュール作成時にカレンダーの予定を自動反映します';
@@ -1476,8 +1492,13 @@ function gcalFetchEvents(){
         document.getElementById('gcal-status').textContent = '❌ 取得エラー: '+data.error.message;
         return;
       }
+      // 終日予定を抽出して日付リストに保存
+      gcalAllDayDates = (data.items||[]).filter(function(e){
+        return e.start && e.start.date && !e.start.dateTime;
+      }).map(function(e){ return e.start.date; });
+
       gcalEvents = (data.items||[]).filter(function(e){
-        // 終日予定・時刻なし予定は除外
+        // 終日予定・時刻なし予定は除外（時刻付き予定のみ）
         return e.start && e.start.dateTime;
       }).map(function(e){
         return {
