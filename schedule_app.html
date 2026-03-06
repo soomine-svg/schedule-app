@@ -1600,13 +1600,18 @@ function buildAll(){
       afternoonBlocks.forEach(function(block){
         var bufMin = 30; // デフォルトバッファ30分
         if(block.lat && block.lng){
-          // 座標がある場合: 自宅固定座標から実距離で計算
-          var homePos = {lat:31.7150, lng:131.0800};
+          // 座標がある場合: 出発地（startAdr/現在地）から目的地までの距離で計算
+          var startPos = null;
+          if(startAdr){
+            startPos = getPos(startAdr, null);
+          }
+          if(!startPos || !startPos.lat){
+            startPos = {lat:31.7150, lng:131.0800}; // フォールバック：自宅
+          }
           var blockPos = {lat: block.lat, lng: block.lng};
-          var distKm = km(homePos, blockPos);
+          var distKm = km(startPos, blockPos);
           var travelMin = Math.max(5, Math.round(distKm / spd * 60));
-          // バッファは15分（出発準備）のみ。移動時間は実距離ベース
-          bufMin = travelMin + 15;
+          bufMin = travelMin + 15; // 15分バッファ（出発準備）
           // デバッグ用ログ
           console.log('[CalBuffer] '+block.title+' 距離:'+distKm.toFixed(0)+'km 移動:'+travelMin+'分 バッファ:'+bufMin+'分 締切:'+(block.start-bufMin));
         } else if(block.location){
