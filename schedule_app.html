@@ -1133,8 +1133,9 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
 
     // curから出発した場合の到着時刻
     var arriveAt = cur + trvToTc;
-    // 窓終了に間に合わなければスキップ
-    if(arriveAt >= wEnd) return;
+    // 窓終了15分前までに到着できなければスキップ（16:45着なら17:00終了窓でも可）
+    var wLatestArrival = wEnd - 15; // 窓終了の15分前が最遅現着
+    if(arriveAt > wLatestArrival) return;
 
     // 窓前の隙間（08:30以降）に自由案件を詰める
     if(wStart > FREE_START && wStart > cur){
@@ -1145,25 +1146,22 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     // 再計算
     trvToTc = trv(prev, prevC, tc.adr, tc);
     arriveAt = cur + trvToTc;
-    if(arriveAt >= wEnd) return;
+    if(arriveAt > wLatestArrival) return;
 
     var st;
     if(arriveAt < wStart){
-      // 早着の場合: 待機時間を最小化するため出発を遅らせる
-      // 「窓開始にちょうど到着する出発時刻」= cur + (wStart - arriveAt)
-      var optimalDepart = cur + (wStart - arriveAt); // 窓開始にぴったり着く出発時刻
-      // 待機中に近場案件を入れる余裕があるか
+      // 早着の場合: 窓開始まで待機 or 他の案件を先に入れる
+      var optimalDepart = cur + (wStart - arriveAt);
       var waitNeeded = wStart - arriveAt;
       if(waitNeeded > 0 && waitNeeded <= 60){
-        // 短い待機(1時間以内)は近場案件で埋める
+        // 短い待機(1時間以内): 近場の自由案件で埋める
         cur = arriveAt;
         fillFree(wStart);
         trvToTc = trv(prev, prevC, tc.adr, tc);
         arriveAt = cur + trvToTc;
         st = Math.max(wStart, arriveAt);
       } else if(waitNeeded > 60){
-        // 長い待機(1時間超)は出発を遅らせてちょうど到着するよう調整
-        // ただしfillFreeで自由案件を詰めた後に再計算
+        // 長い待機(1時間超): 自由案件を詰めてから出発
         fillFree(optimalDepart);
         trvToTc = trv(prev, prevC, tc.adr, tc);
         arriveAt = cur + trvToTc;
@@ -1172,14 +1170,18 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
         st = wStart;
       }
     } else {
+      // wStart <= arriveAt <= wLatestArrival: そのまま到着して訪問
       st = arriveAt;
     }
 
     var tcBlocked = calBlocks.some(function(b){
       return st < b.end && (st + tc.dur) > b.start;
     });
-    var tcDeadline = (effectiveDayEnd && effectiveDayEnd < DAY_END) ? effectiveDayEnd : DAY_END;
-    if(!tcBlocked && st + tc.dur <= tcDeadline) place(tc, st);
+    // 時間指定案件は窓終了（wEnd）までに作業完了すればOK
+    // ただしカレンダー予定との競合がある日はeffectiveDayEndも考慮
+    var tcDeadline = wEnd; // 窓終了時刻が締切
+    if(effectiveDayEnd && effectiveDayEnd < tcDeadline) tcDeadline = effectiveDayEnd;
+    if(!tcBlocked && st <= wLatestArrival && st + tc.dur <= tcDeadline) place(tc, st);
   });
 ;
 
