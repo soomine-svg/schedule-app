@@ -1600,20 +1600,24 @@ function buildAll(){
       afternoonBlocks.forEach(function(block){
         var bufMin = 30; // デフォルトバッファ30分
         if(block.lat && block.lng){
-          // 座標がある場合: 出発地（startAdr/現在地）から目的地までの距離で計算
-          var startPos = null;
-          if(startAdr){
-            startPos = getPos(startAdr, null);
-          }
-          if(!startPos || !startPos.lat){
-            startPos = {lat:31.7150, lng:131.0800}; // フォールバック：自宅
-          }
+          // プール内の案件でイベントに最も近い場所からの距離で計算
           var blockPos = {lat: block.lat, lng: block.lng};
-          var distKm = km(startPos, blockPos);
-          var travelMin = Math.max(5, Math.round(distKm / spd * 60));
+          var minDist = null;
+          pool.forEach(function(c){
+            var cPos = c.lat && c.lng ? {lat:c.lat, lng:c.lng} : getPos(c.adr, null);
+            if(cPos && cPos.lat){
+              var d = km(cPos, blockPos);
+              if(minDist === null || d < minDist) minDist = d;
+            }
+          });
+          // プール案件がなければ出発地から計算
+          if(minDist === null){
+            var startPos = getPos(startAdr, null) || {lat:31.7150, lng:131.0800};
+            minDist = km(startPos, blockPos);
+          }
+          var travelMin = Math.max(5, Math.round(minDist / spd * 60));
           bufMin = travelMin + 15; // 15分バッファ（出発準備）
-          // デバッグ用ログ
-          console.log('[CalBuffer] '+block.title+' 距離:'+distKm.toFixed(0)+'km 移動:'+travelMin+'分 バッファ:'+bufMin+'分 締切:'+(block.start-bufMin));
+          console.log('[CalBuffer] '+block.title+' 最近案件から距離:'+minDist.toFixed(0)+'km 移動:'+travelMin+'分 締切:'+(block.start-bufMin));
         } else if(block.location){
           // まず県外キーワードで判定（getPos は宮崎外の住所に対応していないため優先チェック）
           var farPrefectures = ['福岡','大阪','東京','名古屋','広島','熊本','鹿児島','長崎','佐賀','北九州','大分','愛媛','高知','山口'];
