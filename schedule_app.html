@@ -1180,45 +1180,57 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     }
   }
 
-  // 自由案件の最適選択（エリア集中＋近傍＋納期＋夕方目的地への経路）
+  // 自由案件の最適選択（寄り道最小化優先）
   function pickFree(fromAdr, fromC, excludeIds){
     var today = new Date();
-    var curArea = getArea(fromAdr);
     var rem = freePool.filter(function(c){
       return !placed[baseId(c.id)] && !(excludeIds && excludeIds[baseId(c.id)]);
     });
     if(!rem.length) return null;
-
-    // 夕方目的地がある場合は全候補を対象に（エリア絞りなし）
-    var cands = rem;
-    if(!eveningDest){
-      // 通常：まず同エリア内を探す
-      var sameArea = rem.filter(function(c){ return getArea(c.adr)===curArea; });
-      cands = sameArea.length ? sameArea : rem;
-    }
 
     // 現在地の座標
     var fromPos = fromC && fromC.lat && fromC.lng
       ? {lat:fromC.lat, lng:fromC.lng}
       : getPos(fromAdr, null);
 
-    var best=null, bestScore=Infinity;
-    cands.forEach(function(c){
-      var d  = dist(fromAdr, fromC, c.adr, c);
-      var dl = c.d2 ? (new Date(c.d2)-today)/86400000 : 30;
-      var score = d*2 - Math.max(0, 5-dl)*8;
+    // 「目標地点」を決定：①夕方カレンダー予定 ②残り案件の重心
+    var targetPos = null;
+    if(eveningDest && eveningDest.lat){
+      // ①カレンダー予定がある日：その目的地を目標
+      targetPos = {lat:eveningDest.lat, lng:eveningDest.lng};
+    } else if(rem.length > 0){
+      // ②通常日：残り案件の重心を目標（自然に案件クラスターへ向かう）
+      var lats = rem.map(function(c){ var p=c.lat&&c.lng?{lat:c.lat,lng:c.lng}:getPos(c.adr,null); return p?p.lat:null; }).filter(function(x){return x!==null;});
+      var lngs = rem.map(function(c){ var p=c.lat&&c.lng?{lat:c.lat,lng:c.lng}:getPos(c.adr,null); return p?p.lng:null; }).filter(function(x){return x!==null;});
+      if(lats.length){
+        targetPos = {
+          lat: lats.reduce(function(a,b){return a+b;},0)/lats.length,
+          lng: lngs.reduce(function(a,b){return a+b;},0)/lngs.length
+        };
+      }
+    }
 
-      // 夕方目的地がある場合：目的地への経路上にある案件を優遇
-      if(eveningDest && fromPos && fromPos.lat){
-        var cPos = c.lat && c.lng ? {lat:c.lat, lng:c.lng} : getPos(c.adr, null);
+    var best=null, bestScore=Infinity;
+    rem.forEach(function(c){
+      var dl = c.d2 ? (new Date(c.d2)-today)/86400000 : 30;
+      var score;
+
+      if(targetPos && fromPos && fromPos.lat){
+        var cPos = c.lat&&c.lng ? {lat:c.lat,lng:c.lng} : getPos(c.adr,null);
         if(cPos && cPos.lat){
-          // 「現在地→案件→目的地」の総距離 vs 「現在地→目的地」の直線距離
-          var directDist = km(fromPos, eveningDest);
-          var viaDist = km(fromPos, cPos) + km(cPos, eveningDest);
-          var detour = viaDist - directDist; // 寄り道による追加距離
-          // 寄り道が少ないほどスコアを下げる（優先する）
-          score += detour * 1.5;
+          // 寄り道距離 = （現在地→案件→目標）-（現在地→目標）
+          var directD = km(fromPos, targetPos);
+          var viaD = km(fromPos, cPos) + km(cPos, targetPos);
+          var detour = Math.max(0, viaD - directD);
+          // スコア：寄り道重視 + 納期ボーナス
+          score = detour * 3 - Math.max(0, 5-dl) * 8;
+        } else {
+          // 座標なし：距離フォールバック
+          score = dist(fromAdr, fromC, c.adr, c) * 2 - Math.max(0, 5-dl)*8;
         }
+      } else {
+        // 目標座標なし：近傍優先
+        score = dist(fromAdr, fromC, c.adr, c) * 2 - Math.max(0, 5-dl)*8;
       }
 
       if(score < bestScore){ bestScore=score; best=c; }
@@ -1593,7 +1605,8 @@ function buildAll(){
           var blockPos = {lat: block.lat, lng: block.lng};
           var distKm = km(homePos, blockPos);
           var travelMin = Math.max(5, Math.round(distKm / spd * 60));
-          bufMin = travelMin + 30;
+          // バッファは15分（出発準備）のみ。移動時間は実距離ベース
+          bufMin = travelMin + 15;
           // デバッグ用ログ
           console.log('[CalBuffer] '+block.title+' 距離:'+distKm.toFixed(0)+'km 移動:'+travelMin+'分 バッファ:'+bufMin+'分 締切:'+(block.start-bufMin));
         } else if(block.location){
