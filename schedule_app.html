@@ -1603,7 +1603,7 @@ function buildAll(){
           // プール内の案件でイベントに最も近い場所からの距離で計算
           var blockPos = {lat: block.lat, lng: block.lng};
           var minDist = null;
-          pool.forEach(function(c){
+          freePool.forEach(function(c){
             var cPos = c.lat && c.lng ? {lat:c.lat, lng:c.lng} : getPos(c.adr, null);
             if(cPos && cPos.lat){
               var d = km(cPos, blockPos);
