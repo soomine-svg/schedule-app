@@ -1162,7 +1162,25 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     placed[baseId(c.id)] = true;
   }
 
-  // 自由案件の最適選択（エリア集中＋近傍＋納期）
+  // 夕方以降のカレンダー予定の目的地座標を取得（経路最適化用）
+  var eveningDest = null;
+  if(calBlocks && calBlocks.length > 0){
+    for(var ci2=0; ci2<calBlocks.length; ci2++){
+      var cb = calBlocks[ci2];
+      if(cb.start >= 15*60 && (cb.lat || cb.location)){
+        // 座標があればそのまま、なければARテーブルで推定
+        if(cb.lat && cb.lng){
+          eveningDest = {lat:cb.lat, lng:cb.lng, title:cb.title};
+        } else if(cb.location){
+          var ep = getPos(cb.location, null);
+          if(ep && ep.lat) eveningDest = {lat:ep.lat, lng:ep.lng, title:cb.title};
+        }
+        if(eveningDest) break;
+      }
+    }
+  }
+
+  // 自由案件の最適選択（エリア集中＋近傍＋納期＋夕方目的地への経路）
   function pickFree(fromAdr, fromC, excludeIds){
     var today = new Date();
     var curArea = getArea(fromAdr);
@@ -1171,16 +1189,38 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     });
     if(!rem.length) return null;
 
-    // まず同エリア内を探す
-    var sameArea = rem.filter(function(c){ return getArea(c.adr)===curArea; });
-    var cands = sameArea.length ? sameArea : rem;
+    // 夕方目的地がある場合は全候補を対象に（エリア絞りなし）
+    var cands = rem;
+    if(!eveningDest){
+      // 通常：まず同エリア内を探す
+      var sameArea = rem.filter(function(c){ return getArea(c.adr)===curArea; });
+      cands = sameArea.length ? sameArea : rem;
+    }
+
+    // 現在地の座標
+    var fromPos = fromC && fromC.lat && fromC.lng
+      ? {lat:fromC.lat, lng:fromC.lng}
+      : getPos(fromAdr, null);
 
     var best=null, bestScore=Infinity;
     cands.forEach(function(c){
       var d  = dist(fromAdr, fromC, c.adr, c);
       var dl = c.d2 ? (new Date(c.d2)-today)/86400000 : 30;
-      // スコア：距離重視、納期が近いほど優先
       var score = d*2 - Math.max(0, 5-dl)*8;
+
+      // 夕方目的地がある場合：目的地への経路上にある案件を優遇
+      if(eveningDest && fromPos && fromPos.lat){
+        var cPos = c.lat && c.lng ? {lat:c.lat, lng:c.lng} : getPos(c.adr, null);
+        if(cPos && cPos.lat){
+          // 「現在地→案件→目的地」の総距離 vs 「現在地→目的地」の直線距離
+          var directDist = km(fromPos, eveningDest);
+          var viaDist = km(fromPos, cPos) + km(cPos, eveningDest);
+          var detour = viaDist - directDist; // 寄り道による追加距離
+          // 寄り道が少ないほどスコアを下げる（優先する）
+          score += detour * 1.5;
+        }
+      }
+
       if(score < bestScore){ bestScore=score; best=c; }
     });
     return best;
