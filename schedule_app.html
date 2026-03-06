@@ -199,7 +199,7 @@ header h1{font-size:1.1rem;font-weight:700}
       <div style="margin-bottom:12px">
         <div style="font-size:.75rem;font-weight:600;color:#718096;margin-bottom:6px">モード選択</div>
         <div class="sched-mode">
-          <button class="smode on" id="mode-tomorrow" onclick="setMode('tomorrow')">🌅 翌日スケジュール<br><span style="font-size:.72rem;font-weight:400">08:30〜 訪問開始</span></button>
+          <button class="smode on" id="mode-tomorrow" onclick="setMode('tomorrow')">🌅 翌日スケジュール<br><span style="font-size:.72rem;font-weight:400">対象日の翌日〜開始</span></button>
           <button class="smode" id="mode-now" onclick="setMode('now')">⚡ 今からスケジュール<br><span style="font-size:.72rem;font-weight:400">現在時刻・現在地から</span></button>
         </div>
       </div>
@@ -524,9 +524,9 @@ var cases=[], done=[], seq=1, schedMode='tomorrow';
 // ===== 初期化 =====
 (function(){
   var t=new Date();
-  // 翌日をデフォルト
-  var tomorrow=new Date(t.getTime()+86400000);
-  document.getElementById("sdate").value=tomorrow.toISOString().split("T")[0];
+  // 当日をデフォルト
+  var y=t.getFullYear(), mo=('0'+(t.getMonth()+1)).slice(-2), dy=('0'+t.getDate()).slice(-2);
+  document.getElementById("sdate").value=y+'-'+mo+'-'+dy;
   document.getElementById("fd2").value=new Date(t.getTime()+7*86400000).toISOString().split("T")[0];
 })();
 
@@ -1236,9 +1236,24 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks){
       departureTime = targetArrival - trvMin3;
       departureLabel = '📅 '+morningCalBlock.title+' 開始'+fmt(morningCalBlock.start)+'の15分前到着（約'+distKm3.toFixed(0)+'km／'+trvMin3+'分）';
     } else {
-      // 場所未設定の予定：移動時間不明なので開始15分前出発
-      departureTime = targetArrival;
-      departureLabel = '📅 '+morningCalBlock.title+' 開始'+fmt(morningCalBlock.start)+'の15分前（場所未設定のため移動時間なし）';
+      // 座標なし → ARテーブルと県外キーワードでフォールバック推定
+      var fallbackPos = morningCalBlock.location ? getPos(morningCalBlock.location, null) : null;
+      if(fallbackPos && fallbackPos.lat){
+        var distKm3b = km(HOME_POS, fallbackPos);
+        var trvMin3b = Math.max(10, Math.round(distKm3b / spd * 60));
+        departureTime = targetArrival - trvMin3b;
+        departureLabel = '📅 '+morningCalBlock.title+' 開始'+fmt(morningCalBlock.start)+'の15分前到着（約'+distKm3b.toFixed(0)+'km／'+trvMin3b+'分・概算）';
+      } else if(morningCalBlock.location){
+        // 県外キーワードチェック
+        var farPrefs = ['福岡','大阪','東京','熊本','鹿児島','長崎','佐賀','大分','北九州'];
+        var isFarLoc = farPrefs.some(function(p){ return morningCalBlock.location.indexOf(p) >= 0; });
+        var estMin = isFarLoc ? 180 : 60;
+        departureTime = targetArrival - estMin;
+        departureLabel = '📅 '+morningCalBlock.title+' 開始'+fmt(morningCalBlock.start)+'の15分前到着（移動時間約'+estMin+'分・推定）';
+      } else {
+        departureTime = targetArrival;
+        departureLabel = '📅 '+morningCalBlock.title+' 開始'+fmt(morningCalBlock.start)+'の15分前（場所未設定）';
+      }
     }
   } else if(sched.length > 0){
     // 通常：1件目の訪問案件に間に合う出発時刻
@@ -1367,7 +1382,16 @@ function buildAll(){
     var day=('0'+d.getDate()).slice(-2);
     return y+'-'+m+'-'+day;
   }
-  var baseDate = isNow ? localDateStr(now) : dateStr;
+  // 翌日モードは対象日の翌日から、今からモードは今日から
+  var baseDate;
+  if(isNow){
+    baseDate = localDateStr(now);
+  } else {
+    // 翌日モード：対象日の翌日からスタート
+    var sdateObj = new Date(dateStr + 'T00:00:00');
+    sdateObj.setDate(sdateObj.getDate() + 1);
+    baseDate = localDateStr(sdateObj);
+  }
 
   console.log('buildAll cases:'+cases.length+' ids:['+cases.map(function(c){return c.id;}).join(',')+']');
   console.log('cases:'+cases.length+' ['+cases.map(function(c){return c.id;}).join(',')+']');
@@ -1544,7 +1568,10 @@ function gcalInit(){
     scope: GCAL_SCOPES,
     callback: function(resp){
       if(resp.error){
-        setSyncBar('❌ 認証エラー: ' + resp.error, false);
+        // 自動連携失敗はサイレントに（手動ボタンで再試行可能）
+        if(resp.error !== 'access_denied'){
+          setSyncBar('案件データは自動保存されます　Googleログインはカレンダー連携のみ（任意）', false);
+        }
         return;
       }
       gcalToken = resp.access_token;
@@ -1552,6 +1579,13 @@ function gcalInit(){
       gcalFetchEvents();
     }
   });
+  // 初期化後に自動でサイレント連携を試みる（ポップアップなし）
+  // 前回ログイン済みなら自動で取得できる
+  setTimeout(function(){
+    if(gcalTokenClient && !gcalToken){
+      gcalTokenClient.requestAccessToken({prompt:''});
+    }
+  }, 800);
 }
 
 function gcalConnect(){
