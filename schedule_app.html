@@ -1773,7 +1773,7 @@ function gcalFetchEvents(){
   var startDate = isNow ? localDateStr(now) : dateStr;
   var start = new Date(startDate+'T00:00:00');
   var end   = new Date(startDate+'T00:00:00');
-  end.setDate(end.getDate()+3);
+  end.setDate(end.getDate()+5); // 翌日モード対応のため5日分取得
 
   var url = 'https://www.googleapis.com/calendar/v3/calendars/primary/events'
     + '?timeMin=' + start.toISOString()
