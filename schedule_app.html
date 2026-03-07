@@ -1662,7 +1662,10 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     }
   }
 
-  // 自由案件の最適選択（現在地からの最近傍を動的に選択）
+  // 自宅座標（都城市南鷹尾町）
+  var homePos = getPos(HOME_ADR, null);
+
+  // 自由案件の最適選択（現在地からの最近傍 + 帰路方向バイアス）
   function pickFree(fromAdr, fromC, excludeIds){
     var rem = freePool.filter(function(c){
       return !placed[baseId(c.id)] && !(excludeIds && excludeIds[baseId(c.id)]);
@@ -1672,12 +1675,20 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
       ? {lat:fromC.lat, lng:fromC.lng}
       : getPos(fromAdr, null);
     if(!fromPos || !fromPos.lat) return rem[0];
-    var best=null, bestD=Infinity;
+
+    // 残り案件数に応じた帰路バイアス係数（残り少ないほど都城方向を重視）
+    var total = freePool.filter(function(c){ return !placed[baseId(c.id)]; }).length;
+    var homeBias = total <= 3 ? 0.6 : total <= 6 ? 0.35 : 0.15;
+
+    var best=null, bestScore=Infinity;
     rem.forEach(function(c){
       var cPos = getPos(c.adr, c); // stale座標は自動的にAR再ルックアップ
       if(!cPos || !cPos.lat) return;
-      var d = km(fromPos, cPos);
-      if(d < bestD){ bestD=d; best=c; }
+      var dFrom = km(fromPos, cPos);
+      var dHome = homePos ? km(cPos, homePos) : 0;
+      // スコア = 現在地→案件距離 + 案件→自宅距離 × バイアス係数
+      var score = dFrom + dHome * homeBias;
+      if(score < bestScore){ bestScore=score; best=c; }
     });
     return best || rem[0];
   }
