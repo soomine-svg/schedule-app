@@ -585,6 +585,9 @@ var AR=[
   {k:"熊本県熊本市南区",lat:32.7333,lng:130.7167},
   {k:"熊本県熊本市北区",lat:32.8667,lng:130.75},
   {k:"熊本県熊本市中央区",lat:32.7898,lng:130.7417},
+  {k:"宮崎県都城市高城町",lat:31.82,lng:131.02},
+  {k:"宮崎県都城市平塚町",lat:31.718,lng:131.07},
+  {k:"宮崎県都城市下川東",lat:31.72,lng:131.09},
   {k:"宮崎県都城市",lat:31.7234,lng:131.0644},
   {k:"宮崎県延岡市",lat:32.5817,lng:131.6625},
   {k:"宮崎県日南市",lat:31.5983,lng:131.3733},
@@ -1425,6 +1428,12 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
       return; // 時間指定なしはfreePool
     }
     if(!targetDate || isTmAvailable(c.tm, targetDate)){
+      var wEnd = TM_RANGE[c.tm][1];
+      // 窓がすでに終了している場合は今日はスキップ（翌営業日へ）
+      if(startMin >= wEnd - 15){
+        timedNG.push(c);
+        return;
+      }
       timedAvail.push(c);
     } else {
       timedNG.push(c);
@@ -1437,47 +1446,7 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
   // 時間指定なし案件
   var freePool = pool.filter(function(c){ return !c.tm || !TM_RANGE[c.tm]; });
 
-  // ===== 2-opt 経路最適化 =====
-  // freePool の最適訪問順を事前計算（greedy + 2-opt改善）
-  function optimizeRoute(pool, startP){
-    if(pool.length <= 1) return pool.slice();
-    function gp(c){ return (c.lat&&c.lng) ? {lat:c.lat,lng:c.lng} : getPos(c.adr,null); }
-    // Step1: nearest-neighbor
-    var unvis = pool.slice(), ordered = [], cur = startP;
-    while(unvis.length){
-      var best=null, bestD=Infinity;
-      unvis.forEach(function(c){ var d=km(cur,gp(c)); if(d<bestD){bestD=d;best=c;} });
-      ordered.push(best);
-      cur = gp(best);
-      unvis.splice(unvis.indexOf(best),1);
-    }
-    if(ordered.length <= 2) return ordered;
-    // Step2: 2-opt スワップで改善
-    var improved=true, iter=0;
-    while(improved && iter++<80){
-      improved=false;
-      for(var i=0;i<ordered.length-1;i++){
-        for(var j=i+2;j<ordered.length;j++){
-          var pi =gp(ordered[i]),   pi1=gp(ordered[i+1]);
-          var pj =gp(ordered[j]),   pj1=(j+1<ordered.length)?gp(ordered[j+1]):null;
-          var before = km(pi,pi1) + (pj1?km(pj,pj1):0);
-          var after  = km(pi,pj)  + (pj1?km(pi1,pj1):0);
-          if(after < before-0.05){
-            // [i+1 〜 j] を逆順に
-            var seg=ordered.slice(i+1,j+1).reverse();
-            for(var k=0;k<seg.length;k++) ordered[i+1+k]=seg[k];
-            improved=true;
-          }
-        }
-      }
-    }
-    return ordered;
-  }
-  var _optStartP = getPos(startAdr, null);
-  var optimizedOrder = optimizeRoute(freePool, _optStartP);
-  // idでインデックスを作成（pickFreeで高速参照）
-  var _optIdx = {};
-  optimizedOrder.forEach(function(c,i){ _optIdx[c.id]=i; });
+
 
   var sched   = [];
   var placed  = {};     // 配置済みbaseId
@@ -1527,15 +1496,24 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     }
   }
 
-  // 自由案件の最適選択（2-opt最適化済み順番に従う）
+  // 自由案件の最適選択（現在地からの最近傍を動的に選択）
   function pickFree(fromAdr, fromC, excludeIds){
     var rem = freePool.filter(function(c){
       return !placed[baseId(c.id)] && !(excludeIds && excludeIds[baseId(c.id)]);
     });
     if(!rem.length) return null;
-    // 事前計算した最適訪問順で並べ先頭を返す
-    rem.sort(function(a,b){ return (_optIdx[a.id]||0) - (_optIdx[b.id]||0); });
-    return rem[0];
+    var fromPos = fromC && fromC.lat && fromC.lng
+      ? {lat:fromC.lat, lng:fromC.lng}
+      : getPos(fromAdr, null);
+    if(!fromPos || !fromPos.lat) return rem[0];
+    var best=null, bestD=Infinity;
+    rem.forEach(function(c){
+      var cPos = c.lat&&c.lng ? {lat:c.lat,lng:c.lng} : getPos(c.adr,null);
+      if(!cPos || !cPos.lat) return;
+      var d = km(fromPos, cPos);
+      if(d < bestD){ bestD=d; best=c; }
+    });
+    return best || rem[0];
   }
 
   // deadline まで自由案件を詰める（FREE_START以降のみ）
