@@ -1328,9 +1328,13 @@ function geocodeAddress(adr, callback){
 }
 
 function getPos(adr, caseObj){
-  // フォールバック座標（橘通）がセットされている場合はARで再ルックアップ
+  // フォールバック座標（橘通 or 都城市一般）がセットされている場合はARで再ルックアップ
   var FALLBACK_LAT=31.9115, FALLBACK_LNG=131.4237;
-  var isFallback = caseObj && caseObj.lat===FALLBACK_LAT && caseObj.lng===FALLBACK_LNG;
+  var MIYAKONOJO_LAT=31.7234, MIYAKONOJO_LNG=131.0644; // 都城市一般座標
+  var isFallback = caseObj && (
+    (caseObj.lat===FALLBACK_LAT && caseObj.lng===FALLBACK_LNG) ||
+    (caseObj.lat===MIYAKONOJO_LAT && caseObj.lng===MIYAKONOJO_LNG && adr && adr.indexOf('都城市') >= 0)
+  );
   if(caseObj && caseObj.lat && caseObj.lng && !isFallback){
     return {k:adr, lat:caseObj.lat, lng:caseObj.lng};
   }
@@ -1454,10 +1458,9 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
   var prev    = startAdr;
   var prevC   = null;   // 直前の案件オブジェクト
 
-  // 距離計算（lat/lngがあれば優先）
+  // 距離計算（stale座標はgetPosで自動AR再ルックアップ）
   function pos(adr, cObj){
-    if(cObj && cObj.lat && cObj.lng) return {lat:cObj.lat, lng:cObj.lng};
-    return getPos(adr);
+    return getPos(adr, cObj);
   }
   function dist(fromAdr, fromC, toAdr, toC){
     return km(pos(fromAdr,fromC), pos(toAdr,toC));
@@ -1508,7 +1511,7 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     if(!fromPos || !fromPos.lat) return rem[0];
     var best=null, bestD=Infinity;
     rem.forEach(function(c){
-      var cPos = c.lat&&c.lng ? {lat:c.lat,lng:c.lng} : getPos(c.adr,null);
+      var cPos = getPos(c.adr, c); // stale座標は自動的にAR再ルックアップ
       if(!cPos || !cPos.lat) return;
       var d = km(fromPos, cPos);
       if(d < bestD){ bestD=d; best=c; }
