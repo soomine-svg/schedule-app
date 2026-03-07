@@ -1847,6 +1847,8 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks){
     // 通常：1件目の訪問案件に間に合う出発時刻
     var first = sched[0];
     departureTime = first.st - first.trv;
+    // 今からモードでは現在時刻より前にならないよう補正
+    if(isNow) departureTime = Math.max(departureTime, startMin);
     departureLabel = '1件目（'+first.id+'）に間に合う出発時刻';
   } else if(calBlocks && calBlocks.length > 0){
     var firstBlock = calBlocks[0];
@@ -2048,6 +2050,8 @@ function buildAllCore(){
       var earliest = Math.min.apply(null, earlyWindows.map(function(c){ return TM_RANGE[c.tm][0]; }));
       adjustedStart = Math.min(startMin, earliest);
     }
+    // 今からモードの1日目は現在時刻より前に巻き戻さない
+    if(isNow && d===0) adjustedStart = Math.max(adjustedStart, startMin);
     // カレンダーブロック取得
     var calBlocks = (typeof gcalGetBlocks==='function') ? gcalGetBlocks(dStr) : [];
 
