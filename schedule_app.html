@@ -40,6 +40,9 @@ header h1{font-size:1.1rem;font-weight:700}
 .sum-box .n{font-size:1.6rem;font-weight:800;color:#2b6cb0}
 .sum-box .l{font-size:.72rem;color:#4a5568}
 .tl-row{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid #edf2f7}
+.tl-row.sched-done{opacity:.45;background:#f0fff4}
+.tl-row.sched-done .tl-name{text-decoration:line-through;color:#718096}
+.tl-row.sched-done .tl-dot{background:#38a169}
 .tl-t{min-width:68px;font-size:.8rem;font-weight:700;color:#2b6cb0;text-align:right;padding-top:2px}
 .tl-dot{width:11px;height:11px;border-radius:50%;background:#2b6cb0;margin-top:4px;flex-shrink:0}
 .tl-dot.e{background:#f6ad55}.tl-dot.w{background:#f6e05e}
@@ -138,8 +141,9 @@ header h1{font-size:1.1rem;font-weight:700}
         <div class="fg"><label>最終納期</label><input id="fd2" type="date"></div>
         <div class="fg">
           <label>時間指定</label>
-          <select id="ftm">
+          <select id="ftm" onchange="onTmChange()">
             <option value="">指定なし</option>
+            <option value="pinpoint">📌 時刻ピンポイント指定</option>
             <option value="平日">平日</option>
             <option value="平日6-7">平日6〜7時</option>
             <option value="平日7-8">平日7〜8時</option>
@@ -157,6 +161,10 @@ header h1{font-size:1.1rem;font-weight:700}
             <option value="休日12-17">休日12〜17時</option>
             <option value="休日17-20">休日17〜20時</option>
           </select>
+        </div>
+        <div class="fg" id="pinpoint-row" style="display:none">
+          <label>📌 到着時刻（ピンポイント）</label>
+          <input id="fpin" type="time" value="10:00" style="font-size:.95rem;font-weight:600;color:#553c9a">
         </div>
         <div class="fg"><label>所要時間（分）</label><input id="fdur" type="number" value="10" min="5" max="240" step="5"></div>
       </div>
@@ -191,8 +199,14 @@ header h1{font-size:1.1rem;font-weight:700}
     <div class="card">
       <h2>📋 案件一覧（<span id="cnt">0</span>件）</h2>
       <div id="geocode-status" style="margin-bottom:8px;font-size:.82rem;color:#2b6cb0;min-height:18px"></div>
-      <div style="margin-bottom:10px">
-        <button class="btn bt" onclick="reGeoAll()" style="font-size:.8rem">📍 座標未取得の案件を一括再取得</button>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+        <div style="position:relative;flex:1;min-width:180px">
+          <input id="case-search" type="text" placeholder="🔍 ID・住所で検索" oninput="renderCases()"
+            style="width:100%;padding:8px 10px 8px 12px;border:1.5px solid #bee3f8;border-radius:7px;font-size:.88rem;background:#f7faff">
+          <button onclick="document.getElementById('case-search').value='';renderCases();"
+            style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#a0aec0;font-size:.9rem">✕</button>
+        </div>
+        <button class="btn bt" onclick="reGeoAll()" style="font-size:.8rem;white-space:nowrap">📍 座標未取得を一括再取得</button>
       </div>
       <div id="clist"><div class="empty">案件がありません</div></div>
     </div>
@@ -211,7 +225,23 @@ header h1{font-size:1.1rem;font-weight:700}
       </div>
       <div class="grid">
         <div class="fg"><label>対象日（1日目）</label><input id="sdate" type="date"></div>
-        <div class="fg"><label id="loc-label">出発地（今からモード時）</label><input id="sloc" placeholder="例: 宮崎県都城市南鷹尾町33-11" value="宮崎県都城市南鷹尾町33-11"></div>
+        <div class="fg" style="grid-column:span 2">
+          <label>出発地</label>
+          <select id="sloc-type" onchange="onSlocType()" style="margin-bottom:5px;width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:7px;font-size:.88rem">
+            <option value="home">🏠 自宅（都城市南鷹尾町33-11）</option>
+            <option value="current">📍 現在地（GPS取得）</option>
+            <option value="custom">✏️ 住所を直接入力</option>
+          </select>
+          <div id="sloc-custom-row" style="display:none">
+            <input id="sloc" placeholder="例: 宮崎市橘通東3-1-1" style="width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:7px;font-size:.88rem">
+          </div>
+          <div id="sloc-gps-status" style="font-size:.78rem;color:#2b6cb0;margin-top:3px;min-height:16px"></div>
+        </div>
+        <div class="fg">
+          <label>🌅 翌日モード 出発時刻</label>
+          <input id="sstart" type="time" value="08:30" style="font-size:.95rem;width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:7px">
+          <div style="font-size:.73rem;color:#a0aec0;margin-top:2px">今からモード時は現在時刻を自動使用</div>
+        </div>
         <div class="fg"><label>平均時速（km/h）</label><input id="sspd" type="number" value="40" min="20" max="100" step="10"></div>
       </div>
       <div class="btn-row">
@@ -1003,6 +1033,47 @@ function setMode(m){
   document.getElementById("mode-now").classList.toggle("on",m==="now");
 }
 
+function onSlocType(){
+  var t=document.getElementById("sloc-type").value;
+  document.getElementById("sloc-custom-row").style.display = t==="custom" ? "block" : "none";
+  var gpsStatus = document.getElementById("sloc-gps-status");
+  if(t==="current"){
+    gpsStatus.style.display="block";
+    gpsStatus.textContent="📡 GPS取得中...";
+    if(navigator.geolocation){
+      navigator.geolocation.getCurrentPosition(function(pos){
+        window._gpsLat = pos.coords.latitude;
+        window._gpsLng = pos.coords.longitude;
+        gpsStatus.textContent="✅ 現在地取得済み（"+pos.coords.latitude.toFixed(4)+", "+pos.coords.longitude.toFixed(4)+")";
+      }, function(){
+        gpsStatus.textContent="⚠️ GPS取得失敗。自宅を使用します";
+        window._gpsLat=null; window._gpsLng=null;
+      });
+    } else {
+      gpsStatus.textContent="⚠️ GPS非対応。自宅を使用します";
+    }
+  } else {
+    gpsStatus.style.display="none";
+    window._gpsLat=null; window._gpsLng=null;
+  }
+}
+
+function onTmChange(){
+  var v=document.getElementById("ftm").value;
+  document.getElementById("pinpoint-row").style.display = v==="pinpoint" ? "block" : "none";
+}
+
+function getSlocAdr(){
+  var t=document.getElementById("sloc-type").value;
+  if(t==="home") return HOME_ADR;
+  if(t==="current" && window._gpsLat && window._gpsLng) return "__GPS__";
+  if(t==="custom"){
+    var v=document.getElementById("sloc").value.trim();
+    return v||HOME_ADR;
+  }
+  return HOME_ADR;
+}
+
 var TW={"宮崎県宮崎市":["旭","朝日","大淀","大島町","大塚台東","大塚台西","大塚町","大塚本町","大塚西","老松","花山手東","花山手西","江平西","江平東","江平中","江平町","霧島","錦町","清水町","広島","高千穂通","千草町","天満","東大淀","東本町","中村東","中村西","永田町","祇園","港","松橋","丸山","臨海町","若草町","吉村町","田吉","橘通東","橘通西","平和台","宮崎駅東","北川内町","高岡町","高岡町内山","高岡町小山田","高岡町飯田","高岡町真方","高岡町上倉永","高岡町下倉永","高岡町大窪","佐土原町上田島","佐土原町下田島","佐土原町東新町","佐土原町東上那珂","佐土原町西上那珂","佐土原町東菓子野","佐土原町西菓子野","清武町今泉","清武町加納","清武町木原","清武町船引","清武町岡ノ原","田野町","田野町乙","田野町甲","大字赤江","大字浮田","大字小松","大字小松台","大字上北方町","大字倉岡","大字島之内","大字下北方町","大字糸原","大字田吉","大字古城","大字熊野","大字恒久","大字芳士","大字本郷北方","大字本郷南方","大字小戸"],"宮崎県都城市":["上町","中町","下町","上東町","下東町","八幡町","姫城町","甲斐元町","早鈴町","蔵原町","大岩田町","小松原町","南横市町","北横市町","南鷹尾町","鷹尾町","明道町","新町","栄町","都島町","五十町","年見町","平塚町","志比田町","吉尾町","太郎坊町","大王町","都北町","安久町","下水流町","牟田町","上長飯町","下長飯町","今町","久保原町","西岳町","夏尾町","高崎町","山田町","山之口町","高城町"],"宮崎県延岡市":["中町","本小路","永田町","旭町","東本小路","大武町","幸町","愛宕町","岡富町","大貫町","川原崎町","南町","野田町","紺屋町","北町","出来町","天神町","昭和町","恒富町","平原町","西階町","細見町","古城町","桜ケ丘","大字北浦町古江","大字北浦町宮野浦","大字南浦町庵川","大字北方町宇納間","大字北川町川内名","大字北川町小川"],"宮崎県日向市":["上町","中町","下町","財光寺","塩見","富高","大王谷","大坪町","北町","南町","亀崎","幸脇","大字財光寺","大字塩見","大字富高","大字日知屋","大字幸脇","大字亀崎","大字南方","大字平岩","大字細島","大字美々津","大字板谷"],"宮崎県日南市":["飫肥","吾田","木山","平野","北郷町","南郷町","大字宮浦","大字板敷","大字富土","大字潟上","大字飫肥","大字酒谷","大字北郷町","大字南郷町","大字坂元"],"宮崎県串間市":["大字西方","大字北方","大字奈留","大字大平","大字市木"],"宮崎県小林市":["細野","堤","真方","南西方","北西方","永久津","水流迫","東方","南方","西方","大字細野","大字堤","大字真方","大字南西方","大字北西方","大字永久津","大字須木"],"宮崎県えびの市":["大字原田","大字島内","大字坂元","大字浦","大字池島","大字永山","大字向江"],"宮崎県西都市":["大字三宅","大字岡富","大字右松","大字妻","大字上穂北","大字下三財","大字三財","大字中間","大字穂北","大字南方","大字平郡","大字童子丸","大字荒武","大字鹿野田","大字東米良","大字調殿"],"宮崎県児湯郡高鍋町":["大字北高鍋","大字南高鍋","大字上江","大字栗薗","大字持田"],"宮崎県児湯郡新富町":["大字新田","大字富田東","大字上富田","大字下富田"],"宮崎県児湯郡川南町":["大字川南","大字平田"],"宮崎県児湯郡都農町":["大字都農","大字川北"],"宮崎県児湯郡木城町":["大字椎木","大字高城","大字石河内"],"宮崎県宮崎郡国富町":["本庄","深年","木脇","沖水","八代","城ケ崎","嵐田"],"宮崎県宮崎郡綾町":["大字北俣","大字入野","大字南俣"],"宮崎県北諸県郡三股町":["大字樺山","大字宮村","大字長田","大字餅原","大字五本松","大字蒲牟田","大字梅北"],"宮崎県西臼杵郡高千穂町":["大字三田井","大字向山","大字河内","大字岩戸","大字押方","大字田原","大字上野"],"宮崎県東臼杵郡門川町":["大字門川尾末","大字加草","大字川内","大字庵川"],"宮崎県西諸県郡高原町":["大字広原","大字後川内","大字蒲牟田"]};
 
 function onCity(){
@@ -1067,11 +1138,21 @@ function addCase(){
   var tm=document.getElementById("ftm").value;
   var dur=parseInt(document.getElementById("fdur").value)||10;
   var ely=document.getElementById("fely").checked;
+  // ピンポイント時刻
+  var pin=null;
+  if(tm==="pinpoint"){
+    var pinVal=document.getElementById("fpin").value;
+    if(pinVal){
+      var pp=pinVal.split(":");
+      pin=parseInt(pp[0])*60+parseInt(pp[1]);
+    }
+    tm=""; // tmはクリア、pinで管理
+  }
   if(!id){alert("IDを入力してください");return;}
   if(!adr||adr.length<4){alert("住所を入力してください（市町村・町名を選択し番地を入力）");return;}
   if(cases.some(function(c){return c.id===id;})){alert("IDが重複しています");return;}
   if(!d2){alert("最終納期を入力してください");return;}
-  var newCase={no:seq++,id:id,adr:adr,d1:d1,d2:d2,tm:tm,dur:dur,ely:ely,lat:null,lng:null,geocoded:false};
+  var newCase={no:seq++,id:id,adr:adr,d1:d1,d2:d2,tm:tm,pin:pin,dur:dur,ely:ely,lat:null,lng:null,geocoded:false};
   cases.push(newCase);
   saveCases();
   renderCases();
@@ -1104,6 +1185,8 @@ function addCase(){
   document.getElementById("fdur").value=10;
   document.getElementById("fely").checked=false;
   document.getElementById("ftm").value="";
+  document.getElementById("fpin").value="10:00";
+  document.getElementById("pinpoint-row").style.display="none";
   document.getElementById("idwarn").style.display="none";
   document.getElementById("fid").focus();
 }
@@ -1245,24 +1328,45 @@ function renderCases(){
   document.getElementById("cnt").textContent=cases.length;
   var el=document.getElementById("clist");
   if(!cases.length){el.innerHTML='<div class="empty">案件がありません</div>';return;}
-  el.innerHTML=cases.map(function(c,i){
-    var geoTag = c.geocoded
-      ? '<span style="color:#38a169;font-size:.7rem" title="'+c.lat.toFixed(5)+', '+c.lng.toFixed(5)+'">📍 '+c.lat.toFixed(4)+','+c.lng.toFixed(4)+'</span>'
-      : '<span style="color:#e53e3e;font-size:.7rem">📍 座標未取得</span>';
-    return '<div class="ci'+(c.ely?" ely":"")+'">'+
-      '<div class="ci-body">'+
-      '<div class="ci-name">'+c.id+'　<a href="https://maps.google.com/?q='+encodeURIComponent(c.adr)+'" target="_blank" style="color:inherit;text-decoration:none">'+c.adr+' 🗺️</a></div>'+
-      '<div class="ci-sub">納期:'+c.d2+(c.tm?"　指定:"+c.tm:"")+"　所要:"+c.dur+"分"+(c.ely?"　⭐":"")+"　"+geoTag+"</div>"+
-      "</div>"+
-      '<div class="ci-btns">'+
-      '<button class="bg" onclick="editCase('+i+')">✏️</button>'+
-      '<button class="bo" onclick="copyCase('+i+')">📋</button>'+
-      (!c.geocoded ? '<button style="background:#bee3f8;color:#2b6cb0" title="座標を再取得" onclick="reGeocase('+i+')">📍</button>' : '')+
-      '<button style="background:#c6f6d5;color:#276749" onclick="doneCase('+i+')">✅</button>'+
-      '<button class="br" onclick="delCase('+i+')">🗑</button>'+
-      "</div></div>";
+  var sq=document.getElementById("case-search");
+  var q=sq?sq.value.trim().toLowerCase():"";
+  var filtered=q?cases.filter(function(c){
+    return c.id.toLowerCase().indexOf(q)>=0||c.adr.toLowerCase().indexOf(q)>=0;
+  }):cases;
+  if(!filtered.length){el.innerHTML='<div class="empty">「'+q+'」に一致する案件がありません</div>';return;}
+  var today=new Date();
+  var ty=today.getFullYear(),tm2=("0"+(today.getMonth()+1)).slice(-2),td2=("0"+today.getDate()).slice(-2);
+  var todayStr=ty+"-"+tm2+"-"+td2;
+  function deadlineBadge(d2){
+    if(!d2) return "";
+    var diff=Math.round((new Date(d2+"T00:00:00")-new Date(todayStr+"T00:00:00"))/86400000);
+    if(diff<0)  return '<span style="background:#fc8181;color:white;font-size:.7rem;padding:1px 6px;border-radius:9px;font-weight:700;margin-right:3px">⚠️超過</span>';
+    if(diff===0) return '<span style="background:#f56565;color:white;font-size:.7rem;padding:1px 6px;border-radius:9px;font-weight:700;margin-right:3px">🔴本日</span>';
+    if(diff===1) return '<span style="background:#ed8936;color:white;font-size:.7rem;padding:1px 6px;border-radius:9px;font-weight:700;margin-right:3px">🟠明日</span>';
+    if(diff<=3)  return '<span style="background:#ecc94b;color:#744210;font-size:.7rem;padding:1px 6px;border-radius:9px;font-weight:700;margin-right:3px">🟡あと'+diff+'日</span>';
+    if(diff<=7)  return '<span style="background:#9ae6b4;color:#276749;font-size:.7rem;padding:1px 6px;border-radius:9px;font-weight:700;margin-right:3px">🟢あと'+diff+'日</span>';
+    return "";
+  }
+  el.innerHTML=filtered.map(function(c){
+    var i=cases.indexOf(c);
+    var geoTag=c.geocoded
+      ?'<span style="color:#38a169;font-size:.7rem" title="'+c.lat.toFixed(5)+', '+c.lng.toFixed(5)+'">📍 '+c.lat.toFixed(4)+','+c.lng.toFixed(4)+'</span>'
+      :'<span style="color:#e53e3e;font-size:.7rem">📍 座標未取得</span>';
+    return '<div class="ci'+(c.ely?" ely":"")+'">'
+      +'<div class="ci-body">'
+      +'<div class="ci-name">'+deadlineBadge(c.d2)+c.id+'　<a href="https://maps.google.com/?q='+encodeURIComponent(c.adr)+'" target="_blank" style="color:inherit;text-decoration:none">'+c.adr+' 🗺️</a></div>'
+      +'<div class="ci-sub">納期:'+c.d2+(c.pin!=null?'　📌'+fmt(c.pin)+'着':(c.tm?'　指定:'+c.tm:''))+'　所要:'+c.dur+'分'+(c.ely?'　⭐':'')+'　'+geoTag+'</div>'
+      +'</div>'
+      +'<div class="ci-btns">'
+      +'<button class="bg" onclick="editCase('+i+')">✏️</button>'
+      +'<button class="bo" onclick="copyCase('+i+')">📋</button>'
+      +(!c.geocoded?'<button style="background:#bee3f8;color:#2b6cb0" title="座標を再取得" onclick="reGeocase('+i+')">📍</button>':'')
+      +'<button style="background:#c6f6d5;color:#276749" onclick="doneCase('+i+')">✅</button>'
+      +'<button class="br" onclick="delCase('+i+')">🗑</button>'
+      +'</div></div>';
   }).join("");
 }
+
 
 // ===== 座標再取得 =====
 function reGeocase(i){
@@ -1387,6 +1491,41 @@ function doneCase(i){
   done.push(c);renderCases();
   document.getElementById("hcnt").textContent=done.length;
   saveCases();
+}
+
+// スケジュール画面から直接完了（ルート表示はそのまま）
+function schedDone(cid){
+  var idx=cases.findIndex(function(c){return c.id===cid;});
+  if(idx<0){
+    // すでに完了済みの場合は視覚的に完了済み表示のみ
+    var safeId=cid.replace(/[^a-zA-Z0-9_\-]/g,'_');
+    var row=document.getElementById('tlrow-'+safeId);
+    if(row) _markRowDone(row,safeId);
+    return;
+  }
+  var c=cases.splice(idx,1)[0];
+  c.doneAt=new Date().toLocaleString("ja-JP");
+  done.push(c);
+  document.getElementById("hcnt").textContent=done.length;
+  renderCases();
+  renderHist();
+  saveCases();
+  // 該当行をDOMで完了スタイルに変更（ルート表示は再描画しない）
+  var safeId=cid.replace(/[^a-zA-Z0-9_\-]/g,'_');
+  var row=document.getElementById('tlrow-'+safeId);
+  if(row) _markRowDone(row,safeId);
+}
+
+function _markRowDone(row, safeId){
+  row.classList.add('sched-done');
+  var btn=document.getElementById('tlbtn-'+safeId);
+  if(btn){
+    btn.textContent='✅ 完了済み';
+    btn.disabled=true;
+    btn.style.background='#e2e8f0';
+    btn.style.color='#718096';
+    btn.style.cursor='default';
+  }
 }
 function delCase(i){if(confirm("削除しますか？")){cases.splice(i,1);renderCases();saveCases();}}
 function restoreCase(i){
@@ -1591,6 +1730,16 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
   var timedNG    = [];   // 今日は訪問不可（平日→休日、休日→平日）
 
   pool.forEach(function(c){
+    // ピンポイント時刻指定
+    if(c.pin != null){
+      // 最終納期チェック
+      if(startMin >= c.pin + c.dur){
+        timedNG.push(c); // すでに終了時刻を過ぎている
+        return;
+      }
+      timedAvail.push(c);
+      return;
+    }
     if(!c.tm || !TM_RANGE[c.tm]){
       return; // 時間指定なしはfreePool
     }
@@ -1607,11 +1756,15 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     }
   });
 
-  // 時間指定あり→時刻順ソート
-  timedAvail.sort(function(a,b){ return TM_RANGE[a.tm][0]-TM_RANGE[b.tm][0]; });
+  // 時間指定あり→時刻順ソート（pin案件はpin時刻、tm案件はTM_RANGE開始で比較）
+  timedAvail.sort(function(a,b){
+    var aT = a.pin!=null ? a.pin : TM_RANGE[a.tm][0];
+    var bT = b.pin!=null ? b.pin : TM_RANGE[b.tm][0];
+    return aT-bT;
+  });
 
-  // 時間指定なし案件
-  var freePool = pool.filter(function(c){ return !c.tm || !TM_RANGE[c.tm]; });
+  // 時間指定なし案件（pinもtmもない）
+  var freePool = pool.filter(function(c){ return c.pin==null && (!c.tm || !TM_RANGE[c.tm]); });
 
 
 
@@ -1724,6 +1877,24 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
   // curは前の案件終了後の時刻。巻き戻しは行わない
   timedAvail.forEach(function(tc){
     if(placed[baseId(tc.id)]) return;
+
+    // ── ピンポイント時刻案件 ──
+    if(tc.pin != null){
+      var trvToPin = trv(prev, prevC, tc.adr, tc);
+      var latestDepart = tc.pin - trvToPin;
+      if(cur > latestDepart + 15) return; // 15分超過は間に合わない
+      // ピン前の隙間に自由案件を詰める
+      if(tc.pin > FREE_START && latestDepart > cur){
+        fillFree(latestDepart);
+      }
+      var st = Math.max(cur + trv(prev, prevC, tc.adr, tc), FREE_START);
+      st = Math.min(st, tc.pin); // ピン時刻を超えない
+      if(st + tc.dur <= FREE_DAY_END){
+        place(tc, st);
+      }
+      return;
+    }
+
     var wStart = TM_RANGE[tc.tm][0];
     var wEnd   = TM_RANGE[tc.tm][1];
     var trvToTc = trv(prev, prevC, tc.adr, tc);
@@ -1917,16 +2088,22 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks){
         (nextC&&nextC.lat&&nextC.lng)?{lat:nextC.lat,lng:nextC.lng}:getPos(nextC?nextC.adr:'')
       ).toFixed(1)+'km';
       var hasTm=c.tm&&TM_RANGE[c.tm];
-      var rowStyle=hasTm?'background:#fffbf0;border-left:3px solid #f6ad55;padding-left:6px;border-radius:4px;':'';
-      h+='<div class="tl-row" style="'+rowStyle+'">'+
-        '<div class="tl-t">'+fmt(c.st)+'<br><span style="color:#a0aec0;font-size:.7rem">〜'+fmt(c.st+c.dur)+'</span></div>'+
+      var pinStyle=c.pin!=null?'background:#faf5ff;border-left:3px solid #9f7aea;padding-left:6px;border-radius:4px;':'';
+      var rowStyle=(hasTm?'background:#fffbf0;border-left:3px solid #f6ad55;padding-left:6px;border-radius:4px;':pinStyle);
+      var safeId=c.id.replace(/[^a-zA-Z0-9_\-]/g,'_');
+      var escapedId=c.id.replace(/'/g,"\\'");
+      h+='<div class="tl-row" id="tlrow-'+safeId+'" style="'+rowStyle+'">'+
+        '<div class="tl-t">'+fmt(c.st)+'<br><span style="color:#a0aec0;font-size:.7rem">〜'+fmt(c.st+c.dur)+'</span><br>'+
+        '<button id="tlbtn-'+safeId+'" onclick="schedDone(\''+escapedId+'\')" '+
+        'style="margin-top:4px;padding:2px 8px;font-size:.72rem;background:#c6f6d5;color:#276749;border:none;border-radius:6px;cursor:pointer;font-weight:700;white-space:nowrap">✅ 完了</button>'+
+        '</div>'+
         '<div style="display:flex;flex-direction:column;align-items:center;padding-top:3px">'+
         '<div class="tl-dot'+(hasTm?' e':'')+'"></div>'+
         (last?'':'<div style="width:2px;flex:1;background:#e2e8f0;margin-top:2px;min-height:18px"></div>')+
         '</div>'+
         '<div class="tl-b">'+
         '<div class="tl-name">'+(c.ely?'⭐ ':'')+
-        (hasTm?'<span style="background:#f6ad55;color:#744210;font-size:.72rem;padding:1px 6px;border-radius:10px;margin-right:4px;font-weight:700">'+c.tm+'</span>':'')+
+        (c.pin!=null?'<span style="background:#9f7aea;color:white;font-size:.72rem;padding:1px 6px;border-radius:10px;margin-right:4px;font-weight:700">📌'+fmt(c.pin)+'着</span>':hasTm?'<span style="background:#f6ad55;color:#744210;font-size:.72rem;padding:1px 6px;border-radius:10px;margin-right:4px;font-weight:700">'+c.tm+'</span>':'')+
         (i+1)+'. '+c.id+'　<a href="https://maps.google.com/?q='+encodeURIComponent(c.adr)+'" target="_blank" style="color:inherit;text-decoration:none">'+c.adr+' 🗺️</a></div>'+
         '<div class="tl-sub">納期:'+c.d2+'　所要:'+c.dur+'分'+
         (c.wait>0?'　<span style="color:#d69e2e">⏳待機'+c.wait+'分</span>':'')+
@@ -1986,10 +2163,24 @@ function buildAllCore(){
   var now     = new Date();
   var isNow   = schedMode==='now';
 
-  var day1Min = isNow ? (now.getHours()*60+now.getMinutes()) : 8*60+30;
-  // 出発地: 今からモードは現在地、翌日モードは「出発地」入力欄（自宅）
-  var slocVal = document.getElementById("sloc").value.trim() || HOME_ADR;
-  var day1Adr = isNow ? slocVal : slocVal;
+  // 翌日モードの出発時刻（sstart入力欄）
+  var sstartVal = document.getElementById("sstart") ? document.getElementById("sstart").value : "08:30";
+  var sstartParts = sstartVal.split(":");
+  var sstartMin = parseInt(sstartParts[0])*60+(parseInt(sstartParts[1])||0);
+
+  var day1Min = isNow ? (now.getHours()*60+now.getMinutes()) : sstartMin;
+
+  // 出発地の取得（3種類対応）
+  var slocType = document.getElementById("sloc-type") ? document.getElementById("sloc-type").value : "home";
+  var day1Adr, day1Pos=null;
+  if(slocType==="current" && window._gpsLat && window._gpsLng){
+    day1Adr = HOME_ADR; // アドレス文字列はフォールバック用
+    day1Pos = {lat:window._gpsLat, lng:window._gpsLng}; // GPS座標を直接使用
+  } else if(slocType==="custom"){
+    day1Adr = (document.getElementById("sloc") ? document.getElementById("sloc").value.trim() : "") || HOME_ADR;
+  } else {
+    day1Adr = HOME_ADR;
+  }
   // ローカル日付を使う（toISOString()はUTCのため日本では日付がずれる）
   function localDateStr(d){
     var y=d.getFullYear();
@@ -2017,8 +2208,8 @@ function buildAllCore(){
     var date = new Date(baseDate+'T00:00:00');
     date.setDate(date.getDate()+d);
     var dStr     = localDateStr(date);
-    var startMin = d===0 ? day1Min : 8*60+30;
-    var startAdr = d===0 ? day1Adr : slocVal; // 毎日自宅から出発
+    var startMin = d===0 ? day1Min : sstartMin;
+    var startAdr = d===0 ? day1Adr : HOME_ADR; // 2日目以降は自宅から
 
     if(!remaining.length){
       html+='<div class="card"><h2>'+['🌅 1日目','☀️ 2日目','🌆 3日目'][d]+'　'+dStr+
@@ -2035,6 +2226,17 @@ function buildAllCore(){
     }
 
     // 枝番ルール：各ベースIDから今日1件（時間指定優先）
+    // 今日完了済みのbaseIdを取得（doneAtが今日の日付のもの）
+    var todayStr = dStr; // YYYY-MM-DD形式
+    var doneBasesToday = {};
+    done.forEach(function(c){
+      if(c.doneAt){
+        // doneAtは "YYYY/M/D..." or "YYYY-MM-DD..." 形式
+        var doneDate = c.doneAt.replace(/\//g,'-').slice(0,10);
+        if(doneDate === todayStr) doneBasesToday[baseId(c.id)] = true;
+      }
+    });
+
     var byBase={};
     remaining.forEach(function(c){
       var b=baseId(c.id);
@@ -2045,6 +2247,11 @@ function buildAllCore(){
     var todayPool=[], carriedOver=[];
     Object.keys(byBase).forEach(function(b){
       var arr=byBase[b];
+      // 今日すでに同baseIdを完了済みなら全て翌日へ
+      if(doneBasesToday[b]){
+        arr.forEach(function(c){ carriedOver.push(c); });
+        return;
+      }
       if(arr.length===1){ todayPool.push(arr[0]); return; }
       var withTm=arr.filter(function(c){ return c.tm&&TM_RANGE[c.tm]; });
       var chosen=withTm.length?withTm[0]:arr[0];
