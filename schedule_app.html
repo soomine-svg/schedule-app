@@ -2106,17 +2106,49 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
   }
 
 
-  // deadline まで自由案件を詰める（FREE_START以降のみ）
+  // deadline まで自由案件を詰める（FREE_START以降のみ・カレンダーブロックをまたぐ）
   function fillFree(deadline){
     var effDeadline = Math.min(deadline, FREE_DAY_END);
     if(effDeadline <= FREE_START) return;
     deadline = effDeadline;
     var skip={}, iter=0;
-    while(iter++ < 300){
+    while(iter++ < 400){
+      // ── curがカレンダーブロック内に入っていたらブロック後にジャンプ ──
+      var jumped = false;
+      for(var ci=0; ci<calBlocks.length; ci++){
+        var cb = calBlocks[ci];
+        if(cur >= cb.start - 3 && cur < cb.end){
+          cur = cb.end + 15;
+          // ブロック終了地点から再開（場所情報があれば更新）
+          if(cb.location && cb.location.length > 5) prev = cb.location;
+          skip = {};
+          jumped = true;
+          break;
+        }
+      }
+      if(cur >= deadline) break;
+
       var next = pickFree(prev, prevC, skip);
       if(!next) break;
       var t = trv(prev, prevC, next.adr, next);
       var st = Math.max(cur+t, FREE_START);
+
+      // ── 案件がブロックにかかる場合はブロック後にジャンプして再試行 ──
+      var blockConflict = null;
+      for(var cj=0; cj<calBlocks.length; cj++){
+        var cbb = calBlocks[cj];
+        if(st < cbb.end && (st + next.dur) > cbb.start){
+          blockConflict = cbb;
+          break;
+        }
+      }
+      if(blockConflict){
+        cur = blockConflict.end + 15;
+        if(blockConflict.location && blockConflict.location.length > 5) prev = blockConflict.location;
+        skip = {};
+        continue;
+      }
+
       if(st+next.dur <= deadline){
         if(cur < FREE_START) cur = FREE_START;
         place(next, st);
@@ -2596,52 +2628,9 @@ function buildAllCore(){
     // カレンダーブロック取得
     var calBlocks = (typeof gcalGetBlocks==='function') ? gcalGetBlocks(dStr) : [];
 
-    // その日の有効な案件終了デッドライン（午後以降のブロックのみ対象）
-    var effectiveDayEnd = 20*60+15; // デフォルト20:15
-    var afternoonBlocks = calBlocks.filter(function(b){ return b.start >= 12*60; });
-    if(afternoonBlocks.length > 0){
-      afternoonBlocks.forEach(function(block){
-        var bufMin = 30; // デフォルトバッファ30分
-        if(block.lat && block.lng){
-          // プール内の案件でイベントに最も近い場所からの距離で計算
-          var blockPos = {lat: block.lat, lng: block.lng};
-          // todayPoolの中でイベントに最も近い案件からの距離で計算
-          var minDist = null;
-          todayPool.forEach(function(c){
-            var cPos = c.lat && c.lng ? {lat:c.lat, lng:c.lng} : getPos(c.adr, null);
-            if(cPos && cPos.lat){
-              var d = km(cPos, blockPos);
-              if(minDist === null || d < minDist) minDist = d;
-            }
-          });
-          if(minDist === null){
-            var homePos2 = {lat:31.7150, lng:131.0800};
-            minDist = km(homePos2, blockPos);
-          }
-          var travelMin = Math.max(5, Math.round(minDist / spd * 60));
-          bufMin = travelMin + 15; // 15分バッファ（出発準備）
-          console.log('[CalBuffer] '+block.title+' 最近案件から距離:'+minDist.toFixed(0)+'km 移動:'+travelMin+'分 締切:'+(block.start-bufMin));
-        } else if(block.location){
-          // まず県外キーワードで判定（getPos は宮崎外の住所に対応していないため優先チェック）
-          var farPrefectures = ['福岡','大阪','東京','名古屋','広島','熊本','鹿児島','長崎','佐賀','北九州','大分','愛媛','高知','山口'];
-          var isFar = farPrefectures.some(function(p){ return block.location.indexOf(p) >= 0; });
-          if(isFar){
-            bufMin = 3*60+30; // 県外: 3.5時間バッファ（移動3時間＋余裕30分）
-          } else {
-            // 宮崎県内: getPos で距離計算
-            var blockPos2 = getPos(block.location, null);
-            var homePos2 = {lat:31.7150, lng:131.0800}; // 自宅（都城市南鷹尾町）
-            var distKm2 = km(homePos2, blockPos2);
-            var travelMin2 = Math.max(10, Math.round(distKm2 / spd * 60));
-            bufMin = travelMin2 + 30;
-          }
-        }
-        var deadline = block.start - bufMin;
-        if(deadline < effectiveDayEnd){
-          effectiveDayEnd = Math.max(deadline, 8*60+30);
-        }
-      });
-    }
+    // effectiveDayEnd は常に20:15。カレンダーブロックとの衝突はscheduleDay内で動的に処理する
+    // （ブロックをまたいでブロック後の時間も活用するため、ここでは削らない）
+    var effectiveDayEnd = 20*60+15;
 
     // 午前予定があればstartMinをその後にシフト（全日対応）
     var hasMorning = calBlocks.some(function(b){ return b.start < 12*60; });
