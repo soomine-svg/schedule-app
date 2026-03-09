@@ -144,7 +144,7 @@ header h1{font-size:1.1rem;font-weight:700}
           <label>時間指定</label>
           <select id="ftm" onchange="onTmChange()">
             <option value="">指定なし</option>
-            <option value="pinpoint">📌 時刻ピンポイント指定</option>
+            <option value="pinpoint">📌 日時ピンポイント指定</option>
             <option value="平日">平日</option>
             <option value="平日6-7">平日6〜7時</option>
             <option value="平日7-8">平日7〜8時</option>
@@ -164,8 +164,17 @@ header h1{font-size:1.1rem;font-weight:700}
           </select>
         </div>
         <div class="fg" id="pinpoint-row" style="display:none">
-          <label>📌 到着時刻（ピンポイント）</label>
-          <input id="fpin" type="time" value="10:00" style="font-size:.95rem;font-weight:600;color:#553c9a">
+          <label>📌 日時ピンポイント指定</label>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <div style="display:flex;flex-direction:column;gap:2px">
+              <span style="font-size:.72rem;color:#718096">日付（省略可・省略時は毎日対象）</span>
+              <input id="fpindate" type="date" style="padding:7px 9px;border:1.5px solid #d6bcfa;border-radius:7px;font-size:.88rem;color:#553c9a">
+            </div>
+            <div style="display:flex;flex-direction:column;gap:2px">
+              <span style="font-size:.72rem;color:#718096">到着時刻</span>
+              <input id="fpin" type="time" value="10:00" style="padding:7px 9px;border:1.5px solid #d6bcfa;border-radius:7px;font-size:.95rem;font-weight:600;color:#553c9a">
+            </div>
+          </div>
         </div>
         <div class="fg"><label>所要時間（分）</label><input id="fdur" type="number" value="10" min="5" max="240" step="5"></div>
       </div>
@@ -317,8 +326,9 @@ header h1{font-size:1.1rem;font-weight:700}
       <div class="fg"><label>最終納期</label><input id="eDd2" type="date"></div>
       <div class="fg">
         <label>時間指定</label>
-        <select id="eTm">
+        <select id="eTm" onchange="onEditTmChange()">
           <option value="">指定なし</option>
+          <option value="pinpoint">📌 日時ピンポイント指定</option>
           <option value="平日">平日</option>
           <option value="平日6-7">平日6〜7時</option>
           <option value="平日7-8">平日7〜8時</option>
@@ -336,6 +346,19 @@ header h1{font-size:1.1rem;font-weight:700}
           <option value="休日12-17">休日12〜17時</option>
           <option value="休日17-20">休日17〜20時</option>
         </select>
+      </div>
+      <div class="fg" id="edit-pinpoint-row" style="display:none">
+        <label>📌 日時ピンポイント</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <div style="display:flex;flex-direction:column;gap:2px">
+            <span style="font-size:.72rem;color:#718096">日付（省略可）</span>
+            <input id="ePinDate" type="date" style="padding:6px 9px;border:1.5px solid #d6bcfa;border-radius:7px;font-size:.88rem;color:#553c9a">
+          </div>
+          <div style="display:flex;flex-direction:column;gap:2px">
+            <span style="font-size:.72rem;color:#718096">到着時刻</span>
+            <input id="ePinTime" type="time" value="10:00" style="padding:6px 9px;border:1.5px solid #d6bcfa;border-radius:7px;font-size:.95rem;font-weight:600;color:#553c9a">
+          </div>
+        </div>
       </div>
       <div class="fg"><label>所要時間（分）</label><input id="eDur" type="number" min="5" max="240" step="5"></div>
     </div>
@@ -1090,6 +1113,10 @@ function onTmChange(){
   var v=document.getElementById("ftm").value;
   document.getElementById("pinpoint-row").style.display = v==="pinpoint" ? "block" : "none";
 }
+function onEditTmChange(){
+  var v=document.getElementById("eTm").value;
+  document.getElementById("edit-pinpoint-row").style.display = v==="pinpoint" ? "block" : "none";
+}
 
 function getSlocAdr(){
   var t=document.getElementById("sloc-type").value;
@@ -1166,21 +1193,22 @@ function addCase(){
   var tm=document.getElementById("ftm").value;
   var dur=parseInt(document.getElementById("fdur").value)||10;
   var ely=document.getElementById("fely").checked;
-  // ピンポイント時刻
-  var pin=null;
+  // ピンポイント日時
+  var pin=null, pinDate=null;
   if(tm==="pinpoint"){
     var pinVal=document.getElementById("fpin").value;
     if(pinVal){
       var pp=pinVal.split(":");
       pin=parseInt(pp[0])*60+parseInt(pp[1]);
     }
-    tm=""; // tmはクリア、pinで管理
+    pinDate=document.getElementById("fpindate").value||null; // 空文字→null（日付指定なし）
+    tm=""; // tmはクリア、pin/pinDateで管理
   }
   if(!id){alert("IDを入力してください");return;}
   if(!adr||adr.length<4){alert("住所を入力してください（市町村・町名を選択し番地を入力）");return;}
   if(cases.some(function(c){return c.id===id;})){alert("IDが重複しています");return;}
   if(!d2){alert("最終納期を入力してください");return;}
-  var newCase={no:seq++,id:id,adr:adr,d1:d1,d2:d2,tm:tm,pin:pin,dur:dur,ely:ely,lat:null,lng:null,geocoded:false};
+  var newCase={no:seq++,id:id,adr:adr,d1:d1,d2:d2,tm:tm,pin:pin,pinDate:pinDate,dur:dur,ely:ely,lat:null,lng:null,geocoded:false};
   cases.push(newCase);
   saveCases();
   renderCases();
@@ -1214,6 +1242,7 @@ function addCase(){
   document.getElementById("fely").checked=false;
   document.getElementById("ftm").value="";
   document.getElementById("fpin").value="10:00";
+  document.getElementById("fpindate").value="";
   document.getElementById("pinpoint-row").style.display="none";
   document.getElementById("idwarn").style.display="none";
   document.getElementById("fid").focus();
@@ -1398,7 +1427,7 @@ function renderCases(){
     return '<div class="ci'+(c.ely?" ely":"")+'">'
       +'<div class="ci-body">'
       +'<div class="ci-name">'+deadlineBadge(c.d2)+c.id+'　<a href="https://maps.google.com/?q='+encodeURIComponent(c.adr)+'" target="_blank" style="color:inherit;text-decoration:none">'+c.adr+' 🗺️</a></div>'
-      +'<div class="ci-sub">納期:'+c.d2+(c.pin!=null?'　📌'+fmt(c.pin)+'着':(c.tm?'　指定:'+c.tm:''))+'　所要:'+c.dur+'分'+(c.ely?'　⭐':'')+'　'+geoTag+'</div>'
+      +'<div class="ci-sub">納期:'+c.d2+(c.pin!=null?'　📌'+(c.pinDate?c.pinDate+' ':'')+fmt(c.pin)+'着':(c.tm?'　指定:'+c.tm:''))+'　所要:'+c.dur+'分'+(c.ely?'　⭐':'')+'　'+geoTag+'</div>'
       +'</div>'
       +'<div class="ci-btns">'
       +'<button class="bg" onclick="editCase('+i+')">✏️</button>'
@@ -1463,9 +1492,21 @@ function editCase(i){
   document.getElementById("eAdr").value=c.adr;
   document.getElementById("eDd1").value=c.d1||"";
   document.getElementById("eDd2").value=c.d2||"";
-  document.getElementById("eTm").value=c.tm||"";
   document.getElementById("eDur").value=c.dur;
   document.getElementById("eEly").checked=c.ely;
+  // ピンポイント判定
+  if(c.pin!=null){
+    document.getElementById("eTm").value="pinpoint";
+    document.getElementById("ePinDate").value=c.pinDate||"";
+    var ph=Math.floor(c.pin/60), pm=c.pin%60;
+    document.getElementById("ePinTime").value=('0'+ph).slice(-2)+':'+('0'+pm).slice(-2);
+    document.getElementById("edit-pinpoint-row").style.display="block";
+  } else {
+    document.getElementById("eTm").value=c.tm||"";
+    document.getElementById("ePinDate").value="";
+    document.getElementById("ePinTime").value="10:00";
+    document.getElementById("edit-pinpoint-row").style.display="none";
+  }
   document.getElementById("editModal").classList.add("on");
 }
 function onZipEdit(val){
@@ -1497,13 +1538,22 @@ function saveEdit(){
   if(cases.some(function(c,j){return c.id===newId&&j!==i;})){alert("IDが重複しています");return;}
   var newAdr=document.getElementById("eAdr").value.trim();
   var adrChanged=(cases[i].adr!==newAdr);
+  // ピンポイント処理
+  var eTmVal=document.getElementById("eTm").value;
+  var newTm=eTmVal, newPin=null, newPinDate=null;
+  if(eTmVal==="pinpoint"){
+    var ptVal=document.getElementById("ePinTime").value;
+    if(ptVal){ var pp=ptVal.split(":"); newPin=parseInt(pp[0])*60+parseInt(pp[1]); }
+    newPinDate=document.getElementById("ePinDate").value||null;
+    newTm="";
+  }
   cases[i]=Object.assign({},cases[i],{
     id:newId,adr:newAdr,
     d1:document.getElementById("eDd1").value,d2:document.getElementById("eDd2").value,
-    tm:document.getElementById("eTm").value,dur:parseInt(document.getElementById("eDur").value)||10,
+    tm:newTm,pin:newPin,pinDate:newPinDate,
+    dur:parseInt(document.getElementById("eDur").value)||10,
     ely:document.getElementById("eEly").checked
   });
-  // 住所が変わった場合は再geocode
   if(adrChanged){
     cases[i].lat=null; cases[i].lng=null; cases[i].geocoded=false;
     var caseRef2=cases[i];
@@ -1907,8 +1957,14 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
   var timedNG    = [];   // 今日は訪問不可（平日→休日、休日→平日）
 
   pool.forEach(function(c){
-    // ピンポイント時刻指定
+    // ピンポイント日時指定
     if(c.pin != null){
+      // 日付指定がある場合：対象日と一致しない日はスキップ（翌日以降へ）
+      if(c.pinDate && targetDate){
+        var td=targetDate;
+        var tdStr=td.getFullYear()+'-'+('0'+(td.getMonth()+1)).slice(-2)+'-'+('0'+td.getDate()).slice(-2);
+        if(tdStr !== c.pinDate){ timedNG.push(c); return; }
+      }
       // ピン時刻を20分超過している場合のみ本日訪問不可（遅着20分まで許容）
       if(startMin > c.pin + 20){
         timedNG.push(c); // すでにピン時刻を大幅に過ぎている
@@ -2362,7 +2418,7 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
         '</div>'+
         '<div class="tl-b">'+
         '<div class="tl-name">'+(c.ely?'⭐ ':'')+
-        (c.pin!=null?'<span style="background:#9f7aea;color:white;font-size:.72rem;padding:1px 6px;border-radius:10px;margin-right:4px;font-weight:700">📌'+fmt(c.pin)+'着</span>':isLateNight?'<span style="background:#805ad5;color:white;font-size:.72rem;padding:1px 6px;border-radius:10px;margin-right:4px;font-weight:700">🌙 '+c.tm+'</span>':hasTm?'<span style="background:#f6ad55;color:#744210;font-size:.72rem;padding:1px 6px;border-radius:10px;margin-right:4px;font-weight:700">'+c.tm+'</span>':'')+
+        (c.pin!=null?'<span style="background:#9f7aea;color:white;font-size:.72rem;padding:1px 6px;border-radius:10px;margin-right:4px;font-weight:700">📌'+(c.pinDate?c.pinDate.slice(5)+' ':'')+fmt(c.pin)+'着</span>':isLateNight?'<span style="background:#805ad5;color:white;font-size:.72rem;padding:1px 6px;border-radius:10px;margin-right:4px;font-weight:700">🌙 '+c.tm+'</span>':hasTm?'<span style="background:#f6ad55;color:#744210;font-size:.72rem;padding:1px 6px;border-radius:10px;margin-right:4px;font-weight:700">'+c.tm+'</span>':'')+
         (i+1)+'. '+c.id+'　<a href="https://maps.google.com/?q='+encodeURIComponent(c.adr)+'" target="_blank" style="color:inherit;text-decoration:none">'+c.adr+' 🗺️</a></div>'+
         '<div class="tl-sub">'+tlDeadlineBadge(c.d2)+'納期:'+c.d2+'　所要:'+c.dur+'分'+
         (c.wait>0?'　<span style="color:#d69e2e">⏳待機'+c.wait+'分</span>':'')+
@@ -2485,16 +2541,24 @@ function buildAllCore(){
     }
 
     // 枝番ルール：各ベースIDから今日1件（時間指定優先）
-    // 今日完了済みのbaseIdを取得（doneAtが今日の日付のもの）
+    // 今日完了済みのbaseIdを取得（実際の今日だけ適用 — 未来の予定日には適用しない）
     var todayStr = dStr; // YYYY-MM-DD形式
+    var realTodayStr = localDateStr(now); // 実際の今日の日付
     var doneBasesToday = {};
-    done.forEach(function(c){
-      if(c.doneAt){
-        // doneAtは "YYYY/M/D..." or "YYYY-MM-DD..." 形式
-        var doneDate = c.doneAt.replace(/\//g,'-').slice(0,10);
-        if(doneDate === todayStr) doneBasesToday[baseId(c.id)] = true;
-      }
-    });
+    // 「今日」のスケジュール日 = 実際の今日の場合のみ完了済み除外を適用
+    if(dStr === realTodayStr){
+      done.forEach(function(c){
+        if(c.doneAt){
+          // toLocaleString("ja-JP")は"2026/3/9 8:30:00"形式 → 正規化
+          var raw=c.doneAt.replace(/\//g,'-');
+          var m2=raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+          if(m2){
+            var doneDate=m2[1]+'-'+('0'+m2[2]).slice(-2)+'-'+('0'+m2[3]).slice(-2);
+            if(doneDate===realTodayStr) doneBasesToday[baseId(c.id)]=true;
+          }
+        }
+      });
+    }
 
     var byBase={};
     remaining.forEach(function(c){
