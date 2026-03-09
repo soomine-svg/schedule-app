@@ -108,6 +108,7 @@ header h1{font-size:1.1rem;font-weight:700}
     <button class="tab on" onclick="tab('input')">📋 案件入力</button>
     <button class="tab" onclick="tab('sched')">🗓 スケジュール</button>
     <button class="tab" onclick="tab('hist')">✅ 完了履歴</button>
+    <button class="tab" onclick="tab('visitlog')">📊 訪問記録</button>
   </div>
 
   <!-- 案件入力 -->
@@ -208,6 +209,12 @@ header h1{font-size:1.1rem;font-weight:700}
         </div>
         <button class="btn bt" onclick="reGeoAll()" style="font-size:.8rem;white-space:nowrap">📍 座標未取得を一括再取得</button>
       </div>
+      <div style="display:flex;gap:5px;margin-bottom:10px;flex-wrap:wrap">
+        <span style="font-size:.75rem;color:#718096;align-self:center;font-weight:600">並び順：</span>
+        <button id="sort-btn-reg"  class="btn bb" onclick="setCaseSort('reg')"  style="font-size:.75rem;padding:5px 10px">登録順</button>
+        <button id="sort-btn-dead" class="btn bt" onclick="setCaseSort('dead')" style="font-size:.75rem;padding:5px 10px">📅 納期順</button>
+        <button id="sort-btn-id"   class="btn bt" onclick="setCaseSort('id')"   style="font-size:.75rem;padding:5px 10px">🔢 番号順</button>
+      </div>
       <div id="clist"><div class="empty">案件がありません</div></div>
     </div>
   </div>
@@ -265,7 +272,25 @@ header h1{font-size:1.1rem;font-weight:700}
   <div class="panel" id="p-hist">
     <div class="card">
       <h2>✅ 完了済み（<span id="hcnt">0</span>件）</h2>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+        <div style="position:relative;flex:1;min-width:180px">
+          <input id="hist-search" type="text" placeholder="🔍 ID・住所で検索" oninput="renderHist()"
+            style="width:100%;padding:8px 10px 8px 12px;border:1.5px solid #bee3f8;border-radius:7px;font-size:.88rem;background:#f7faff">
+          <button onclick="document.getElementById('hist-search').value='';renderHist();"
+            style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#a0aec0;font-size:.9rem">✕</button>
+        </div>
+        <button class="btn br" onclick="clearAllDone()" style="font-size:.8rem;white-space:nowrap">🗑 全削除</button>
+      </div>
       <div id="hlist"><div class="empty">完了済みはありません</div></div>
+    </div>
+  </div>
+
+  <!-- 訪問記録 -->
+  <div class="panel" id="p-visitlog">
+    <div class="card">
+      <h2>📊 訪問記録（直近1ヶ月）</h2>
+      <div style="font-size:.78rem;color:#718096;margin-bottom:10px">案件を完了するたびに当日分が自動更新されます。</div>
+      <div id="vlog-list"><div class="empty">記録がありません</div></div>
     </div>
   </div>
 </div>
@@ -1007,6 +1032,8 @@ var GEOCODE_KEY = "AIzaSyC-bIBrdlwdoPvvNgw0miQvfv_Z17AQunM";
 
 // ===== 状態 =====
 var cases=[], done=[], seq=1, schedMode='tomorrow';
+var visitLog = [];   // [{date:'YYYY-MM-DD', count:N, areas:['宮崎市','日南市']}]
+var caseSort = 'reg'; // 'reg' | 'dead' | 'id'
 
 // ===== 初期化 =====
 (function(){
@@ -1019,11 +1046,12 @@ var cases=[], done=[], seq=1, schedMode='tomorrow';
 
 // ===== タブ =====
 function tab(name){
-  ["input","sched","hist"].forEach(function(n,i){
+  ["input","sched","hist","visitlog"].forEach(function(n,i){
     document.querySelectorAll(".tab")[i].classList.toggle("on",n===name);
     document.getElementById("p-"+n).classList.toggle("on",n===name);
   });
   if(name==="hist") renderHist();
+  if(name==="visitlog") renderVisitLog();
 }
 
 // ===== モード =====
@@ -1200,7 +1228,7 @@ var sheetSyncTimer = null;
 function saveCases(){
   // ① localStorageに即時保存
   try{
-    var payload = {cases:cases, seq:seq, updatedAt: Date.now()};
+    var payload = {cases:cases, done:done, visitLog:visitLog, seq:seq, updatedAt: Date.now()};
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     var now = new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
     var el = document.getElementById('sync-sheet-status');
@@ -1220,6 +1248,8 @@ function loadCases(){
     if(s){
       var d = JSON.parse(s);
       if(d.cases){ cases = d.cases; }
+      if(d.done){ done = d.done; }
+      if(d.visitLog){ visitLog = d.visitLog; }
       if(d.seq){ seq = d.seq; }
     } else {
       var oldC = localStorage.getItem('schedule_cases');
@@ -1234,7 +1264,7 @@ function loadCases(){
 function saveCasesToSheet(){
   if(!gcalToken) return;
   var sid = localStorage.getItem(SHEET_ID_KEY) || FIXED_SHEET_ID;
-  var data = JSON.stringify({cases:cases, seq:seq, updatedAt: Date.now()});
+  var data = JSON.stringify({cases:cases, done:done, visitLog:visitLog, seq:seq, updatedAt: Date.now()});
   var el = document.getElementById('sync-sheet-status');
   if(el) el.textContent = '☁️ シートに同期中...';
   fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sid+'/values/A1?valueInputOption=RAW',{
@@ -1272,6 +1302,8 @@ function loadCasesFromSheet(callback){
           if(remoteTime >= localTime){
             // シートが新しい → シートのデータを使用
             cases = remote.cases; seq = remote.seq||1;
+            if(remote.done) done = remote.done;
+            if(remote.visitLog) visitLog = remote.visitLog;
             localStorage.setItem(STORAGE_KEY, JSON.stringify(remote));
             renderCases();
             if(el) el.textContent = '✅ シートから'+cases.length+'件を読み込みました';
@@ -1332,8 +1364,19 @@ function renderCases(){
   var q=sq?sq.value.trim().toLowerCase():"";
   var filtered=q?cases.filter(function(c){
     return c.id.toLowerCase().indexOf(q)>=0||c.adr.toLowerCase().indexOf(q)>=0;
-  }):cases;
+  }):cases.slice();
   if(!filtered.length){el.innerHTML='<div class="empty">「'+q+'」に一致する案件がありません</div>';return;}
+  // ソート適用
+  if(caseSort==='dead'){
+    filtered.sort(function(a,b){
+      var ad=a.d2||'9999-99-99', bd=b.d2||'9999-99-99';
+      return ad<bd?-1:ad>bd?1:0;
+    });
+  } else if(caseSort==='id'){
+    filtered.sort(function(a,b){
+      return String(a.id).localeCompare(String(b.id),'ja',{numeric:true});
+    });
+  }
   var today=new Date();
   var ty=today.getFullYear(),tm2=("0"+(today.getMonth()+1)).slice(-2),td2=("0"+today.getDate()).slice(-2);
   var todayStr=ty+"-"+tm2+"-"+td2;
@@ -1488,7 +1531,9 @@ function copyCase(i){
 function doneCase(i){
   var c=cases.splice(i,1)[0];
   c.doneAt=new Date().toLocaleString("ja-JP");
-  done.push(c);renderCases();
+  done.push(c);
+  recordVisit(c);
+  renderCases();
   document.getElementById("hcnt").textContent=done.length;
   saveCases();
 }
@@ -1554,6 +1599,7 @@ function schedDone(cid){
   var c=cases.splice(idx,1)[0];
   c.doneAt=new Date().toLocaleString("ja-JP");
   done.push(c);
+  recordVisit(c);
   document.getElementById("hcnt").textContent=done.length;
   renderCases();
   renderHist();
@@ -1581,16 +1627,109 @@ function restoreCase(i){
   cases.push(c);renderCases();renderHist();
   saveCases();
 }
+function clearAllDone(){
+  if(!done.length) return;
+  if(!confirm("完了履歴を全件削除しますか？")) return;
+  done=[];renderHist();
+  document.getElementById("hcnt").textContent=0;
+  saveCases();
+}
 function renderHist(){
   document.getElementById("hcnt").textContent=done.length;
   var el=document.getElementById("hlist");
   if(!done.length){el.innerHTML='<div class="empty">完了済みはありません</div>';return;}
-  el.innerHTML=done.map(function(c,i){
+  var sq=document.getElementById("hist-search");
+  var q=sq?sq.value.trim().toLowerCase():"";
+  var filtered=q?done.filter(function(c){
+    return c.id.toLowerCase().indexOf(q)>=0||(c.adr&&c.adr.toLowerCase().indexOf(q)>=0);
+  }):done;
+  if(!filtered.length){el.innerHTML='<div class="empty">「'+q+'」に一致する履歴がありません</div>';return;}
+  // 新しい順に表示
+  var sorted=filtered.slice().reverse();
+  el.innerHTML=sorted.map(function(c){
+    var i=done.indexOf(c);
     return '<div class="ci done-item"><div class="ci-body">'+
-      '<div class="ci-name">'+c.id+"　"+c.adr+'</div>'+
-      '<div class="ci-sub">完了:'+c.doneAt+"</div></div>"+
-      '<div class="ci-btns"><button class="by" onclick="restoreCase('+i+')">↩ 戻す</button></div></div>';
+      '<div class="ci-name">'+c.id+'　<a href="https://maps.google.com/?q='+encodeURIComponent(c.adr)+'" target="_blank" style="color:inherit;text-decoration:none">'+c.adr+' 🗺️</a></div>'+
+      '<div class="ci-sub">✅ 完了:'+c.doneAt+(c.d2?'　納期:'+c.d2:'')+(c.tm?'　'+c.tm:'')+'</div>'+
+      '</div>'+
+      '<div class="ci-btns"><button class="by" onclick="restoreCase('+i+')">↩ 戻す</button>'+
+      '<button class="br" onclick="delDoneCase('+i+')" style="font-size:.75rem;padding:4px 8px">🗑</button></div></div>';
   }).join("");
+}
+function delDoneCase(i){
+  if(!confirm("この完了履歴を削除しますか？")) return;
+  done.splice(i,1);renderHist();
+  document.getElementById("hcnt").textContent=done.length;
+  saveCases();
+}
+
+// ===== 訪問記録 =====
+// 案件完了時に当日のvisitLogエントリを自動更新
+function recordVisit(c){
+  var now=new Date();
+  var dateStr=now.getFullYear()+'-'+('0'+(now.getMonth()+1)).slice(-2)+'-'+('0'+now.getDate()).slice(-2);
+  var area=getArea(c.adr)||'不明';
+  // 30日以上前のエントリを自動削除（1ヶ月分のみ保持）
+  var cutoff=new Date(); cutoff.setDate(cutoff.getDate()-30);
+  var cutoffStr=cutoff.getFullYear()+'-'+('0'+(cutoff.getMonth()+1)).slice(-2)+'-'+('0'+cutoff.getDate()).slice(-2);
+  visitLog=visitLog.filter(function(e){return e.date>=cutoffStr;});
+  // 当日エントリを検索または新規作成
+  var entry=visitLog.find(function(e){return e.date===dateStr;});
+  if(!entry){
+    entry={date:dateStr,count:0,areas:[]};
+    visitLog.push(entry);
+    visitLog.sort(function(a,b){return a.date<b.date?1:-1;}); // 新しい順
+  }
+  entry.count++;
+  if(area && entry.areas.indexOf(area)<0) entry.areas.push(area);
+}
+
+function delVisitEntry(date){
+  if(!confirm(date+' の記録を削除しますか？')) return;
+  visitLog=visitLog.filter(function(e){return e.date!==date;});
+  saveCases();
+  renderVisitLog();
+}
+
+function renderVisitLog(){
+  var el=document.getElementById('vlog-list');
+  if(!el) return;
+  if(!visitLog.length){el.innerHTML='<div class="empty">記録がありません</div>';return;}
+  var totalDays=visitLog.length;
+  var totalVisits=visitLog.reduce(function(s,e){return s+e.count;},0);
+  var html='<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px">'
+    +'<div class="sum-box"><div class="n">'+totalDays+'</div><div class="l">記録日数</div></div>'
+    +'<div class="sum-box"><div class="n">'+totalVisits+'</div><div class="l">累計訪問件数</div></div>'
+    +'</div>';
+  html+='<div>';
+  visitLog.forEach(function(e){
+    var dow=['日','月','火','水','木','金','土'][new Date(e.date+'T00:00:00').getDay()];
+    html+='<div style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:#f7fafc;border-radius:9px;border-left:4px solid #bee3f8;margin-bottom:7px">'
+      +'<div style="min-width:100px">'
+      +'<div style="font-weight:700;font-size:.88rem">'+e.date+' ('+dow+')</div>'
+      +'</div>'
+      +'<div style="flex:1">'
+      +'<span style="background:#2b6cb0;color:white;font-size:.78rem;padding:2px 9px;border-radius:9px;font-weight:700;margin-right:5px">'+e.count+'件</span>'
+      +e.areas.map(function(a){
+        return '<span style="background:#ebf4ff;color:#2b6cb0;font-size:.75rem;padding:2px 8px;border-radius:9px;margin-right:3px">'+a+'</span>';
+      }).join('')
+      +'</div>'
+      +'<button onclick="delVisitEntry(\''+e.date+'\')" title="この記録を削除" '
+      +'style="background:none;border:none;color:#fc8181;font-size:.85rem;cursor:pointer;padding:2px 5px;flex-shrink:0">🗑</button>'
+      +'</div>';
+  });
+  html+='</div>';
+  el.innerHTML=html;
+}
+
+// ===== 案件ソート =====
+function setCaseSort(s){
+  caseSort=s;
+  ['reg','dead','id'].forEach(function(k){
+    var btn=document.getElementById('sort-btn-'+k);
+    if(btn){btn.className='btn '+(k===s?'bb':'bt');}
+  });
+  renderCases();
 }
 function closeModal(id){document.getElementById(id).classList.remove("on");}
 
@@ -2004,39 +2143,35 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     arriveAt = cur + trvToTc;
     if(arriveAt > wLatestArrival) return;
 
+    // ② 窓の意味：「wStartからwEnd-15分までに現着」
+    // wStartに合わせて出発するのではなく、自然なルート進行で窓内に入ればOK
     var st;
     if(arriveAt < wStart){
-      // 早着の場合: 窓開始まで待機 or 他の案件を先に入れる
-      var optimalDepart = cur + (wStart - arriveAt);
-      var waitNeeded = wStart - arriveAt;
-      if(waitNeeded > 0 && waitNeeded <= 60){
-        // 短い待機(1時間以内): 近場の自由案件で埋める
-        cur = arriveAt;
-        fillFree(wStart);
-        trvToTc = trv(prev, prevC, tc.adr, tc);
+      // 早着の場合：「wStartに間に合う最遅出発時刻」まで自由案件を詰めてから向かう
+      // cur = arriveAt の人工的な時刻操作をせず、現時刻から出発タイミングを算出
+      var latestDepart = wStart - trvToTc; // この時刻より後に出発すると窓に遅刻
+      if(latestDepart > Math.max(cur, FREE_START)){
+        fillFree(latestDepart); // 出発時刻まで自由案件を詰める（ルートの流れを維持）
+        trvToTc = trv(prev, prevC, tc.adr, tc); // 再計算（前の案件が変わった場合）
         arriveAt = cur + trvToTc;
-        st = Math.max(wStart, arriveAt);
-      } else if(waitNeeded > 60){
-        // 長い待機(1時間超): 自由案件を詰めてから出発
-        fillFree(optimalDepart);
-        trvToTc = trv(prev, prevC, tc.adr, tc);
-        arriveAt = cur + trvToTc;
-        st = Math.max(wStart, arriveAt);
-      } else {
-        st = wStart;
       }
+      st = Math.max(wStart, arriveAt); // 窓開始以降に訪問（早着なら窓まで待機）
     } else {
-      // wStart <= arriveAt <= wLatestArrival: そのまま到着して訪問
+      // wStart <= arriveAt <= wLatestArrival: ルート進行上、窓内に自然到着 → そのまま訪問
       st = arriveAt;
     }
 
     var tcBlocked = calBlocks.some(function(b){
       return st < b.end && (st + tc.dur) > b.start;
     });
-    // 時間指定案件は窓終了（wEnd）までに作業完了すればOK
-    // ただしカレンダー予定との競合がある日はeffectiveDayEndも考慮
-    var tcDeadline = wEnd; // 窓終了時刻が締切
-    if(effectiveDayEnd && effectiveDayEnd < tcDeadline) tcDeadline = effectiveDayEnd;
+    // 時間指定案件の締切：窓終了（wEnd）までに作業完了
+    // ① イレギュラー夜間案件（wStart >= 20:00）はeffectiveDayEnd制限を適用しない
+    //   （平日20-22等は通常業務時間外の特例案件のため、窓自体が締切）
+    var isLateNight = (wStart >= 20*60); // 20:00以降開始 = 訪問可能時間外イレギュラー
+    var tcDeadline = wEnd;
+    if(!isLateNight && effectiveDayEnd && effectiveDayEnd < tcDeadline){
+      tcDeadline = effectiveDayEnd; // 通常案件のみカレンダー制約を反映
+    }
     if(!tcBlocked && st <= wLatestArrival && st + tc.dur <= tcDeadline) place(tc, st);
   });
 ;
@@ -2206,8 +2341,10 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
         (nextC&&nextC.lat&&nextC.lng)?{lat:nextC.lat,lng:nextC.lng}:getPos(nextC?nextC.adr:'')
       ).toFixed(1)+'km';
       var hasTm=c.tm&&TM_RANGE[c.tm];
+      var isLateNight = hasTm && TM_RANGE[c.tm][0] >= 20*60; // 20:00以降開始 = イレギュラー夜間
       var pinStyle=c.pin!=null?'background:#faf5ff;border-left:3px solid #9f7aea;padding-left:6px;border-radius:4px;':'';
-      var rowStyle=(hasTm?'background:#fffbf0;border-left:3px solid #f6ad55;padding-left:6px;border-radius:4px;':pinStyle);
+      var lateStyle=isLateNight?'background:#fef3ff;border-left:3px solid #b794f4;padding-left:6px;border-radius:4px;':'';
+      var rowStyle=(isLateNight?lateStyle:hasTm?'background:#fffbf0;border-left:3px solid #f6ad55;padding-left:6px;border-radius:4px;':pinStyle);
       var safeId=c.id.replace(/[^a-zA-Z0-9_\-]/g,'_');
       var escapedId=c.id.replace(/'/g,"\\'");
       h+='<div class="tl-row" id="tlrow-'+safeId+'" style="'+rowStyle+'">'+
@@ -2220,12 +2357,12 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
         '<button id="tlbtn-'+safeId+'" onclick="schedDone(\''+escapedId+'\')" style="padding:2px 7px;font-size:.72rem;background:#c6f6d5;color:#276749;border:none;border-radius:6px;cursor:pointer;font-weight:700;white-space:nowrap">✅ 完了</button>'+
         '</div>'+
         '<div style="display:flex;flex-direction:column;align-items:center;padding-top:3px">'+
-        '<div class="tl-dot'+(hasTm?' e':'')+'"></div>'+
+        '<div class="tl-dot'+(isLateNight?' w':hasTm?' e':'')+'"></div>'+
         (last?'':'<div style="width:2px;flex:1;background:#e2e8f0;margin-top:2px;min-height:18px"></div>')+
         '</div>'+
         '<div class="tl-b">'+
         '<div class="tl-name">'+(c.ely?'⭐ ':'')+
-        (c.pin!=null?'<span style="background:#9f7aea;color:white;font-size:.72rem;padding:1px 6px;border-radius:10px;margin-right:4px;font-weight:700">📌'+fmt(c.pin)+'着</span>':hasTm?'<span style="background:#f6ad55;color:#744210;font-size:.72rem;padding:1px 6px;border-radius:10px;margin-right:4px;font-weight:700">'+c.tm+'</span>':'')+
+        (c.pin!=null?'<span style="background:#9f7aea;color:white;font-size:.72rem;padding:1px 6px;border-radius:10px;margin-right:4px;font-weight:700">📌'+fmt(c.pin)+'着</span>':isLateNight?'<span style="background:#805ad5;color:white;font-size:.72rem;padding:1px 6px;border-radius:10px;margin-right:4px;font-weight:700">🌙 '+c.tm+'</span>':hasTm?'<span style="background:#f6ad55;color:#744210;font-size:.72rem;padding:1px 6px;border-radius:10px;margin-right:4px;font-weight:700">'+c.tm+'</span>':'')+
         (i+1)+'. '+c.id+'　<a href="https://maps.google.com/?q='+encodeURIComponent(c.adr)+'" target="_blank" style="color:inherit;text-decoration:none">'+c.adr+' 🗺️</a></div>'+
         '<div class="tl-sub">'+tlDeadlineBadge(c.d2)+'納期:'+c.d2+'　所要:'+c.dur+'分'+
         (c.wait>0?'　<span style="color:#d69e2e">⏳待機'+c.wait+'分</span>':'')+
@@ -2707,6 +2844,7 @@ window.addEventListener('load', function(){
     }
   });
   renderCases();
+  document.getElementById("hcnt").textContent=done.length;
   // 読み込み件数を表示
   var el = document.getElementById('sync-sheet-status');
   if(el){
