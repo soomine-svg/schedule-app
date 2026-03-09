@@ -1965,11 +1965,7 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
         var tdStr=td.getFullYear()+'-'+('0'+(td.getMonth()+1)).slice(-2)+'-'+('0'+td.getDate()).slice(-2);
         if(tdStr !== c.pinDate){ timedNG.push(c); return; }
       }
-      // ピン時刻を20分超過している場合のみ本日訪問不可（遅着20分まで許容）
-      if(startMin > c.pin + 20){
-        timedNG.push(c); // すでにピン時刻を大幅に過ぎている
-        return;
-      }
+      // ピンポイント案件は訪問可能時間を無視してスケジュール（時刻を過ぎていてもASAPで配置）
       timedAvail.push(c);
       return;
     }
@@ -2173,38 +2169,23 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     // ── ピンポイント時刻案件 ──
     if(tc.pin != null){
       var trvToPin = trv(prev, prevC, tc.adr, tc);
-
-      // ピン時刻を20分以上超過している場合のみ繰り越し（到着が20分遅れまでは当日扱い）
-      if(cur > tc.pin + 20) return;
-
-      // 最遅出発時刻
-      var latestDepart = tc.pin - trvToPin;
-
-      // ── 後ろ寄せ: 自由案件をピン直前にまとめる ──
-      // 残り自由案件の合計所要時間＋移動バッファを計算
-      var freeLeft = freePool.filter(function(c){ return !placed[baseId(c.id)]; });
-      var freeTotalDur = freeLeft.reduce(function(s,c){ return s+c.dur+10; }, 0);
-
-      // 自由案件をすべてこなした後でピンに間に合う最遅開始時刻
-      var latestFreeStart = latestDepart - freeTotalDur;
-      // 今より後ろにまとめられる余裕があれば、cur をそこまでジャンプ（待機）
-      var effectiveFreeStart = Math.max(cur, Math.max(FREE_START, latestFreeStart));
-      if(effectiveFreeStart > cur){
-        // curをjumpせず、代わりにfillFreeのstartを調整する形で後ろ寄せ
-        // （curをいじると他案件の時刻がずれるため、fillFreeのdeadlineのみ制御）
-      }
-
-      // ピン直前（latestDepart）まで自由案件を詰める
-      if(latestDepart > cur && latestDepart > FREE_START){
-        fillFree(latestDepart);
-      }
-
-      // ピン案件を配置
-      trvToPin = trv(prev, prevC, tc.adr, tc);
       var arrive = cur + trvToPin;
-      // 早着なら待機してピン時刻に訪問、遅着なら実際の到着時刻で訪問
+      // 指定時刻に間に合う場合はピン時刻で待機、過ぎている場合はASAP（訪問可能時間を無視）
       var stPin = (arrive <= tc.pin) ? tc.pin : arrive;
-      if(stPin + tc.dur <= FREE_DAY_END){
+
+      // ピン時刻に余裕がある場合のみピン直前まで自由案件を詰める
+      if(arrive < tc.pin){
+        var latestDepart = tc.pin - trvToPin;
+        if(latestDepart > cur && latestDepart > FREE_START){
+          fillFree(latestDepart);
+        }
+        // 再計算
+        trvToPin = trv(prev, prevC, tc.adr, tc);
+        arrive = cur + trvToPin;
+        stPin = (arrive <= tc.pin) ? tc.pin : arrive;
+      }
+
+      if(stPin + tc.dur <= DAY_END){
         place(tc, stPin);
       }
       return;
