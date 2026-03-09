@@ -271,7 +271,13 @@ header h1{font-size:1.1rem;font-weight:700}
         </div>
         <div id="gcal-events-preview" style="margin-top:8px;font-size:.78rem;color:#4a5568"></div>
       </div>
-    <button class="btn bb" onclick="buildAll()">🗓 スケジュール作成（3日分）</button>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <button class="btn bb" onclick="buildAll()">🗓 スケジュール作成（3日分）</button>
+      <label id="fast-mode-label" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem;padding:8px 14px;border-radius:8px;border:1.5px solid #e2e8f0;background:#f7fafc;user-select:none;transition:all .2s" title="全案件をできるだけ早く消化するモード。帰路バイアスをゼロにし、2-opt改善で移動距離を最小化します。">
+        <input type="checkbox" id="fast-mode-chk" onchange="window._fastMode=this.checked;document.getElementById('fast-mode-label').style.background=this.checked?'#fef3c7':'#f7fafc';document.getElementById('fast-mode-label').style.borderColor=this.checked?'#f59e0b':'#e2e8f0';" style="accent-color:#f59e0b;width:15px;height:15px">
+        <span>🚀 最速完了モード</span>
+      </label>
+    </div>
       </div>
     </div>
     <div id="sresult"></div>
@@ -1070,6 +1076,7 @@ var AR=[
 ];
 var HOME_ADR = "宮崎県都城市南鷹尾町33-11";
 var DAY_START = 8*60+30; // 08:30 通常訪問開始
+window._fastMode = false; // 最速完了モード（UIチェックボックスで切り替え）
 var GEOCODE_KEY = "AIzaSyC-bIBrdlwdoPvvNgw0miQvfv_Z17AQunM";
 
 // ===== 状態 =====
@@ -2206,8 +2213,9 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     if(!fromPos || !fromPos.lat) return rem[0];
 
     // 残り案件数に応じた帰路バイアス係数
+    // 最速完了モードON時はバイアスゼロ（純粋な最近傍）
     var total = freePool.filter(function(c){ return !placed[baseId(c.id)]; }).length;
-    var homeBias = total <= 3 ? 0.6 : total <= 6 ? 0.35 : 0.15;
+    var homeBias = window._fastMode ? 0 : (total <= 3 ? 0.6 : total <= 6 ? 0.35 : 0.15);
 
     // 今日の日付（targetDate）
     var _now = new Date();
@@ -2392,10 +2400,101 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
 
   sched.sort(function(a,b){ return a.st-b.st; });
 
+  // ── 最速完了モード: 2-opt改善で自由案件の訪問順を最適化 ──
+  if(window._fastMode && sched.length >= 3){
+    sched = twoOptImprove(sched, startAdr, startMin, spd, calBlocks, FREE_START, FREE_DAY_END);
+  }
+
   var consumedIds = {};
   sched.forEach(function(c){ consumedIds[baseId(c.id)]=true; });
 
   return { sched:sched, consumedIds:consumedIds, notAvailTimed:timedNG };
+}
+
+// ===== 2-opt改善：最速完了モード用 =====
+// 自由案件（tm・pin なし）の配置順を局所探索で最適化し、総移動時間を削減する。
+// タイムド案件の時間窓は遵守しながら、自由案件のみ入れ替えを試みる。
+function twoOptImprove(sched, startAdr, startMin, spd, calBlocks, freeStart, freeDayEnd){
+  calBlocks = calBlocks || [];
+
+  // 距離ヘルパー（scheduleDay スコープ外なので独立定義）
+  function trvH(fromAdr, fromC, toAdr, toC){
+    var d = km(getPos(fromAdr, fromC), getPos(toAdr, toC));
+    return Math.min(180, Math.max(3, Math.round(d / spd * 60)));
+  }
+
+  // スケジュール全体の開始時刻を再計算する。
+  // タイムド案件の窓違反またはカレンダーブロック衝突があれば null を返す。
+  function recompute(s){
+    var cur = startMin;
+    var prev = startAdr;
+    var prevC = null;
+    var out = [];
+    for(var i = 0; i < s.length; i++){
+      var c = s[i];
+      var t = trvH(prev, prevC, c.adr, c);
+      var st;
+      if(c.pin != null){
+        // ピンポイント：時刻を過ぎていればASAP
+        st = Math.max(cur + t, c.pin);
+        if(st + c.dur > 22*60+15) return null;
+      } else if(c.tm && TM_RANGE[c.tm]){
+        var wS = TM_RANGE[c.tm][0], wE = TM_RANGE[c.tm][1];
+        st = Math.max(cur + t, wS);
+        if(st > wE - 15 || st + c.dur > wE) return null; // 窓違反
+      } else {
+        st = Math.max(cur + t, freeStart);
+        if(st + c.dur > freeDayEnd) return null; // 終業後
+      }
+      // カレンダーブロック衝突チェック
+      for(var b = 0; b < calBlocks.length; b++){
+        if(st < calBlocks[b].end && st + c.dur > calBlocks[b].start) return null;
+      }
+      out.push(Object.assign({}, c, {st:st, trv:t, wait:Math.max(0, st-(cur+t))}));
+      cur = st + c.dur;
+      prev = c.adr;
+      prevC = c;
+    }
+    return out;
+  }
+
+  // 総移動時間（分）
+  function totalTrv(s){ return s.reduce(function(sum,c){ return sum+c.trv; },0); }
+
+  // 自由案件インデックス（タイムド・ピン以外）
+  var freeIdx = [];
+  sched.forEach(function(c,i){
+    if(c.pin == null && (!c.tm || !TM_RANGE[c.tm])) freeIdx.push(i);
+  });
+  if(freeIdx.length < 2) return sched;
+
+  var best = sched;
+  var bestTrv = totalTrv(sched);
+  var improved = true;
+  var maxIter = 80;
+
+  while(improved && maxIter-- > 0){
+    improved = false;
+    // 自由案件の全ペアを試みる（pairwise swap）
+    for(var a = 0; a < freeIdx.length - 1; a++){
+      for(var b = a + 1; b < freeIdx.length; b++){
+        var ia = freeIdx[a], ib = freeIdx[b];
+        var trial = best.slice();
+        var tmp = trial[ia]; trial[ia] = trial[ib]; trial[ib] = tmp;
+        var rec = recompute(trial);
+        if(rec){
+          var tv = totalTrv(rec);
+          if(tv < bestTrv - 0.5){ // 0.5分以上の改善があれば採用
+            best = rec;
+            bestTrv = tv;
+            improved = true;
+          }
+        }
+      }
+    }
+  }
+
+  return best;
 }
 
 // ===== 1日分を描画 =====
@@ -2853,7 +2952,36 @@ function buildAllCore(){
       }).join('')+'</div>';
   }
   window._remainingAll = remaining.slice(); // 手動追加用に保存
-  document.getElementById("sresult").innerHTML=html;
+
+  // ── 最速完了モード: 完了見込みサマリーを先頭に表示 ──
+  var summaryHtml = '';
+  if(window._fastMode){
+    var totalCases = cases.length;
+    var scheduled3days = totalCases - remaining.length;
+    var allDone = remaining.length === 0;
+    var completionDayLabel = allDone ? '3日以内に全件完了 ✅' : remaining.length+'件が4日目以降に繰越';
+    var summaryColor = allDone ? '#276749' : '#744210';
+    var summaryBg = allDone ? '#f0fff4' : '#fffbeb';
+    var summaryBorder = allDone ? '#68d391' : '#f6ad55';
+    // 最終案件の完了予定時刻
+    var lastEndStr = '';
+    for(var di = 2; di >= 0; di--){
+      var ds2 = window._dayScheds && window._dayScheds[di];
+      if(ds2 && ds2.sched && ds2.sched.length){
+        var lastC = ds2.sched[ds2.sched.length-1];
+        var endMin = lastC.st + lastC.dur;
+        lastEndStr = ds2.dStr + ' ' + Math.floor(endMin/60)+':'+(('0'+(endMin%60)).slice(-2)) + ' 完了予定（'+scheduled3days+'件）';
+        break;
+      }
+    }
+    summaryHtml = '<div style="margin-bottom:12px;padding:12px 16px;background:'+summaryBg+';border:1.5px solid '+summaryBorder+';border-radius:10px;color:'+summaryColor+';font-size:.87rem">'+
+      '<div style="font-weight:700;font-size:.95rem;margin-bottom:4px">🚀 最速完了モード &nbsp; '+completionDayLabel+'</div>'+
+      (lastEndStr ? '<div>⏱ 最終案件: '+lastEndStr+'</div>' : '')+
+      '<div style="font-size:.78rem;margin-top:4px;opacity:.8">帰路バイアスOFF・2-opt経路最適化済み</div>'+
+      '</div>';
+  }
+
+  document.getElementById("sresult").innerHTML=summaryHtml+html;
 }
 
 
