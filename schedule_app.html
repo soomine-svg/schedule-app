@@ -1623,12 +1623,18 @@ function openAddCaseModal(dayIdx){
   var labels = ['🌅 1日目','☀️ 2日目','🌆 3日目'];
   document.getElementById('addCaseModal-title').textContent = '➕ '+(labels[dayIdx]||dayIdx+'日目')+' ('+ds.dStr+') に追加';
 
-  // 今日のスケジュールに既に入っているID
+  // 今日のスケジュールに既に入っているID・baseId
   var alreadyInDay = {};
-  ds.sched.forEach(function(c){ alreadyInDay[c.id] = true; });
+  var alreadyBaseIds = {};
+  ds.sched.forEach(function(c){
+    alreadyInDay[c.id] = true;
+    alreadyBaseIds[baseId(c.id)] = true;
+  });
 
-  // candidates = 全cases から今日スケジュール済みのIDを除いたもの
-  var candidates = cases.filter(function(c){ return !alreadyInDay[c.id]; });
+  // candidates = 全cases から今日スケジュール済みのID・同一baseIdを除いたもの
+  var candidates = cases.filter(function(c){
+    return !alreadyInDay[c.id] && !alreadyBaseIds[baseId(c.id)];
+  });
 
   // 納期順・ID順でソート
   candidates.sort(function(a,b){
@@ -2308,14 +2314,15 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
       var dFrom = km(fromPos, cPos);
       var dHome = homePos ? km(cPos, homePos) : 0;
 
-      // 納期優先ボーナス（納期が近いほどスコアを減らして優先）
+      // 納期優先ボーナス（km単位に揃える：平均移動速度40km/hで換算）
+      // 例：12km分のボーナス = 約18分移動節約に相当する優先度
       var deadlineBonus = 0;
       if(c.d2){
         var daysLeft = Math.round((new Date(c.d2+'T00:00:00') - new Date(_refStr+'T00:00:00')) / 86400000);
-        if(daysLeft <= 0)  deadlineBonus = 12;  // 超過・当日: 強く優先
-        else if(daysLeft <= 1) deadlineBonus = 8;  // 明日
-        else if(daysLeft <= 3) deadlineBonus = 4;  // 3日以内
-        else if(daysLeft <= 7) deadlineBonus = 1.5; // 7日以内
+        if(daysLeft <= 0)  deadlineBonus = 8;   // 超過・当日: 強く優先（8km相当）
+        else if(daysLeft <= 1) deadlineBonus = 5;  // 明日（5km相当）
+        else if(daysLeft <= 3) deadlineBonus = 2.5; // 3日以内（2.5km相当）
+        else if(daysLeft <= 7) deadlineBonus = 1;   // 7日以内（1km相当）
       }
 
       // スコア = 現在地→案件距離 + 案件→自宅距離×バイアス - 納期ボーナス
@@ -2475,8 +2482,8 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
 
   sched.sort(function(a,b){ return a.st-b.st; });
 
-  // ── 最速完了モード: 2-opt改善で自由案件の訪問順を最適化 ──
-  if(window._fastMode && sched.length >= 3){
+  // ── 2-opt改善で自由案件の訪問順を最適化（常時適用） ──
+  if(sched.length >= 3){
     sched = twoOptImprove(sched, startAdr, startMin, spd, calBlocks, FREE_START, FREE_DAY_END);
   }
 
@@ -2546,11 +2553,12 @@ function twoOptImprove(sched, startAdr, startMin, spd, calBlocks, freeStart, fre
   var best = sched;
   var bestTrv = totalTrv(sched);
   var improved = true;
-  var maxIter = 80;
+  var maxIter = 120;
 
   while(improved && maxIter-- > 0){
     improved = false;
-    // 自由案件の全ペアを試みる（pairwise swap）
+
+    // ── Pass 1: pairwise swap（自由案件の全ペアを入れ替え） ──
     for(var a = 0; a < freeIdx.length - 1; a++){
       for(var b = a + 1; b < freeIdx.length; b++){
         var ia = freeIdx[a], ib = freeIdx[b];
@@ -2559,10 +2567,39 @@ function twoOptImprove(sched, startAdr, startMin, spd, calBlocks, freeStart, fre
         var rec = recompute(trial);
         if(rec){
           var tv = totalTrv(rec);
-          if(tv < bestTrv - 0.5){ // 0.5分以上の改善があれば採用
+          if(tv < bestTrv - 0.5){
             best = rec;
             bestTrv = tv;
             improved = true;
+          }
+        }
+      }
+    }
+
+    // ── Pass 2: or-opt（1件を別の位置に挿入） ──
+    // 自由案件のインデックスを再取得（swapで位置が変わった可能性があるため）
+    var freeIdx2 = [];
+    best.forEach(function(c,i){
+      if(c.pin == null && (!c.tm || !TM_RANGE[c.tm])) freeIdx2.push(i);
+    });
+    for(var fi = 0; fi < freeIdx2.length; fi++){
+      var fromIdx = freeIdx2[fi];
+      var item = best[fromIdx];
+      // fromIdx の位置から取り出し、他の全位置へ挿入を試みる
+      for(var ti = 0; ti <= best.length; ti++){
+        if(ti === fromIdx || ti === fromIdx + 1) continue; // 同じ位置は無意味
+        var trial2 = best.slice();
+        trial2.splice(fromIdx, 1);          // 取り出し
+        var insertAt = ti < fromIdx ? ti : ti - 1; // インデックス補正
+        trial2.splice(insertAt, 0, item);   // 挿入
+        var rec2 = recompute(trial2);
+        if(rec2){
+          var tv2 = totalTrv(rec2);
+          if(tv2 < bestTrv - 0.5){
+            best = rec2;
+            bestTrv = tv2;
+            improved = true;
+            break; // 改善したら次のfiへ
           }
         }
       }
