@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>訪問スケジュール最適化</title>
+<title>H.P. Canvas</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Hiragino Sans',sans-serif;background:#f0f4f8;color:#2d3748;font-size:14px}
@@ -79,7 +79,7 @@ header h1{font-size:1.1rem;font-weight:700}
 <header>
   <span style="font-size:1.4rem">🚗</span>
   <div>
-    <h1>訪問スケジュール最適化</h1>
+    <h1>H.P. Canvas</h1>
     <div style="font-size:.72rem;opacity:.8">宮崎県エリア ｜ 08:30〜20:00 ｜ 自宅：都城市南鷹尾町33-11</div>
   </div>
 </header>
@@ -1493,7 +1493,55 @@ function doneCase(i){
   saveCases();
 }
 
-// スケジュール画面から直接完了（ルート表示はそのまま）
+// ===== スケジュール並び替え =====
+function reorderSched(dayIdx, itemIdx, dir){
+  var ds = window._dayScheds && window._dayScheds[dayIdx];
+  if(!ds) return;
+  var sched = ds.sched;
+  var target = itemIdx + dir;
+  if(target < 0 || target >= sched.length) return;
+
+  // swap
+  var tmp = sched[itemIdx]; sched[itemIdx] = sched[target]; sched[target] = tmp;
+
+  // 時刻を先頭から再計算
+  var cur = ds.startMin;
+  var prevAdr = ds.startAdr;
+  var spd = ds.spd;
+  sched.forEach(function(c, i){
+    var t = 0;
+    if(prevAdr){
+      var p1 = (prevAdr === '__GPS__' && window._gpsLat) ? {lat:window._gpsLat, lng:window._gpsLng} : getPos(prevAdr, null);
+      var p2 = (c.lat&&c.lng) ? {lat:c.lat,lng:c.lng} : getPos(c.adr, c);
+      if(p1 && p2) t = Math.round(km(p1,p2)/spd*60);
+    }
+    c.trv = t;
+    var arrived = cur + t;
+    // ピンポイント: ピン時刻より早着なら待機
+    if(c.pin != null){
+      c.wait = Math.max(0, c.pin - arrived);
+      c.st   = Math.max(arrived, c.pin);
+    } else if(c.tm && TM_RANGE[c.tm]){
+      var wStart = TM_RANGE[c.tm][0];
+      c.wait = Math.max(0, wStart - arrived);
+      c.st   = Math.max(arrived, wStart);
+    } else {
+      c.wait = 0;
+      c.st   = Math.max(arrived, ds.startMin);
+    }
+    cur = c.st + c.dur;
+    prevAdr = c.adr;
+  });
+
+  // その日のカードだけ再描画
+  var cardId = 'day-card-' + dayIdx;
+  var card = document.getElementById(cardId);
+  if(card){
+    card.outerHTML = renderDay(ds.dayNum, ds.dStr, sched, ds.skip, ds.spd, ds.startMin, ds.isNow, ds.calBlocks, dayIdx);
+  }
+}
+
+
 function schedDone(cid){
   var idx=cases.findIndex(function(c){return c.id===cid;});
   if(idx<0){
@@ -1883,11 +1931,28 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
       var trvToPin = trv(prev, prevC, tc.adr, tc);
       var latestDepart = tc.pin - trvToPin;
       if(cur > latestDepart + 15) return; // 15分超過は間に合わない
-      // ピン前の隙間に自由案件を詰める
-      if(tc.pin > FREE_START && latestDepart > cur){
+
+      // 後ろ寄せ: ピンが14時以降の場合、自由案件をピン直前に寄せる
+      var freeLeft = freePool.filter(function(c){ return !placed[baseId(c.id)]; });
+      var freeTotalDur = freeLeft.reduce(function(s,c){ return s+c.dur+15; }, 0); // 15分移動バッファ
+
+      if(tc.pin >= 14*60 && freeLeft.length > 0){
+        // 自由案件の合計時間からバックワードに理想開始時刻を計算
+        var idealStart = Math.max(cur, latestDepart - freeTotalDur - 15);
+        // 現在時刻より後ろで、かつ30分以上の余裕がある場合のみ後ろ寄せ
+        if(idealStart > cur + 30){
+          cur = idealStart; // 余白はスキップ（ピン前に集中）
+        }
+      }
+
+      // latestDepart までに自由案件を詰める
+      if(latestDepart > cur && latestDepart > FREE_START){
         fillFree(latestDepart);
       }
-      var st = Math.max(cur + trv(prev, prevC, tc.adr, tc), FREE_START);
+
+      // 再計算
+      trvToPin = trv(prev, prevC, tc.adr, tc);
+      var st = Math.max(cur + trvToPin, FREE_START);
       st = Math.min(st, tc.pin); // ピン時刻を超えない
       if(st + tc.dur <= FREE_DAY_END){
         place(tc, st);
@@ -1966,7 +2031,19 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
 }
 
 // ===== 1日分を描画 =====
-function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks){
+function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, dayIdx){
+  // 納期バッジ（スケジュール表示用）
+  var _td=new Date(dStr+'T00:00:00');
+  function tlDeadlineBadge(d2){
+    if(!d2) return '';
+    var diff=Math.round((new Date(d2+'T00:00:00')-_td)/86400000);
+    if(diff<0)  return '<span style="background:#fc8181;color:white;font-size:.68rem;padding:0px 5px;border-radius:8px;font-weight:700;margin-right:3px">⚠️超過</span>';
+    if(diff===0) return '<span style="background:#f56565;color:white;font-size:.68rem;padding:0px 5px;border-radius:8px;font-weight:700;margin-right:3px">🔴本日</span>';
+    if(diff===1) return '<span style="background:#ed8936;color:white;font-size:.68rem;padding:0px 5px;border-radius:8px;font-weight:700;margin-right:3px">🟠明日</span>';
+    if(diff<=3)  return '<span style="background:#ecc94b;color:#744210;font-size:.68rem;padding:0px 5px;border-radius:8px;font-weight:700;margin-right:3px">🟡あと'+diff+'日</span>';
+    if(diff<=7)  return '<span style="background:#9ae6b4;color:#276749;font-size:.68rem;padding:0px 5px;border-radius:8px;font-weight:700;margin-right:3px">🟢あと'+diff+'日</span>';
+    return '';
+  }
   var tw  = sched.reduce(function(s,c){ return s+c.dur; },0);
   var end = sched.length ? sched[sched.length-1].st+sched[sched.length-1].dur : startMin;
   var totalKm=0;
@@ -1978,7 +2055,7 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks){
   }
 
   var labels=['🌅 1日目','☀️ 2日目','🌆 3日目'];
-  var h='<div class="card"><h2>'+(labels[dayNum-1]||dayNum+'日目')+'　'+dStr+'</h2>';
+  var h='<div class="card" id="day-card-'+(dayIdx!=null?dayIdx:dayNum-1)+'"><h2>'+(labels[dayNum-1]||dayNum+'日目')+'　'+dStr+'</h2>';
   calBlocks = calBlocks || [];
   // 出発時刻の計算
   var departureTime = null;
@@ -2093,9 +2170,13 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks){
       var safeId=c.id.replace(/[^a-zA-Z0-9_\-]/g,'_');
       var escapedId=c.id.replace(/'/g,"\\'");
       h+='<div class="tl-row" id="tlrow-'+safeId+'" style="'+rowStyle+'">'+
-        '<div class="tl-t">'+fmt(c.st)+'<br><span style="color:#a0aec0;font-size:.7rem">〜'+fmt(c.st+c.dur)+'</span><br>'+
-        '<button id="tlbtn-'+safeId+'" onclick="schedDone(\''+escapedId+'\')" '+
-        'style="margin-top:4px;padding:2px 8px;font-size:.72rem;background:#c6f6d5;color:#276749;border:none;border-radius:6px;cursor:pointer;font-weight:700;white-space:nowrap">✅ 完了</button>'+
+        '<div style="display:flex;flex-direction:column;align-items:flex-end;min-width:72px;gap:2px">'+
+        '<div class="tl-t" style="min-width:unset;padding-top:0">'+fmt(c.st)+'<br><span style="color:#a0aec0;font-size:.7rem">〜'+fmt(c.st+c.dur)+'</span></div>'+
+        '<div style="display:flex;gap:2px">'+
+        (i>0?'<button onclick="reorderSched('+(dayIdx!==undefined?dayIdx:0)+','+i+',-1)" title="上へ" style="padding:1px 6px;font-size:.8rem;background:#ebf4ff;color:#2b6cb0;border:none;border-radius:5px;cursor:pointer;line-height:1">▲</button>':'')+
+        (!last?'<button onclick="reorderSched('+(dayIdx!==undefined?dayIdx:0)+','+i+',1)" title="下へ" style="padding:1px 6px;font-size:.8rem;background:#ebf4ff;color:#2b6cb0;border:none;border-radius:5px;cursor:pointer;line-height:1">▼</button>':'')+
+        '</div>'+
+        '<button id="tlbtn-'+safeId+'" onclick="schedDone(\''+escapedId+'\')" style="padding:2px 7px;font-size:.72rem;background:#c6f6d5;color:#276749;border:none;border-radius:6px;cursor:pointer;font-weight:700;white-space:nowrap">✅ 完了</button>'+
         '</div>'+
         '<div style="display:flex;flex-direction:column;align-items:center;padding-top:3px">'+
         '<div class="tl-dot'+(hasTm?' e':'')+'"></div>'+
@@ -2105,7 +2186,7 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks){
         '<div class="tl-name">'+(c.ely?'⭐ ':'')+
         (c.pin!=null?'<span style="background:#9f7aea;color:white;font-size:.72rem;padding:1px 6px;border-radius:10px;margin-right:4px;font-weight:700">📌'+fmt(c.pin)+'着</span>':hasTm?'<span style="background:#f6ad55;color:#744210;font-size:.72rem;padding:1px 6px;border-radius:10px;margin-right:4px;font-weight:700">'+c.tm+'</span>':'')+
         (i+1)+'. '+c.id+'　<a href="https://maps.google.com/?q='+encodeURIComponent(c.adr)+'" target="_blank" style="color:inherit;text-decoration:none">'+c.adr+' 🗺️</a></div>'+
-        '<div class="tl-sub">納期:'+c.d2+'　所要:'+c.dur+'分'+
+        '<div class="tl-sub">'+tlDeadlineBadge(c.d2)+'納期:'+c.d2+'　所要:'+c.dur+'分'+
         (c.wait>0?'　<span style="color:#d69e2e">⏳待機'+c.wait+'分</span>':'')+
         '</div></div></div>';
       if(!last){
@@ -2366,7 +2447,22 @@ function buildAllCore(){
       }
     });
     remaining = remainingNew;
-    html += renderDay(d+1, dStr, todaySch, notDone.concat(extraNA), spd, effectiveStartMin, isNow&&d===0, calBlocks);
+
+    // スケジュール結果をグローバルに保存（並び替え用）
+    window._dayScheds = window._dayScheds || [];
+    window._dayScheds[d] = {
+      sched: todaySch.slice(),
+      skip: notDone.concat(extraNA),
+      spd: spd,
+      startMin: effectiveStartMin,
+      startAdr: effectiveStartAdr,
+      dStr: dStr,
+      dayNum: d+1,
+      isNow: isNow&&d===0,
+      calBlocks: calBlocks
+    };
+
+    html += renderDay(d+1, dStr, todaySch, notDone.concat(extraNA), spd, effectiveStartMin, isNow&&d===0, calBlocks, d);
   }
 
   if(remaining.length){
