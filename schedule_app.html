@@ -1611,39 +1611,32 @@ function doneCase(i){
 // ===== スケジュール後の手動追加 =====
 function openAddCaseModal(dayIdx){
   var ds = window._dayScheds && window._dayScheds[dayIdx];
-  if(!ds) return;
+  if(!ds){ alert('先にスケジュールを作成してください'); return; }
   document.getElementById('addCaseDayIdx').value = dayIdx;
   var labels = ['🌅 1日目','☀️ 2日目','🌆 3日目'];
   document.getElementById('addCaseModal-title').textContent = '➕ '+(labels[dayIdx]||dayIdx+'日目')+' ('+ds.dStr+') に追加';
 
-  // 追加可能な案件 = skip案件 ＋ remaining（全daySchedsに未登録）
+  // 今日のスケジュールに既に入っているID
   var alreadyInDay = {};
   ds.sched.forEach(function(c){ alreadyInDay[c.id] = true; });
 
-  // 全daySchedsにスケジュール済みのIDを収集
-  var scheduledElsewhere = {};
-  (window._dayScheds || []).forEach(function(od, odi){
-    if(odi === dayIdx) return;
-    (od.sched||[]).forEach(function(c){ scheduledElsewhere[c.id] = true; });
-  });
+  // candidates = 全cases から今日スケジュール済みのIDを除いたもの
+  var candidates = cases.filter(function(c){ return !alreadyInDay[c.id]; });
 
-  // candidates = skip + _remainingAll で未スケジュールのもの
-  var candidates = [];
-  var seenIds = {};
-  (ds.skip || []).concat(window._remainingAll || []).forEach(function(c){
-    if(!seenIds[c.id] && !alreadyInDay[c.id] && !scheduledElsewhere[c.id]){
-      seenIds[c.id] = true;
-      candidates.push(c);
-    }
+  // 納期順・ID順でソート
+  candidates.sort(function(a,b){
+    var ad = a.d2||'9999-99-99', bd = b.d2||'9999-99-99';
+    if(ad !== bd) return ad < bd ? -1 : 1;
+    return String(a.id).localeCompare(String(b.id), 'ja', {numeric:true});
   });
 
   var sel = document.getElementById('addCaseSelect');
-  sel.innerHTML = '<option value="">▼ 案件を選択してください</option>';
+  sel.innerHTML = '<option value="">▼ 案件を選択してください（'+candidates.length+'件）</option>';
   candidates.forEach(function(c){
     var opt = document.createElement('option');
     opt.value = c.id;
     var label = c.id + '　' + c.adr.replace('宮崎県','');
-    if(c.pin != null) label += '　📌'+fmt(c.pin)+'着';
+    if(c.pin != null) label += '　📌'+(c.pinDate?c.pinDate.slice(5)+' ':'')+fmt(c.pin)+'着';
     else if(c.tm) label += '　['+c.tm+']';
     label += '　納期:'+c.d2;
     opt.textContent = label;
