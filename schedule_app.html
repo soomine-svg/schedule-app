@@ -373,6 +373,25 @@ header h1{font-size:1.1rem;font-weight:700}
   </div>
 </div>
 
+<!-- 手動追加モーダル -->
+<div class="modal-bg" id="addCaseModal">
+  <div class="modal">
+    <h3 id="addCaseModal-title">➕ この日に案件を追加</h3>
+    <input type="hidden" id="addCaseDayIdx">
+    <div class="fg" style="margin-bottom:14px">
+      <label>追加する案件を選択</label>
+      <select id="addCaseSelect" style="font-size:.9rem;padding:8px;border:1.5px solid #e2e8f0;border-radius:8px;width:100%;margin-top:4px" onchange="onAddCaseSelect()">
+        <option value="">▼ 案件を選択してください</option>
+      </select>
+      <div id="addCaseDetail" style="margin-top:8px;font-size:.8rem;color:#718096;min-height:20px"></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn bb" onclick="addCaseToDayConfirm()">➕ 追加する</button>
+      <button class="btn br" onclick="closeModal('addCaseModal')">キャンセル</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ===== 時間指定テーブル（分単位）=====
 var TM_RANGE={
@@ -1589,6 +1608,118 @@ function doneCase(i){
 }
 
 // ===== スケジュール並び替え =====
+// ===== スケジュール後の手動追加 =====
+function openAddCaseModal(dayIdx){
+  var ds = window._dayScheds && window._dayScheds[dayIdx];
+  if(!ds) return;
+  document.getElementById('addCaseDayIdx').value = dayIdx;
+  var labels = ['🌅 1日目','☀️ 2日目','🌆 3日目'];
+  document.getElementById('addCaseModal-title').textContent = '➕ '+(labels[dayIdx]||dayIdx+'日目')+' ('+ds.dStr+') に追加';
+
+  // 追加可能な案件 = skip案件 ＋ remaining（全daySchedsに未登録）
+  var alreadyInDay = {};
+  ds.sched.forEach(function(c){ alreadyInDay[c.id] = true; });
+
+  // 全daySchedsにスケジュール済みのIDを収集
+  var scheduledElsewhere = {};
+  (window._dayScheds || []).forEach(function(od, odi){
+    if(odi === dayIdx) return;
+    (od.sched||[]).forEach(function(c){ scheduledElsewhere[c.id] = true; });
+  });
+
+  // candidates = skip + _remainingAll で未スケジュールのもの
+  var candidates = [];
+  var seenIds = {};
+  (ds.skip || []).concat(window._remainingAll || []).forEach(function(c){
+    if(!seenIds[c.id] && !alreadyInDay[c.id] && !scheduledElsewhere[c.id]){
+      seenIds[c.id] = true;
+      candidates.push(c);
+    }
+  });
+
+  var sel = document.getElementById('addCaseSelect');
+  sel.innerHTML = '<option value="">▼ 案件を選択してください</option>';
+  candidates.forEach(function(c){
+    var opt = document.createElement('option');
+    opt.value = c.id;
+    var label = c.id + '　' + c.adr.replace('宮崎県','');
+    if(c.pin != null) label += '　📌'+fmt(c.pin)+'着';
+    else if(c.tm) label += '　['+c.tm+']';
+    label += '　納期:'+c.d2;
+    opt.textContent = label;
+    sel.appendChild(opt);
+  });
+  document.getElementById('addCaseDetail').textContent = '';
+  document.getElementById('addCaseModal').classList.add('on');
+}
+
+function onAddCaseSelect(){
+  var sel = document.getElementById('addCaseSelect');
+  var cid = sel.value;
+  if(!cid){ document.getElementById('addCaseDetail').textContent=''; return; }
+  var c = cases.find(function(x){ return x.id === cid; });
+  if(!c){ document.getElementById('addCaseDetail').textContent=''; return; }
+  var detail = '住所: '+c.adr+'　所要: '+c.dur+'分';
+  if(c.pin != null) detail += '　📌到着指定: '+fmt(c.pin);
+  else if(c.tm) detail += '　時間指定: '+c.tm;
+  document.getElementById('addCaseDetail').textContent = detail;
+}
+
+function addCaseToDayConfirm(){
+  var dayIdx = parseInt(document.getElementById('addCaseDayIdx').value);
+  var cid = document.getElementById('addCaseSelect').value;
+  if(!cid){ alert('案件を選択してください'); return; }
+  var c = cases.find(function(x){ return x.id === cid; });
+  if(!c){ alert('案件が見つかりません'); return; }
+
+  var ds = window._dayScheds[dayIdx];
+  if(!ds) return;
+
+  // 現在のスケジュール最終時刻 or startMinから配置
+  var lastEntry = ds.sched.length ? ds.sched[ds.sched.length-1] : null;
+  var curTime = lastEntry ? lastEntry.st + lastEntry.dur : ds.startMin;
+  var prevAdr = lastEntry ? lastEntry.adr : ds.startAdr;
+  var prevC   = lastEntry || null;
+  var spd = ds.spd || 40;
+
+  function trvMin(a,aC,b,bC){
+    var p1=(a==='__GPS__'&&window._gpsLat)?{lat:window._gpsLat,lng:window._gpsLng}:getPos(a,aC);
+    var p2=bC&&bC.lat&&bC.lng?{lat:bC.lat,lng:bC.lng}:getPos(b,bC);
+    if(!p1||!p2) return 5;
+    return Math.min(180,Math.max(3,Math.round(km(p1,p2)/spd*60)));
+  }
+
+  var t = trvMin(prevAdr, prevC, c.adr, c);
+  var arriveAt = curTime + t;
+  var st;
+  var waitMin = 0;
+  if(c.pin != null){
+    st = Math.max(arriveAt, c.pin);
+    waitMin = Math.max(0, c.pin - arriveAt);
+  } else if(c.tm && TM_RANGE[c.tm]){
+    var wStart = TM_RANGE[c.tm][0];
+    st = Math.max(arriveAt, wStart);
+    waitMin = Math.max(0, wStart - arriveAt);
+  } else {
+    st = arriveAt;
+  }
+
+  // スケジュールに追加
+  ds.sched.push(Object.assign({}, c, {st:st, trv:t, wait:waitMin}));
+  // skipから除去
+  ds.skip = (ds.skip||[]).filter(function(x){ return x.id !== cid; });
+  // _remainingAllからも除去
+  window._remainingAll = (window._remainingAll||[]).filter(function(x){ return x.id !== cid; });
+
+  // そのカードを再描画
+  var cardId = 'day-card-'+dayIdx;
+  var card = document.getElementById(cardId);
+  if(card){
+    card.outerHTML = renderDay(ds.dayNum, ds.dStr, ds.sched, ds.skip, ds.spd, ds.startMin, ds.isNow, ds.calBlocks, dayIdx, ds.startAdr);
+  }
+  closeModal('addCaseModal');
+}
+
 function reorderSched(dayIdx, itemIdx, dir){
   var ds = window._dayScheds && window._dayScheds[dayIdx];
   if(!ds) return;
@@ -1932,6 +2063,23 @@ function getArea(adr){
   if(!adr) return '';
   var m = adr.match(/宮崎県(.+?[市郡])/);
   return m ? m[1] : adr.substring(3, 10);
+}
+
+// 指定日に案件をスケジュール可能かチェック
+// startMin: その日の開始時刻（分）
+function canScheduleTodayCheck(c, targetDate, startMin){
+  if(c.pin != null){
+    if(c.pinDate && targetDate){
+      var tdStr = targetDate.getFullYear()+'-'+('0'+(targetDate.getMonth()+1)).slice(-2)+'-'+('0'+targetDate.getDate()).slice(-2);
+      if(tdStr !== c.pinDate) return false;
+    }
+    return true; // ピン案件は時刻を過ぎてもASAP配置
+  }
+  if(!c.tm || !TM_RANGE[c.tm]) return true; // 時間指定なし→いつでも可
+  if(targetDate && !isTmAvailable(c.tm, targetDate)) return false; // 曜日不一致
+  var wEnd = TM_RANGE[c.tm][1];
+  if(startMin >= wEnd - 15) return false; // 窓終了済み
+  return true;
 }
 
 function fmt(m){
@@ -2453,6 +2601,10 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
       '<b style="color:#c53030">翌日繰越（'+skip.length+'件）：</b>　'+
       skip.map(function(c){ return c.id+'('+getArea(c.adr)+')'; }).join('、')+'</div>';
   }
+  // 手動追加ボタン
+  h+='<div style="margin-top:12px;text-align:right">'+
+    '<button onclick="openAddCaseModal('+(dayIdx!=null?dayIdx:dayNum-1)+')" style="padding:5px 14px;font-size:.82rem;background:#ebf8ff;color:#2b6cb0;border:1.5px solid #bee3f8;border-radius:8px;cursor:pointer;font-weight:600">➕ この日に案件を追加</button>'+
+    '</div>';
   return h+'</div>';
 }
 
@@ -2589,10 +2741,30 @@ function buildAllCore(){
         return;
       }
       if(arr.length===1){ todayPool.push(arr[0]); return; }
-      var withTm=arr.filter(function(c){ return c.tm&&TM_RANGE[c.tm]; });
-      var chosen=withTm.length?withTm[0]:arr[0];
+
+      // ── パズル型選択：今日実際にスケジュール可能な案件を優先 ──
+      // 時間指定案件と自由案件をそれぞれ今日可能なものに分類
+      var canToday    = arr.filter(function(c){ return canScheduleTodayCheck(c, date, startMin); });
+      var cannotToday = arr.filter(function(c){ return !canScheduleTodayCheck(c, date, startMin); });
+
+      var chosen;
+      if(canToday.length === 0){
+        // 全件今日不可 → 時間指定優先で1件だけ選ぶ（明日以降の枠に備える）
+        var withTm = arr.filter(function(c){ return c.tm && TM_RANGE[c.tm]; });
+        chosen = withTm.length ? withTm[0] : arr[0];
+      } else {
+        // 今日可能な中から最適な1件を選ぶ
+        // 優先順位: ①ピンポイント ②時間指定あり ③時間指定なし
+        var pinCases  = canToday.filter(function(c){ return c.pin != null; });
+        var timedCases= canToday.filter(function(c){ return c.pin == null && c.tm && TM_RANGE[c.tm]; });
+        var freeCases = canToday.filter(function(c){ return c.pin == null && (!c.tm || !TM_RANGE[c.tm]); });
+        if(pinCases.length)   chosen = pinCases[0];
+        else if(timedCases.length) chosen = timedCases[0];
+        else                  chosen = freeCases[0];
+      }
+
       todayPool.push(chosen);
-      arr.filter(function(c){ return c!==chosen; }).forEach(function(c){ carriedOver.push(c); });
+      arr.filter(function(c){ return c !== chosen; }).forEach(function(c){ carriedOver.push(c); });
     });
 
     // 早朝指定案件(06:00〜07:00等)があれば出発を前倒し
@@ -2687,6 +2859,7 @@ function buildAllCore(){
           '<div class="ci-sub">納期:'+c.d2+(c.tm?'　指定:'+c.tm:'')+'</div></div></div>';
       }).join('')+'</div>';
   }
+  window._remainingAll = remaining.slice(); // 手動追加用に保存
   document.getElementById("sresult").innerHTML=html;
 }
 
