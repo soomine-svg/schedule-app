@@ -1711,6 +1711,54 @@ function addCaseToDayConfirm(){
   // _remainingAllからも除去
   window._remainingAll = (window._remainingAll||[]).filter(function(x){ return x.id !== cid; });
 
+  // 追加後に全件の時刻を先頭から再計算（並び替えと同じロジック）
+  var DAY_START_MIN2 = 8*60+30;
+  var cur2 = ds.startMin;
+  var prevAdr2 = ds.startAdr;
+  var prevC3 = null;
+  var calB_ac = ds.calBlocks || [];
+
+  function avoidCalBlock_ac(st, dur){
+    var loopGuard = 0;
+    while(loopGuard++ < calB_ac.length * 2 + 2){
+      var hit = null;
+      for(var bi = 0; bi < calB_ac.length; bi++){
+        if(st < calB_ac[bi].end && (st + dur) > calB_ac[bi].start){ hit = calB_ac[bi]; break; }
+      }
+      if(!hit) break;
+      st = hit.end + 15;
+    }
+    return st;
+  }
+
+  ds.sched.forEach(function(sc){
+    var p1 = (prevAdr2 === '__GPS__' && window._gpsLat)
+      ? {lat:window._gpsLat, lng:window._gpsLng}
+      : (prevC3 && prevC3.lat && prevC3.lng ? {lat:prevC3.lat, lng:prevC3.lng} : getPos(prevAdr2, null));
+    var p2 = (sc.lat && sc.lng) ? {lat:sc.lat, lng:sc.lng} : getPos(sc.adr, sc);
+    var tCalc = (p1 && p2) ? Math.min(180, Math.max(3, Math.round(km(p1, p2) / (ds.spd||40) * 60))) : 5;
+    sc.trv = tCalc;
+    var arrived2 = cur2 + tCalc;
+    if(sc.pin != null){
+      sc.wait = Math.max(0, sc.pin - arrived2);
+      sc.st   = Math.max(arrived2, sc.pin);
+    } else if(sc.tm && TM_RANGE[sc.tm]){
+      var stTm2 = Math.max(arrived2, TM_RANGE[sc.tm][0]);
+      stTm2 = avoidCalBlock_ac(stTm2, sc.dur);
+      sc.wait = Math.max(0, stTm2 - arrived2);
+      sc.st   = stTm2;
+    } else {
+      var floorMin2 = Math.max(ds.startMin, DAY_START_MIN2);
+      var stFree2 = Math.max(arrived2, floorMin2);
+      stFree2 = avoidCalBlock_ac(stFree2, sc.dur);
+      sc.wait = 0;
+      sc.st   = stFree2;
+    }
+    cur2 = sc.st + sc.dur;
+    prevAdr2 = sc.adr;
+    prevC3   = sc;
+  });
+
   // そのカードを再描画
   var cardId = 'day-card-'+dayIdx;
   var card = document.getElementById(cardId);
@@ -1733,30 +1781,57 @@ function reorderSched(dayIdx, itemIdx, dir){
   // 時刻を先頭から再計算
   var cur = ds.startMin;
   var prevAdr = ds.startAdr;
+  var prevC2 = null; // 直前案件オブジェクト（座標取得に使用）
   var spd = ds.spd;
+  var DAY_START_MIN = 8*60+30; // 08:30 通常訪問開始下限
+  var calB_ro = ds.calBlocks || [];
+
+  // カレンダーブロックと衝突する場合、ブロック後に後ろ倒しする
+  function avoidCalBlock_ro(st, dur){
+    var loopGuard = 0;
+    while(loopGuard++ < calB_ro.length * 2 + 2){
+      var hit = null;
+      for(var bi = 0; bi < calB_ro.length; bi++){
+        if(st < calB_ro[bi].end && (st + dur) > calB_ro[bi].start){ hit = calB_ro[bi]; break; }
+      }
+      if(!hit) break;
+      st = hit.end + 15;
+    }
+    return st;
+  }
+
   sched.forEach(function(c, i){
     var t = 0;
-    if(prevAdr){
-      var p1 = (prevAdr === '__GPS__' && window._gpsLat) ? {lat:window._gpsLat, lng:window._gpsLng} : getPos(prevAdr, null);
-      var p2 = (c.lat&&c.lng) ? {lat:c.lat,lng:c.lng} : getPos(c.adr, c);
-      if(p1 && p2) t = Math.round(km(p1,p2)/spd*60);
-    }
+    var p1 = (prevAdr === '__GPS__' && window._gpsLat)
+      ? {lat:window._gpsLat, lng:window._gpsLng}
+      : (prevC2 && prevC2.lat && prevC2.lng ? {lat:prevC2.lat, lng:prevC2.lng} : getPos(prevAdr, null));
+    var p2 = (c.lat && c.lng) ? {lat:c.lat, lng:c.lng} : getPos(c.adr, c);
+    if(p1 && p2) t = Math.min(180, Math.max(3, Math.round(km(p1, p2) / spd * 60)));
     c.trv = t;
     var arrived = cur + t;
-    // ピンポイント: ピン時刻より早着なら待機
+
     if(c.pin != null){
+      // ピンポイント：ピン時刻に間に合う場合は待機、過ぎていればASAP
       c.wait = Math.max(0, c.pin - arrived);
       c.st   = Math.max(arrived, c.pin);
     } else if(c.tm && TM_RANGE[c.tm]){
+      // 時間指定：窓開始まで待機 → カレンダーブロック回避
       var wStart = TM_RANGE[c.tm][0];
-      c.wait = Math.max(0, wStart - arrived);
-      c.st   = Math.max(arrived, wStart);
+      var stTm = Math.max(arrived, wStart);
+      stTm = avoidCalBlock_ro(stTm, c.dur);
+      c.wait = Math.max(0, stTm - arrived);
+      c.st   = stTm;
     } else {
+      // 自由案件：08:30以前には訪問しない → カレンダーブロック回避
+      var floorMin = Math.max(ds.startMin, DAY_START_MIN);
+      var stFree = Math.max(arrived, floorMin);
+      stFree = avoidCalBlock_ro(stFree, c.dur);
       c.wait = 0;
-      c.st   = Math.max(arrived, ds.startMin);
+      c.st   = stFree;
     }
     cur = c.st + c.dur;
     prevAdr = c.adr;
+    prevC2  = c;
   });
 
   // その日のカードだけ再描画
