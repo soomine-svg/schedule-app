@@ -1780,9 +1780,9 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
   pool.forEach(function(c){
     // ピンポイント時刻指定
     if(c.pin != null){
-      // 最終納期チェック
-      if(startMin >= c.pin + c.dur){
-        timedNG.push(c); // すでに終了時刻を過ぎている
+      // ピン時刻を20分超過している場合のみ本日訪問不可（遅着20分まで許容）
+      if(startMin > c.pin + 20){
+        timedNG.push(c); // すでにピン時刻を大幅に過ぎている
         return;
       }
       timedAvail.push(c);
@@ -1804,11 +1804,16 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     }
   });
 
-  // 時間指定あり→時刻順ソート（pin案件はpin時刻、tm案件はTM_RANGE開始で比較）
+  // 時間指定あり案件のソート：①納期が早い順 → ②時刻が早い順
   timedAvail.sort(function(a,b){
-    var aT = a.pin!=null ? a.pin : TM_RANGE[a.tm][0];
-    var bT = b.pin!=null ? b.pin : TM_RANGE[b.tm][0];
-    return aT-bT;
+    // 納期比較（早い納期を優先）
+    var aD = a.d2 || '9999-99-99';
+    var bD = b.d2 || '9999-99-99';
+    if(aD !== bD) return aD < bD ? -1 : 1;
+    // 同納期なら時刻順（pin時刻 or TM_RANGE開始）
+    var aT = a.pin!=null ? a.pin : (TM_RANGE[a.tm] ? TM_RANGE[a.tm][0] : 9999);
+    var bT = b.pin!=null ? b.pin : (TM_RANGE[b.tm] ? TM_RANGE[b.tm][0] : 9999);
+    return aT - bT;
   });
 
   // 時間指定なし案件（pinもtmもない）
@@ -1867,6 +1872,7 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
   var homePos = getPos(HOME_ADR, null);
 
   // 自由案件の最適選択（現在地からの最近傍 + 帰路方向バイアス）
+  // 自由案件の最適選択（現在地からの最近傍 + 帰路方向バイアス + 納期優先）
   function pickFree(fromAdr, fromC, excludeIds){
     var rem = freePool.filter(function(c){
       return !placed[baseId(c.id)] && !(excludeIds && excludeIds[baseId(c.id)]);
@@ -1877,22 +1883,43 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
       : getPos(fromAdr, null);
     if(!fromPos || !fromPos.lat) return rem[0];
 
-    // 残り案件数に応じた帰路バイアス係数（残り少ないほど都城方向を重視）
+    // 残り案件数に応じた帰路バイアス係数
     var total = freePool.filter(function(c){ return !placed[baseId(c.id)]; }).length;
     var homeBias = total <= 3 ? 0.6 : total <= 6 ? 0.35 : 0.15;
 
+    // 今日の日付（targetDate）
+    var _now = new Date();
+    var _ty=_now.getFullYear(), _tm=('0'+(_now.getMonth()+1)).slice(-2), _td=('0'+_now.getDate()).slice(-2);
+    var _todayStr = _ty+'-'+_tm+'-'+_td;
+    // targetDateが渡されている場合はそちらを優先
+    var _refDate = targetDate || _now;
+    var _ry=_refDate.getFullYear(), _rm=('0'+(_refDate.getMonth()+1)).slice(-2), _rd=('0'+_refDate.getDate()).slice(-2);
+    var _refStr = _ry+'-'+_rm+'-'+_rd;
+
     var best=null, bestScore=Infinity;
     rem.forEach(function(c){
-      var cPos = getPos(c.adr, c); // stale座標は自動的にAR再ルックアップ
+      var cPos = getPos(c.adr, c);
       if(!cPos || !cPos.lat) return;
       var dFrom = km(fromPos, cPos);
       var dHome = homePos ? km(cPos, homePos) : 0;
-      // スコア = 現在地→案件距離 + 案件→自宅距離 × バイアス係数
-      var score = dFrom + dHome * homeBias;
+
+      // 納期優先ボーナス（納期が近いほどスコアを減らして優先）
+      var deadlineBonus = 0;
+      if(c.d2){
+        var daysLeft = Math.round((new Date(c.d2+'T00:00:00') - new Date(_refStr+'T00:00:00')) / 86400000);
+        if(daysLeft <= 0)  deadlineBonus = 12;  // 超過・当日: 強く優先
+        else if(daysLeft <= 1) deadlineBonus = 8;  // 明日
+        else if(daysLeft <= 3) deadlineBonus = 4;  // 3日以内
+        else if(daysLeft <= 7) deadlineBonus = 1.5; // 7日以内
+      }
+
+      // スコア = 現在地→案件距離 + 案件→自宅距離×バイアス - 納期ボーナス
+      var score = dFrom + dHome * homeBias - deadlineBonus;
       if(score < bestScore){ bestScore=score; best=c; }
     });
     return best || rem[0];
   }
+
 
   // deadline まで自由案件を詰める（FREE_START以降のみ）
   function fillFree(deadline){
@@ -1929,35 +1956,42 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     // ── ピンポイント時刻案件 ──
     if(tc.pin != null){
       var trvToPin = trv(prev, prevC, tc.adr, tc);
+
+      // ピン時刻を20分以上超過している場合のみ繰り越し（到着が20分遅れまでは当日扱い）
+      if(cur > tc.pin + 20) return;
+
+      // 最遅出発時刻
       var latestDepart = tc.pin - trvToPin;
-      if(cur > latestDepart + 15) return; // 15分超過は間に合わない
 
-      // 後ろ寄せ: ピンが14時以降の場合、自由案件をピン直前に寄せる
+      // ── 後ろ寄せ: 自由案件をピン直前にまとめる ──
+      // 残り自由案件の合計所要時間＋移動バッファを計算
       var freeLeft = freePool.filter(function(c){ return !placed[baseId(c.id)]; });
-      var freeTotalDur = freeLeft.reduce(function(s,c){ return s+c.dur+15; }, 0); // 15分移動バッファ
+      var freeTotalDur = freeLeft.reduce(function(s,c){ return s+c.dur+10; }, 0);
 
-      if(tc.pin >= 14*60 && freeLeft.length > 0){
-        // 自由案件の合計時間からバックワードに理想開始時刻を計算
-        var idealStart = Math.max(cur, latestDepart - freeTotalDur - 15);
-        // 現在時刻より後ろで、かつ30分以上の余裕がある場合のみ後ろ寄せ
-        if(idealStart > cur + 30){
-          cur = idealStart; // 余白はスキップ（ピン前に集中）
-        }
+      // 自由案件をすべてこなした後でピンに間に合う最遅開始時刻
+      var latestFreeStart = latestDepart - freeTotalDur;
+      // 今より後ろにまとめられる余裕があれば、cur をそこまでジャンプ（待機）
+      var effectiveFreeStart = Math.max(cur, Math.max(FREE_START, latestFreeStart));
+      if(effectiveFreeStart > cur){
+        // curをjumpせず、代わりにfillFreeのstartを調整する形で後ろ寄せ
+        // （curをいじると他案件の時刻がずれるため、fillFreeのdeadlineのみ制御）
       }
 
-      // latestDepart までに自由案件を詰める
+      // ピン直前（latestDepart）まで自由案件を詰める
       if(latestDepart > cur && latestDepart > FREE_START){
         fillFree(latestDepart);
       }
 
-      // 再計算
+      // ピン案件を配置
       trvToPin = trv(prev, prevC, tc.adr, tc);
-      var st = Math.max(cur + trvToPin, FREE_START);
-      st = Math.min(st, tc.pin); // ピン時刻を超えない
-      if(st + tc.dur <= FREE_DAY_END){
-        place(tc, st);
+      var arrive = cur + trvToPin;
+      // 早着なら待機してピン時刻に訪問、遅着なら実際の到着時刻で訪問
+      var stPin = (arrive <= tc.pin) ? tc.pin : arrive;
+      if(stPin + tc.dur <= FREE_DAY_END){
+        place(tc, stPin);
       }
       return;
+    }
     }
 
     var wStart = TM_RANGE[tc.tm][0];
