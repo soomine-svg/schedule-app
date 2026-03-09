@@ -1537,7 +1537,7 @@ function reorderSched(dayIdx, itemIdx, dir){
   var cardId = 'day-card-' + dayIdx;
   var card = document.getElementById(cardId);
   if(card){
-    card.outerHTML = renderDay(ds.dayNum, ds.dStr, sched, ds.skip, ds.spd, ds.startMin, ds.isNow, ds.calBlocks, dayIdx);
+    card.outerHTML = renderDay(ds.dayNum, ds.dStr, sched, ds.skip, ds.spd, ds.startMin, ds.isNow, ds.calBlocks, dayIdx, ds.startAdr);
   }
 }
 
@@ -1734,16 +1734,6 @@ function km(a,b){
   return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 function trvMin(a,b,spd,cA,cB){return Math.min(180,Math.max(3,Math.round(km(getPos(a,cA),getPos(b,cB))/spd*60)));}
-
-// 住所からエリア名（市/郡）を抽出
-function getArea(adr){
-  if(!adr)return"";
-  var m=adr.match(/宮崎県(.+?[市町村])/);
-  return m?m[1]:"";
-}
-
-// ===== 枝番ベースIDを取得 =====
-function baseId(id){return id.replace(/-\d+$/,"");}
 
 // ===== スケジューリングエンジン =====
 
@@ -2064,7 +2054,7 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
 }
 
 // ===== 1日分を描画 =====
-function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, dayIdx){
+function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, dayIdx, startAdr){
   // 納期バッジ（スケジュール表示用）
   var _td=new Date(dStr+'T00:00:00');
   function tlDeadlineBadge(d2){
@@ -2183,6 +2173,24 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
     '</div>';
   if(totalKm>0) h+='<div style="text-align:center;margin-bottom:10px;font-size:.82rem;color:#4a5568">🗺 総移動距離（直線）: 約'+totalKm.toFixed(1)+'km</div>';
 
+  // Googleマップ 全ルートボタン
+  if(sched.length > 0){
+    var origin = encodeURIComponent((isNow && window._gpsLat)
+      ? (window._gpsLat+','+window._gpsLng)
+      : (startAdr || HOME_ADR));
+    var dest = encodeURIComponent(HOME_ADR);
+    var waypts = sched.map(function(c){ return encodeURIComponent(c.adr); });
+    // Google Maps Directions: origin/wp1/wp2/.../dest
+    var routeUrl = 'https://www.google.com/maps/dir/' + origin
+      + '/' + waypts.join('/') + '/' + dest;
+    h+='<div style="text-align:center;margin-bottom:12px">'
+      +'<a href="'+routeUrl+'" target="_blank" '
+      +'style="display:inline-flex;align-items:center;gap:6px;background:#4285f4;color:white;'
+      +'padding:8px 18px;border-radius:8px;font-size:.82rem;font-weight:600;text-decoration:none;'
+      +'box-shadow:0 2px 6px rgba(66,133,244,.35)">'
+      +'🗺️ Googleマップで全ルートを確認</a></div>';
+  }
+
   if(!sched.length){
     h+='<div class="al al-y">本日スケジュールできる案件がありません</div>';
   } else {
@@ -2223,10 +2231,10 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
         (c.wait>0?'　<span style="color:#d69e2e">⏳待機'+c.wait+'分</span>':'')+
         '</div></div></div>';
       if(!last){
-        if(c.wait>0) h+='<div class="wait-row" style="margin-left:78px">⏳ '+c.wait+'分待機（'+c.tm+'）</div>';
         h+='<div class="mv">'+
-          '<div style="min-width:68px;text-align:right;color:#a0aec0">移動</div>'+
+          '<div style="min-width:68px;text-align:right;color:#a0aec0;font-size:.72rem">▼ 移動</div>'+
           '<div>🚗 約'+sched[i+1].trv+'分　'+nkm+
+          (c.wait>0?'　<span style="color:#d69e2e;font-size:.72rem">⏳待機'+c.wait+'分後</span>':'')+
           '　<span style="color:#a0aec0;font-size:.7rem">'+getArea(c.adr)+'→'+getArea(nextC.adr)+'</span>'+
           '</div></div>';
       }
@@ -2495,7 +2503,7 @@ function buildAllCore(){
       calBlocks: calBlocks
     };
 
-    html += renderDay(d+1, dStr, todaySch, notDone.concat(extraNA), spd, effectiveStartMin, isNow&&d===0, calBlocks, d);
+    html += renderDay(d+1, dStr, todaySch, notDone.concat(extraNA), spd, effectiveStartMin, isNow&&d===0, calBlocks, d, effectiveStartAdr);
   }
 
   if(remaining.length){
