@@ -1527,6 +1527,55 @@ function addCaseToDayConfirm(){
     prevC3   = sc;
   });
 
+  // ── ① 他の日のスケジュールから同じbaseIDの案件を削除 ──
+  var addedBaseId = baseId(cid);
+  if(window._dayScheds){
+    window._dayScheds.forEach(function(other, otherIdx){
+      if(otherIdx === dayIdx || !other) return;
+      var before = other.sched.length;
+      other.sched = other.sched.filter(function(sc){
+        return baseId(sc.id) !== addedBaseId;
+      });
+      if(other.sched.length < before){
+        // 他日の時刻も先頭から再計算
+        var cur3 = other.startMin, prevAdr3 = other.startAdr, prevC4 = null;
+        var calB3 = other.calBlocks || [];
+        function avoidCal3(st, dur){
+          var g=0;
+          while(g++<calB3.length*2+2){
+            var hit=null;
+            for(var bi=0;bi<calB3.length;bi++){
+              if(st<calB3[bi].end&&(st+dur)>calB3[bi].start){hit=calB3[bi];break;}
+            }
+            if(!hit) break; st=hit.end+15;
+          }
+          return st;
+        }
+        other.sched.forEach(function(sc){
+          var p1=(prevAdr3==='__GPS__'&&window._gpsLat)?{lat:window._gpsLat,lng:window._gpsLng}:(prevC4&&prevC4.lat&&prevC4.lng?{lat:prevC4.lat,lng:prevC4.lng}:getPos(prevAdr3,null));
+          var p2=(sc.lat&&sc.lng)?{lat:sc.lat,lng:sc.lng}:getPos(sc.adr,sc);
+          var t3=(p1&&p2)?Math.min(180,Math.max(3,Math.round(km(p1,p2)/(other.spd||40)*60))):5;
+          sc.trv=t3;
+          var arr3=cur3+t3;
+          if(sc.pin!=null){sc.wait=Math.max(0,sc.pin-arr3);sc.st=Math.max(arr3,sc.pin);}
+          else if(sc.tm&&TM_RANGE[sc.tm]){var stTm3=Math.max(arr3,TM_RANGE[sc.tm][0]);stTm3=avoidCal3(stTm3,sc.dur);sc.wait=Math.max(0,stTm3-arr3);sc.st=stTm3;}
+          else{var st3=Math.max(arr3,other.startMin);st3=avoidCal3(st3,sc.dur);sc.wait=0;sc.st=st3;}
+          cur3=sc.st+sc.dur; prevAdr3=sc.adr; prevC4=sc;
+        });
+        // 他日のカードを再描画
+        var otherCard = document.getElementById('day-card-'+otherIdx);
+        if(otherCard){
+          otherCard.outerHTML = renderDay(other.dayNum, other.dStr, other.sched, other.skip, other.spd, other.startMin, other.isNow, other.calBlocks, otherIdx, other.startAdr);
+        }
+      }
+    });
+  }
+
+  // ── ② 追加した日のルートを2-optで最適化 ──
+  var DAY_END_MIN = 20*60+15;
+  var optimized = twoOptImprove(ds.sched, ds.startAdr, ds.startMin, ds.spd, ds.calBlocks, ds.startMin, DAY_END_MIN);
+  ds.sched = optimized;
+
   // そのカードを再描画
   var cardId = 'day-card-'+dayIdx;
   var card = document.getElementById(cardId);
