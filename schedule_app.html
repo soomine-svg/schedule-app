@@ -3020,9 +3020,15 @@ function buildAllCore(){
     // カレンダーブロック取得
     var calBlocks = (typeof gcalGetBlocks==='function') ? gcalGetBlocks(dStr) : [];
 
-    // effectiveDayEnd は常に20:15。カレンダーブロックとの衝突はscheduleDay内で動的に処理する
-    // （ブロックをまたいでブロック後の時間も活用するため、ここでは削らない）
+    // effectiveDayEnd: 夕方以降のブロックが20:15より早く始まる場合はそこで打ち切る
     var effectiveDayEnd = 20*60+15;
+    calBlocks.forEach(function(b){
+      // 15:00以降に始まるブロックが終日まで続く（end>=24:00 or end<=start）場合
+      // → そのブロック開始までを実質的な終業時刻にする
+      if(b.start >= 15*60 && b.end >= 24*60 && b.start < effectiveDayEnd){
+        effectiveDayEnd = b.start;
+      }
+    });
 
     // 午前予定があればstartMinをその後にシフト（全日対応）
     var hasMorning = calBlocks.some(function(b){ return b.start < 12*60; });
@@ -3291,9 +3297,15 @@ function gcalGetBlocks(dateStr){
   return gcalEvents
     .filter(function(e){ return e.dateStr === dateStr; })
     .map(function(e){
+      var startMin = e.start.getHours()*60+e.start.getMinutes();
+      var endMin   = e.end.getHours()*60+e.end.getMinutes();
+      // 翌日またぎ予定（end < start）は当日24:00まで延長してブロック
+      if(endMin < startMin) endMin = 24*60;
+      // end=0:00（次の日の00:00でJSが返す場合）も終日扱い
+      if(endMin === 0) endMin = 24*60;
       return {
-        start:    e.start.getHours()*60+e.start.getMinutes(),
-        end:      e.end.getHours()*60+e.end.getMinutes(),
+        start:    startMin,
+        end:      endMin,
         title:    e.title,
         location: e.location || null,
         lat:      e.lat || null,
