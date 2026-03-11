@@ -1443,47 +1443,7 @@ function addCaseToDayConfirm(){
   var ds = window._dayScheds[dayIdx];
   if(!ds) return;
 
-  // 現在のスケジュール最終時刻 or startMinから配置
-  var lastEntry = ds.sched.length ? ds.sched[ds.sched.length-1] : null;
-  var curTime = lastEntry ? lastEntry.st + lastEntry.dur : ds.startMin;
-  var prevAdr = lastEntry ? lastEntry.adr : ds.startAdr;
-  var prevC   = lastEntry || null;
   var spd = ds.spd || 40;
-
-  function trvMin(a,aC,b,bC){
-    var p1=(a==='__GPS__'&&window._gpsLat)?{lat:window._gpsLat,lng:window._gpsLng}:getPos(a,aC);
-    var p2=bC&&bC.lat&&bC.lng?{lat:bC.lat,lng:bC.lng}:getPos(b,bC);
-    if(!p1||!p2) return 5;
-    return Math.min(180,Math.max(3,Math.round(km(p1,p2)/spd*60)));
-  }
-
-  var t = trvMin(prevAdr, prevC, c.adr, c);
-  var arriveAt = curTime + t;
-  var st;
-  var waitMin = 0;
-  if(c.pin != null){
-    st = Math.max(arriveAt, c.pin);
-    waitMin = Math.max(0, c.pin - arriveAt);
-  } else if(c.tm && TM_RANGE[c.tm]){
-    var wStart = TM_RANGE[c.tm][0];
-    st = Math.max(arriveAt, wStart);
-    waitMin = Math.max(0, wStart - arriveAt);
-  } else {
-    st = arriveAt;
-  }
-
-  // スケジュールに追加
-  ds.sched.push(Object.assign({}, c, {st:st, trv:t, wait:waitMin}));
-  // skipから除去
-  ds.skip = (ds.skip||[]).filter(function(x){ return x.id !== cid; });
-  // _remainingAllからも除去
-  window._remainingAll = (window._remainingAll||[]).filter(function(x){ return x.id !== cid; });
-
-  // 追加後に全件の時刻を先頭から再計算（並び替えと同じロジック）
-  var DAY_START_MIN2 = 8*60+30;
-  var cur2 = ds.startMin;
-  var prevAdr2 = ds.startAdr;
-  var prevC3 = null;
   var calB_ac = ds.calBlocks || [];
 
   function avoidCalBlock_ac(st, dur){
@@ -1498,6 +1458,48 @@ function addCaseToDayConfirm(){
     }
     return st;
   }
+
+  function trvBetween(fromAdr, fromC, toAdr, toC){
+    var p1=(fromAdr==='__GPS__'&&window._gpsLat)?{lat:window._gpsLat,lng:window._gpsLng}:(fromC&&fromC.lat&&fromC.lng?{lat:fromC.lat,lng:fromC.lng}:getPos(fromAdr,fromC));
+    var p2=(toC&&toC.lat&&toC.lng)?{lat:toC.lat,lng:toC.lng}:getPos(toAdr,toC);
+    if(!p1||!p2) return 5;
+    return Math.min(180,Math.max(3,Math.round(km(p1,p2)/spd*60)));
+  }
+
+  // ── 挿入位置を決定 ──
+  // 時間指定・ピン案件は想定開始時刻でソート位置を決める
+  // 自由案件は末尾に追加（後でtwoOptが並び替える）
+  var insertIdx = ds.sched.length; // デフォルト末尾
+  var cHasTime = (c.pin != null) || (c.tm && TM_RANGE[c.tm]);
+  if(cHasTime){
+    var cExpectedStart = (c.pin != null) ? c.pin : TM_RANGE[c.tm][0];
+    // st順で正しい位置を探す
+    for(var si = 0; si < ds.sched.length; si++){
+      var scSt = ds.sched[si].st || 0;
+      var scHasTime = (ds.sched[si].pin != null) || (ds.sched[si].tm && TM_RANGE[ds.sched[si].tm]);
+      // 時間指定案件の前に時間指定案件がある場合、expected_startで比較
+      if(scHasTime){
+        var scExpected = (ds.sched[si].pin != null) ? ds.sched[si].pin : TM_RANGE[ds.sched[si].tm][0];
+        if(cExpectedStart < scExpected){ insertIdx = si; break; }
+      } else {
+        // 自由案件より前に時間指定案件を挿入
+        if(cExpectedStart < (scSt || cExpectedStart + 1)){ insertIdx = si; break; }
+      }
+    }
+  }
+
+  // 仮の開始時刻で挿入（後で全体再計算）
+  ds.sched.splice(insertIdx, 0, Object.assign({}, c, {st:0, trv:0, wait:0}));
+  // skipから除去
+  ds.skip = (ds.skip||[]).filter(function(x){ return x.id !== cid; });
+  // _remainingAllからも除去
+  window._remainingAll = (window._remainingAll||[]).filter(function(x){ return x.id !== cid; });
+
+  // ── 追加後に全件の時刻を先頭から再計算 ──
+  var DAY_START_MIN2 = 8*60+30;
+  var cur2 = ds.startMin;
+  var prevAdr2 = ds.startAdr;
+  var prevC3 = null;
 
   ds.sched.forEach(function(sc){
     var p1 = (prevAdr2 === '__GPS__' && window._gpsLat)
@@ -1572,8 +1574,8 @@ function addCaseToDayConfirm(){
   }
 
   // ── ② 追加した日のルートを2-optで最適化 ──
-  var DAY_END_MIN = 20*60+15;
-  var optimized = twoOptImprove(ds.sched, ds.startAdr, ds.startMin, ds.spd, ds.calBlocks, ds.startMin, DAY_END_MIN);
+  var FREE_DAY_END_AC = 20*60+15;
+  var optimized = twoOptImprove(ds.sched, ds.startAdr, ds.startMin, ds.spd, ds.calBlocks, ds.startMin, FREE_DAY_END_AC);
   ds.sched = optimized;
 
   // そのカードを再描画
@@ -2033,15 +2035,16 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     }
   });
 
-  // 時間指定あり案件のソート：①納期が早い順 → ②時刻が早い順
+  // 時間指定あり案件のソート：①ピン案件を時刻順に ②納期が早い順 → ③時刻が早い順
   timedAvail.sort(function(a,b){
-    // 納期比較（早い納期を優先）
+    var aT = a.pin!=null ? a.pin : (TM_RANGE[a.tm] ? TM_RANGE[a.tm][0] : 9999);
+    var bT = b.pin!=null ? b.pin : (TM_RANGE[b.tm] ? TM_RANGE[b.tm][0] : 9999);
+    // まず時刻順（ピン案件もtm案件も混在して時刻順に並べる）
+    if(Math.abs(aT - bT) > 30) return aT - bT; // 30分以上の差なら時刻優先
+    // 同時刻帯（30分以内）なら納期優先
     var aD = a.d2 || '9999-99-99';
     var bD = b.d2 || '9999-99-99';
     if(aD !== bD) return aD < bD ? -1 : 1;
-    // 同納期なら時刻順（pin時刻 or TM_RANGE開始）
-    var aT = a.pin!=null ? a.pin : (TM_RANGE[a.tm] ? TM_RANGE[a.tm][0] : 9999);
-    var bT = b.pin!=null ? b.pin : (TM_RANGE[b.tm] ? TM_RANGE[b.tm][0] : 9999);
     return aT - bT;
   });
 
@@ -2200,6 +2203,27 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
         place(next, st);
         skip = {}; // エリアが変わったのでリセット
       } else {
+        // 残り時間に収まらない → 残り時間内に収まる別の案件を探す
+        var timeLeft = deadline - st;
+        var shortRem = freePool.filter(function(c){
+          return !placed[baseId(c.id)] && !skip[baseId(c.id)] && c.dur <= timeLeft;
+        });
+        if(shortRem.length > 0){
+          // 残り時間内に収まる案件を最近傍で選んで配置
+          var fromPos2 = prevC && prevC.lat && prevC.lng ? {lat:prevC.lat,lng:prevC.lng} : getPos(prev,null);
+          var bestFit=shortRem[0], bestFitD=Infinity;
+          shortRem.forEach(function(sc){
+            var sp=getPos(sc.adr,sc);
+            if(sp&&fromPos2){ var d2=km(fromPos2,sp); if(d2<bestFitD){bestFitD=d2;bestFit=sc;} }
+          });
+          var tFit=trv(prev,prevC,bestFit.adr,bestFit);
+          var stFit=Math.max(cur+tFit,FREE_START);
+          if(stFit+bestFit.dur<=deadline){
+            place(bestFit,stFit);
+            skip={};
+            continue;
+          }
+        }
         skip[baseId(next.id)] = true;
         // 全候補スキップ済みなら終了
         var rem = freePool.filter(function(c){
@@ -2386,7 +2410,7 @@ function twoOptImprove(sched, startAdr, startMin, spd, calBlocks, freeStart, fre
         var rec = recompute(trial);
         if(rec){
           var tv = totalTrv(rec);
-          if(tv < bestTrv - 0.5){
+          if(tv < bestTrv - 0.01){
             best = rec;
             bestTrv = tv;
             improved = true;
@@ -2414,7 +2438,7 @@ function twoOptImprove(sched, startAdr, startMin, spd, calBlocks, freeStart, fre
         var rec2 = recompute(trial2);
         if(rec2){
           var tv2 = totalTrv(rec2);
-          if(tv2 < bestTrv - 0.5){
+          if(tv2 < bestTrv - 0.01){
             best = rec2;
             bestTrv = tv2;
             improved = true;
@@ -2704,7 +2728,12 @@ function buildAllCore(){
 
   console.log('buildAll cases:'+cases.length+' ids:['+cases.map(function(c){return c.id;}).join(',')+']');
   console.log('cases:'+cases.length+' ['+cases.map(function(c){return c.id;}).join(',')+']');
-  var remaining = cases.slice();
+  // 納期昇順でソート（締め切りが近い案件を先に処理して繰り越しを防ぐ）
+  var remaining = cases.slice().sort(function(a,b){
+    var aD = a.d2 || '9999-99-99';
+    var bD = b.d2 || '9999-99-99';
+    return aD < bD ? -1 : aD > bD ? 1 : 0;
+  });
   var html = '';
 
   for(var d=0; d<3; d++){
@@ -2756,6 +2785,9 @@ function buildAllCore(){
     });
 
     var todayPool=[], carriedOver=[];
+    // 今日の日付文字列（納期比較用）
+    var todayDStr = dStr;
+
     Object.keys(byBase).forEach(function(b){
       var arr=byBase[b];
       // 今日すでに同baseIdを完了済みなら全て翌日へ
@@ -2765,29 +2797,35 @@ function buildAllCore(){
       }
       if(arr.length===1){ todayPool.push(arr[0]); return; }
 
-      // ── パズル型選択：今日実際にスケジュール可能な案件を優先 ──
-      // 時間指定案件と自由案件をそれぞれ今日可能なものに分類
-      var canToday    = arr.filter(function(c){ return canScheduleTodayCheck(c, date, startMin); });
-      var cannotToday = arr.filter(function(c){ return !canScheduleTodayCheck(c, date, startMin); });
-
-      var chosen;
-      if(canToday.length === 0){
-        // 全件今日不可 → 時間指定優先で1件だけ選ぶ（明日以降の枠に備える）
-        var withTm = arr.filter(function(c){ return c.tm && TM_RANGE[c.tm]; });
-        chosen = withTm.length ? withTm[0] : arr[0];
-      } else {
-        // 今日可能な中から最適な1件を選ぶ
-        // 優先順位: ①ピンポイント ②時間指定あり ③時間指定なし
-        var pinCases  = canToday.filter(function(c){ return c.pin != null; });
-        var timedCases= canToday.filter(function(c){ return c.pin == null && c.tm && TM_RANGE[c.tm]; });
-        var freeCases = canToday.filter(function(c){ return c.pin == null && (!c.tm || !TM_RANGE[c.tm]); });
-        if(pinCases.length)   chosen = pinCases[0];
-        else if(timedCases.length) chosen = timedCases[0];
-        else                  chosen = freeCases[0];
+      // ── 納期超過・当日締め切り案件は枝番制限を超えて全件今日に入れる ──
+      var urgentAll = arr.filter(function(c){
+        if(!c.d2) return false;
+        return c.d2 <= todayDStr; // 今日以前が締め切り→絶対今日
+      });
+      if(urgentAll.length > 0){
+        urgentAll.forEach(function(c){ todayPool.push(c); });
+        arr.filter(function(c){ return urgentAll.indexOf(c) < 0; })
+          .forEach(function(c){ carriedOver.push(c); });
+        return;
       }
 
-      todayPool.push(chosen);
-      arr.filter(function(c){ return c !== chosen; }).forEach(function(c){ carriedOver.push(c); });
+      // ── 今日スケジュール可能な案件を全件todayPoolへ（詰め込み優先） ──
+      // ピンDate指定が今日でない案件、曜日不一致案件は除外
+      var canToday = arr.filter(function(c){ return canScheduleTodayCheck(c, date, startMin); });
+      var cannotToday = arr.filter(function(c){ return !canScheduleTodayCheck(c, date, startMin); });
+
+      if(canToday.length === 0){
+        // 全件今日不可 → 時間指定優先で1件だけ選ぶ
+        var withTm = arr.filter(function(c){ return c.tm && TM_RANGE[c.tm]; });
+        var chosen = withTm.length ? withTm[0] : arr[0];
+        todayPool.push(chosen);
+        arr.filter(function(c){ return c !== chosen; }).forEach(function(c){ carriedOver.push(c); });
+        return;
+      }
+
+      // 今日可能な案件は全部todayPoolへ（scheduleDay内で時間が足りなければnotDoneに残る）
+      canToday.forEach(function(c){ todayPool.push(c); });
+      cannotToday.forEach(function(c){ carriedOver.push(c); });
     });
 
     // 早朝指定案件(06:00〜07:00等)があれば出発を前倒し
