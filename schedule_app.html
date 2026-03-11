@@ -273,6 +273,7 @@ header h1{font-size:1.1rem;font-weight:700}
       </div>
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <button class="btn bb" onclick="buildAll()">🗓 スケジュール作成（3日分）</button>
+      <button class="btn bt" onclick="dmCacheClear();alert('道路距離キャッシュをクリアしました。次回スケジュール作成時に再取得します。');" title="道路距離キャッシュをクリア（再取得）" style="font-size:.78rem;padding:5px 10px">🗑️ 距離キャッシュ</button>
       <label id="fast-mode-label" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem;padding:8px 14px;border-radius:8px;border:1.5px solid #e2e8f0;background:#f7fafc;user-select:none;transition:all .2s" title="全案件をできるだけ早く消化するモード。帰路バイアスをゼロにし、2-opt改善で移動距離を最小化します。">
         <input type="checkbox" id="fast-mode-chk" onchange="window._fastMode=this.checked;document.getElementById('fast-mode-label').style.background=this.checked?'#fef3c7':'#f7fafc';document.getElementById('fast-mode-label').style.borderColor=this.checked?'#f59e0b':'#e2e8f0';" style="accent-color:#f59e0b;width:15px;height:15px">
         <span>🚀 最速完了モード</span>
@@ -1020,6 +1021,10 @@ function addCase(){
     renderCases();
     saveCases();
     setTimeout(function(){document.getElementById("geocode-status-add").textContent="";},3000);
+    // 新住所と既存全住所とのDistance Matrixをバックグラウンドでフェッチ
+    var existingAddrs2 = [HOME_ADR];
+    cases.forEach(function(c){ if(c.adr && c.adr !== adr) existingAddrs2.push(c.adr); });
+    prefetchDistanceMatrix([adr].concat(existingAddrs2), function(){});
   });
   document.getElementById("fid").value="";
   document.getElementById("fzip").value="";
@@ -1460,6 +1465,10 @@ function addCaseToDayConfirm(){
   }
 
   function trvBetween(fromAdr, fromC, toAdr, toC){
+    // Distance Matrixキャッシュ優先
+    var fa = (fromAdr === '__GPS__' && window._gpsLat) ? '現在地(GPS)' : fromAdr;
+    var cached = dmGet(fa, toAdr);
+    if(cached != null) return Math.min(180, Math.max(3, cached));
     var p1=(fromAdr==='__GPS__'&&window._gpsLat)?{lat:window._gpsLat,lng:window._gpsLng}:(fromC&&fromC.lat&&fromC.lng?{lat:fromC.lat,lng:fromC.lng}:getPos(fromAdr,fromC));
     var p2=(toC&&toC.lat&&toC.lng)?{lat:toC.lat,lng:toC.lng}:getPos(toAdr,toC);
     if(!p1||!p2) return 5;
@@ -1506,7 +1515,9 @@ function addCaseToDayConfirm(){
       ? {lat:window._gpsLat, lng:window._gpsLng}
       : (prevC3 && prevC3.lat && prevC3.lng ? {lat:prevC3.lat, lng:prevC3.lng} : getPos(prevAdr2, null));
     var p2 = (sc.lat && sc.lng) ? {lat:sc.lat, lng:sc.lng} : getPos(sc.adr, sc);
-    var tCalc = (p1 && p2) ? Math.min(180, Math.max(3, Math.round(km(p1, p2) / (ds.spd||40) * 60))) : 5;
+    var _cachedAc = dmGet(prevAdr2 === '__GPS__' ? '現在地(GPS)' : prevAdr2, sc.adr);
+    var tCalc = (_cachedAc != null) ? Math.min(180, Math.max(3, _cachedAc))
+      : (p1 && p2) ? Math.min(180, Math.max(3, Math.round(km(p1, p2) / (ds.spd||40) * 60))) : 5;
     sc.trv = tCalc;
     var arrived2 = cur2 + tCalc;
     if(sc.pin != null){
@@ -1556,7 +1567,8 @@ function addCaseToDayConfirm(){
         other.sched.forEach(function(sc){
           var p1=(prevAdr3==='__GPS__'&&window._gpsLat)?{lat:window._gpsLat,lng:window._gpsLng}:(prevC4&&prevC4.lat&&prevC4.lng?{lat:prevC4.lat,lng:prevC4.lng}:getPos(prevAdr3,null));
           var p2=(sc.lat&&sc.lng)?{lat:sc.lat,lng:sc.lng}:getPos(sc.adr,sc);
-          var t3=(p1&&p2)?Math.min(180,Math.max(3,Math.round(km(p1,p2)/(other.spd||40)*60))):5;
+          var _cachedOD=dmGet(prevAdr3==='__GPS__'?'現在地(GPS)':prevAdr3,sc.adr);
+          var t3=(_cachedOD!=null)?Math.min(180,Math.max(3,_cachedOD)):(p1&&p2)?Math.min(180,Math.max(3,Math.round(km(p1,p2)/(other.spd||40)*60))):5;
           sc.trv=t3;
           var arr3=cur3+t3;
           if(sc.pin!=null){sc.wait=Math.max(0,sc.pin-arr3);sc.st=Math.max(arr3,sc.pin);}
@@ -1625,7 +1637,9 @@ function reorderSched(dayIdx, itemIdx, dir){
       ? {lat:window._gpsLat, lng:window._gpsLng}
       : (prevC2 && prevC2.lat && prevC2.lng ? {lat:prevC2.lat, lng:prevC2.lng} : getPos(prevAdr, null));
     var p2 = (c.lat && c.lng) ? {lat:c.lat, lng:c.lng} : getPos(c.adr, c);
-    if(p1 && p2) t = Math.min(180, Math.max(3, Math.round(km(p1, p2) / spd * 60)));
+    var _cachedRo2 = dmGet(prevAdr === '__GPS__' ? '現在地(GPS)' : prevAdr, c.adr);
+    if(_cachedRo2 != null){ t = Math.min(180, Math.max(3, _cachedRo2)); }
+    else if(p1 && p2){ t = Math.min(180, Math.max(3, Math.round(km(p1, p2) / spd * 60))); }
     c.trv = t;
     var arrived = cur + t;
 
@@ -1957,6 +1971,126 @@ function km(a,b){
 }
 function trvMin(a,b,spd,cA,cB){return Math.min(180,Math.max(3,Math.round(km(getPos(a,cA),getPos(b,cB))/spd*60)));}
 
+// ===== Distance Matrix キャッシュ＆API =====
+// キャッシュキー: "住所A||住所B" → 移動時間(分)
+// localStorage永続化 + メモリキャッシュ
+var _dmCache = (function(){
+  try{
+    var raw = localStorage.getItem('dm_cache_v1');
+    return raw ? JSON.parse(raw) : {};
+  } catch(e){ return {}; }
+})();
+
+function _dmCacheSave(){
+  try{ localStorage.setItem('dm_cache_v1', JSON.stringify(_dmCache)); }catch(e){}
+}
+
+function _dmKey(adr1, adr2){ return adr1 + '||' + adr2; }
+
+// キャッシュから移動時間(分)を取得。なければ null
+function dmGet(fromAdr, toAdr){
+  var k = _dmKey(fromAdr, toAdr);
+  return (_dmCache[k] != null) ? _dmCache[k] : null;
+}
+
+// キャッシュに保存
+function dmSet(fromAdr, toAdr, minutes){
+  _dmCache[_dmKey(fromAdr, toAdr)] = minutes;
+}
+
+// Distance Matrix APIで複数ペアを一括取得してキャッシュに保存
+// origins: [adr, ...], destinations: [adr, ...]
+// callback(err): 完了時に呼ばれる
+function fetchDistanceMatrix(origins, destinations, callback){
+  if(!origins.length || !destinations.length){ callback(null); return; }
+  // 未キャッシュペアのみ対象
+  var missingPairs = [];
+  var uniqueOrigins = [], uniqueDests = [];
+  origins.forEach(function(o){
+    destinations.forEach(function(d){
+      if(o !== d && dmGet(o, d) == null){
+        missingPairs.push([o, d]);
+        if(uniqueOrigins.indexOf(o) < 0) uniqueOrigins.push(o);
+        if(uniqueDests.indexOf(d) < 0) uniqueDests.push(d);
+      }
+    });
+  });
+  if(!missingPairs.length){ callback(null); return; }
+
+  // Distance Matrix APIはorigins×destinationsを一括処理
+  // Google APIの制限：1リクエストあたり最大25origins×25destinations=625elements
+  // 超える場合は分割
+  var MAX_ELEM = 625;
+  var MAX_O = 25, MAX_D = 25;
+  var batches = [];
+  for(var oi=0; oi<uniqueOrigins.length; oi+=MAX_O){
+    var oSlice = uniqueOrigins.slice(oi, oi+MAX_O);
+    for(var di=0; di<uniqueDests.length; di+=MAX_D){
+      var dSlice = uniqueDests.slice(di, di+MAX_D);
+      batches.push({origins: oSlice, dests: dSlice});
+    }
+  }
+
+  var remaining2 = batches.length;
+  var hasError = false;
+
+  batches.forEach(function(batch){
+    var url = 'https://maps.googleapis.com/maps/api/distancematrix/json'
+      + '?origins=' + batch.origins.map(encodeURIComponent).join('|')
+      + '&destinations=' + batch.dests.map(encodeURIComponent).join('|')
+      + '&mode=driving&language=ja&region=JP&units=metric'
+      + '&key=' + GEOCODE_KEY;
+
+    fetch(url)
+      .then(function(r){ return r.json(); })
+      .then(function(data){
+        if(data.status === 'OK'){
+          data.rows.forEach(function(row, ri){
+            row.elements.forEach(function(el, di){
+              if(el.status === 'OK'){
+                var mins = Math.max(3, Math.round(el.duration.value / 60));
+                dmSet(batch.origins[ri], batch.dests[di], mins);
+              }
+            });
+          });
+          _dmCacheSave();
+        }
+        remaining2--;
+        if(remaining2 === 0) callback(hasError ? 'partial' : null);
+      })
+      .catch(function(e){
+        hasError = true;
+        remaining2--;
+        if(remaining2 === 0) callback('error');
+      });
+  });
+}
+
+// アドレスリストで事前にDistance Matrixをフェッチしてキャッシュを埋める
+// allAddrs: [住所文字列, ...] (重複含む可)
+// callback(): 完了時
+function prefetchDistanceMatrix(allAddrs, callback){
+  // 重複除去
+  var uniq = [];
+  var seen = {};
+  allAddrs.forEach(function(a){
+    if(a && !seen[a]){ seen[a]=true; uniq.push(a); }
+  });
+  if(uniq.length < 2){ callback(); return; }
+  fetchDistanceMatrix(uniq, uniq, function(err){
+    if(err) console.warn('Distance Matrix partial/error:', err);
+    callback();
+  });
+}
+
+// キャッシュクリア（デバッグ用）
+function dmCacheClear(){
+  _dmCache = {};
+  try{ localStorage.removeItem('dm_cache_v1'); }catch(e){}
+  console.log('Distance Matrix cache cleared');
+}
+
+
 // ===== スケジューリングエンジン =====
 
 function baseId(id){ return String(id).replace(/-\d+$/, ''); }
@@ -2067,6 +2201,12 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     return km(pos(fromAdr,fromC), pos(toAdr,toC));
   }
   function trv(fromAdr, fromC, toAdr, toC){
+    // Distance Matrixキャッシュがあればそちらを優先（道路距離）
+    var fa = (fromAdr === '__GPS__' && window._gpsLat) ? '現在地(GPS)' : fromAdr;
+    var ta = toAdr;
+    var cached = dmGet(fa, ta);
+    if(cached != null) return Math.min(180, Math.max(3, cached));
+    // フォールバック: 直線距離ベース
     var d = dist(fromAdr, fromC, toAdr, toC);
     return Math.min(180, Math.max(3, Math.round(d/spd*60)));
   }
@@ -2344,6 +2484,10 @@ function twoOptImprove(sched, startAdr, startMin, spd, calBlocks, freeStart, fre
 
   // 距離ヘルパー（scheduleDay スコープ外なので独立定義）
   function trvH(fromAdr, fromC, toAdr, toC){
+    // Distance Matrixキャッシュ優先
+    var fa = (fromAdr === '__GPS__' && window._gpsLat) ? '現在地(GPS)' : fromAdr;
+    var cached = dmGet(fa, toAdr);
+    if(cached != null) return Math.min(180, Math.max(3, cached));
     var d = km(getPos(fromAdr, fromC), getPos(toAdr, toC));
     return Math.min(180, Math.max(3, Math.round(d / spd * 60)));
   }
@@ -2661,14 +2805,48 @@ function buildAll(){
     document.getElementById("sresult").innerHTML='<div class="al al-y">案件がありません</div>';
     return;
   }
-  // カレンダー接続済みなら毎回最新を取得してからスケジュール作成
-  if(gcalToken){
-    document.getElementById('sresult').innerHTML
-      ='<div class="al al-y">⏳ カレンダーの予定を最新に更新中...</div>';
-    gcalFetchEvents(function(){ buildAllCore(); });
-    return;
+
+  // 全案件の住所リストを収集（自宅・出発地含む）
+  function collectAllAddrs(){
+    var addrs = [HOME_ADR];
+    cases.forEach(function(c){ if(c.adr) addrs.push(c.adr); });
+    var slocType = document.getElementById("sloc-type") ? document.getElementById("sloc-type").value : "home";
+    if(slocType === "custom"){
+      var customAdr = (document.getElementById("sloc") ? document.getElementById("sloc").value.trim() : "");
+      if(customAdr) addrs.push(customAdr);
+    }
+    return addrs;
   }
-  buildAllCore();
+
+  function proceedToBuild(){
+    if(gcalToken){
+      document.getElementById('sresult').innerHTML
+        ='<div class="al al-y">⏳ カレンダーの予定を最新に更新中...</div>';
+      gcalFetchEvents(function(){ buildAllCore(); });
+    } else {
+      buildAllCore();
+    }
+  }
+
+  // Distance Matrix API: 未キャッシュペアがあれば事前フェッチ
+  var allAddrs = collectAllAddrs();
+  // 未キャッシュペアの有無をチェック
+  var hasMissing = false;
+  for(var i=0; i<allAddrs.length && !hasMissing; i++){
+    for(var j=0; j<allAddrs.length && !hasMissing; j++){
+      if(i !== j && dmGet(allAddrs[i], allAddrs[j]) == null) hasMissing = true;
+    }
+  }
+
+  if(hasMissing){
+    document.getElementById('sresult').innerHTML
+      ='<div class="al al-y">🗺️ 道路距離を取得中... <span style="font-size:.8rem;color:#718096">（初回のみ数秒かかります）</span></div>';
+    prefetchDistanceMatrix(allAddrs, function(){
+      proceedToBuild();
+    });
+  } else {
+    proceedToBuild();
+  }
 }
 var _buildAllWaitCount = 0;
 function buildAllCore(){
