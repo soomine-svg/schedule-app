@@ -1893,22 +1893,30 @@ function csvMsg(msg){
 // 案件登録時に1回だけ呼ぶ。結果はcaseのlat/lngに保存
 function geocodeAddress(adr, callback){
   // Maps JavaScript API の Geocoder を使用（CORS回避）
+  var _geoWaitMs = 0;
+  var _geoCalled = false;
+  function _safe(lat, lng, err){
+    if(_geoCalled) return;
+    _geoCalled = true;
+    clearTimeout(_geoTimer);
+    callback(lat, lng, err);
+  }
+  // 個別タイムアウト：12秒以内にコールバックが来なければ強制完了
+  var _geoTimer = setTimeout(function(){ _safe(null, null, 'geocode timeout'); }, 12000);
   function _doGeo(){
     if(!window._gmapsLoaded || !window.google || !window.google.maps){
-      var waited = (window._gmapsGeoWaitMs || 0) + 200;
-      window._gmapsGeoWaitMs = waited;
-      if(waited > 5000){ callback(null, null, 'Maps API timeout'); return; }
+      _geoWaitMs += 200;
+      if(_geoWaitMs > 8000){ _safe(null, null, 'Maps API timeout'); return; }
       setTimeout(_doGeo, 200);
       return;
     }
-    window._gmapsGeoWaitMs = 0;
     var geocoder = new google.maps.Geocoder();
     geocoder.geocode({ address: adr, region: 'JP', language: 'ja' }, function(results, status){
       if(status === 'OK' && results.length){
         var loc = results[0].geometry.location;
-        callback(loc.lat(), loc.lng(), null);
+        _safe(loc.lat(), loc.lng(), null);
       } else {
-        callback(null, null, status);
+        _safe(null, null, status);
       }
     });
   }
@@ -2057,16 +2065,21 @@ function fetchDistanceMatrix(origins, destinations, callback){
   var remaining2 = batches.length;
   var hasError = false;
 
+  var _waitMs = 0;
   function _doFetch(){
     if(!window._gmapsLoaded || !window.google || !window.google.maps){
-      // Maps JS APIがまだロード中 → 最大5秒待機してリトライ
-      var waited = (window._gmapsWaitMs || 0) + 200;
-      window._gmapsWaitMs = waited;
-      if(waited > 5000){ callback('error'); return; }
+      // Maps JS APIがまだロード中 → 最大8秒待機してリトライ
+      _waitMs += 200;
+      if(_waitMs > 8000){
+        console.warn('[DM] Maps JS API未ロード - フォールバックで続行');
+        // バッチ数に関わらず即座にcallback呼び出し
+        callback('error');
+        return;
+      }
       setTimeout(_doFetch, 200);
       return;
     }
-    window._gmapsWaitMs = 0;
+    // Maps JS API ロード済み → DistanceMatrixService で一括取得
     var svc = new google.maps.DistanceMatrixService();
     batches.forEach(function(batch){
       svc.getDistanceMatrix({
@@ -2090,6 +2103,7 @@ function fetchDistanceMatrix(origins, destinations, callback){
           _dmCacheSave();
         } else {
           hasError = true;
+          console.warn('[DM] getDistanceMatrix status:', status);
         }
         remaining2--;
         if(remaining2 === 0) callback(hasError ? 'partial' : null);
@@ -2910,9 +2924,14 @@ function buildAll(){
   }
 
   if(hasMissing){
-    document.getElementById('sresult').innerHTML
-      ='<div class="al al-y">🗺️ 道路距離を取得中... <span style="font-size:.8rem;color:#718096">（初回のみ数秒かかります）</span></div>';
+    var _fetchStart = Date.now();
+    var _fetchTimer = setInterval(function(){
+      var sec = Math.round((Date.now() - _fetchStart) / 1000);
+      var el = document.getElementById('sresult');
+      if(el) el.innerHTML = '<div class="al al-y">🗺️ 道路距離を取得中... '+sec+'秒経過 <span style="font-size:.8rem;color:#718096">（初回のみかかります。10秒以上かかる場合は直線距離で代替します）</span></div>';
+    }, 1000);
     prefetchDistanceMatrix(allAddrs, function(){
+      clearInterval(_fetchTimer);
       proceedToBuild();
     });
   } else {
@@ -3406,6 +3425,29 @@ function gcalFetchEvents(callback){
         return;
       }
       var geoCount = 0;
+      var geoDone = false; // 二重callback防止
+
+      // タイムアウト保険：10秒経っても終わらなければ強制完了
+      var geoTimeout = setTimeout(function(){
+        if(!geoDone){
+          geoDone = true;
+          gcalReady = true;
+          document.getElementById('gcal-status').textContent
+            = '✅ 接続済み　'+gcalEvents.length+'件の予定を取得（座標一部未取得）';
+          if(typeof callback === 'function') callback();
+        }
+      }, 10000);
+
+      function onGeoComplete(){
+        if(geoDone) return;
+        geoDone = true;
+        clearTimeout(geoTimeout);
+        gcalReady = true;
+        document.getElementById('gcal-status').textContent
+          = '✅ 接続済み　'+gcalEvents.length+'件の予定を取得（場所の座標取得完了）';
+        if(typeof callback === 'function') callback();
+      }
+
       geoTargets.forEach(function(ev){
         geocodeAddress(ev.location, function(lat,lng,err){
           if(lat&&lng){ ev.lat=lat; ev.lng=lng; }
@@ -3421,12 +3463,7 @@ function gcalFetchEvents(callback){
             }
           });
           geoCount++;
-          if(geoCount >= geoTargets.length){
-            gcalReady = true;
-            document.getElementById('gcal-status').textContent
-              = '✅ 接続済み　'+gcalEvents.length+'件の予定を取得（場所の座標取得完了）';
-            if(typeof callback === 'function') callback();
-          }
+          if(geoCount >= geoTargets.length) onGeoComplete();
         });
       });
       document.getElementById('gcal-status').textContent
