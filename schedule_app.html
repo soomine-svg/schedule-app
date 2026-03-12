@@ -2066,14 +2066,16 @@ function fetchDistanceMatrix(origins, destinations, callback){
   var remaining2 = batches.length;
   var hasError = false;
 
+  // batches が0件（全ペアキャッシュ済み）なら即callback
+  if(remaining2 === 0){ callback(null); return; }
+
   var _waitMs = 0;
   function _doFetch(){
     if(!window._gmapsLoaded || !window.google || !window.google.maps){
-      // Maps JS APIがまだロード中 → 最大8秒待機してリトライ
+      // Maps JS APIがまだロード中 → 最大10秒待機してリトライ
       _waitMs += 200;
-      if(_waitMs > 8000){
+      if(_waitMs > 10000){
         console.warn('[DM] Maps JS API未ロード - フォールバックで続行');
-        // バッチ数に関わらず即座にcallback呼び出し
         callback('error');
         return;
       }
@@ -2082,7 +2084,8 @@ function fetchDistanceMatrix(origins, destinations, callback){
     }
     // Maps JS API ロード済み → DistanceMatrixService で一括取得
     var svc = new google.maps.DistanceMatrixService();
-    batches.forEach(function(batch){
+    console.log('[DM] バッチ取得開始: '+batches.length+'バッチ, origins:'+uniqueOrigins.length+', dests:'+uniqueDests.length);
+    batches.forEach(function(batch, bi){
       svc.getDistanceMatrix({
         origins: batch.origins,
         destinations: batch.dests,
@@ -2093,18 +2096,21 @@ function fetchDistanceMatrix(origins, destinations, callback){
         unitSystem: google.maps.UnitSystem.METRIC
       }, function(data, status){
         if(status === 'OK'){
+          var saved = 0;
           data.rows.forEach(function(row, ri){
             row.elements.forEach(function(el, di){
               if(el.status === 'OK'){
                 var mins = Math.max(3, Math.round(el.duration.value / 60));
                 dmSet(batch.origins[ri], batch.dests[di], mins);
+                saved++;
               }
             });
           });
           _dmCacheSave();
+          console.log('[DM] バッチ'+(bi+1)+' OK: '+saved+'件保存, 累計:'+Object.keys(_dmCache).length+'件');
         } else {
           hasError = true;
-          console.warn('[DM] getDistanceMatrix status:', status);
+          console.warn('[DM] バッチ'+(bi+1)+' エラー:', status);
         }
         remaining2--;
         if(remaining2 === 0) callback(hasError ? 'partial' : null);
@@ -2127,6 +2133,33 @@ function prefetchDistanceMatrix(allAddrs, callback){
   if(uniq.length < 2){ callback(); return; }
   fetchDistanceMatrix(uniq, uniq, function(err){
     if(err) console.warn('Distance Matrix partial/error:', err);
+    callback();
+  });
+}
+
+// カレンダー会場↔自宅の往復を最優先で取得（effectiveDayEnd/StartMin計算に必須）
+function prefetchCalendarVenues(callback){
+  if(!window.gcalEvents || gcalEvents.length === 0){ callback(); return; }
+  var venues = [];
+  gcalEvents.forEach(function(ev){
+    if(ev.location && venues.indexOf(ev.location) < 0) venues.push(ev.location);
+  });
+  if(venues.length === 0){ callback(); return; }
+
+  // 自宅↔各会場 の未キャッシュペアを取得
+  var origins = [HOME_ADR].concat(venues);
+  var dests   = [HOME_ADR].concat(venues);
+  var needFetch = false;
+  origins.forEach(function(o){ dests.forEach(function(d){
+    if(o !== d && dmGet(o, d) == null) needFetch = true;
+  }); });
+
+  if(!needFetch){ callback(); return; }
+
+  console.log('[DM] カレンダー会場DM取得: '+venues.length+'会場');
+  fetchDistanceMatrix(origins, dests, function(err){
+    if(err) console.warn('[DM] 会場DM取得エラー:', err);
+    else    console.log('[DM] 会場DM取得完了, キャッシュ:', Object.keys(_dmCache).length+'件');
     callback();
   });
 }
@@ -2934,38 +2967,13 @@ function buildAll(){
     }
   }
 
-  // ① まずカレンダー予定を取得（会場住所を把握するため）
-  // ② その後、案件住所＋カレンダー会場住所をまとめてDM取得
-  // ③ 最後にスケジュール作成
-  if(gcalToken){
-    document.getElementById('sresult').innerHTML
-      ='<div class="al al-y">⏳ カレンダーの予定を取得中...</div>';
-    gcalFetchEvents(function(){
-      // カレンダー取得完了 → DM取得（会場住所含む）→ buildAllCore
-      var allAddrs = collectAllAddrs();
-      var hasMissing = false;
-      for(var i=0; i<allAddrs.length && !hasMissing; i++){
-        for(var j=0; j<allAddrs.length && !hasMissing; j++){
-          if(i !== j && dmGet(allAddrs[i], allAddrs[j]) == null) hasMissing = true;
-        }
-      }
-      if(hasMissing){
-        var _fetchStart = Date.now();
-        var _fetchTimer = setInterval(function(){
-          var sec = Math.round((Date.now() - _fetchStart) / 1000);
-          var el = document.getElementById('sresult');
-          if(el) el.innerHTML = '<div class="al al-y">🗺️ 道路距離を取得中（カレンダー会場含む）... '+sec+'秒経過 <span style="font-size:.8rem;color:#718096">（初回のみかかります）</span></div>';
-        }, 1000);
-        prefetchDistanceMatrix(allAddrs, function(){
-          clearInterval(_fetchTimer);
-          buildAllCore();
-        });
-      } else {
-        buildAllCore();
-      }
-    });
-  } else {
-    // カレンダー未接続：案件住所のみでDM取得
+  // 処理順序:
+  // ① カレンダー取得（会場住所確定）
+  // ② 会場↔自宅のDM取得（最優先・小バッチ・確実）
+  // ③ 全案件住所のDM取得（大バッチ）
+  // ④ スケジュール作成
+
+  function doFullDmAndBuild(){
     var allAddrs = collectAllAddrs();
     var hasMissing = false;
     for(var i=0; i<allAddrs.length && !hasMissing; i++){
@@ -2978,7 +2986,7 @@ function buildAll(){
       var _fetchTimer = setInterval(function(){
         var sec = Math.round((Date.now() - _fetchStart) / 1000);
         var el = document.getElementById('sresult');
-        if(el) el.innerHTML = '<div class="al al-y">🗺️ 道路距離を取得中... '+sec+'秒経過 <span style="font-size:.8rem;color:#718096">（初回のみかかります。10秒以上かかる場合は直線距離で代替します）</span></div>';
+        if(el) el.innerHTML = '<div class="al al-y">🗺️ 道路距離を取得中... '+sec+'秒経過 <span style="font-size:.8rem;color:#718096">（初回のみかかります）</span></div>';
       }, 1000);
       prefetchDistanceMatrix(allAddrs, function(){
         clearInterval(_fetchTimer);
@@ -2987,6 +2995,21 @@ function buildAll(){
     } else {
       buildAllCore();
     }
+  }
+
+  if(gcalToken){
+    document.getElementById('sresult').innerHTML
+      ='<div class="al al-y">⏳ カレンダーの予定を取得中...</div>';
+    gcalFetchEvents(function(){
+      // ② 会場↔自宅を小バッチで確実取得 → ③ 全件DM → ④ スケジュール
+      document.getElementById('sresult').innerHTML
+        ='<div class="al al-y">🗺️ カレンダー会場の道路距離を取得中...</div>';
+      prefetchCalendarVenues(function(){
+        doFullDmAndBuild();
+      });
+    });
+  } else {
+    doFullDmAndBuild();
   }
 }
 var _buildAllWaitCount = 0;
