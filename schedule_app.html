@@ -1712,8 +1712,24 @@ function _markRowDone(row, safeId){
 }
 function delCase(i){if(confirm("削除しますか？")){cases.splice(i,1);renderCases();saveCases();}}
 function restoreCase(i){
-  var c=done.splice(i,1)[0];delete c.doneAt;
-  cases.push(c);renderCases();renderHist();
+  var c=done.splice(i,1)[0];
+  // visitLogのカウントを1戻す（完了取り消し）
+  if(c.doneAt){
+    var raw=c.doneAt.replace(/\//g,'-');
+    var m=raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if(m){
+      var doneDate=m[1]+'-'+('0'+m[2]).slice(-2)+'-'+('0'+m[3]).slice(-2);
+      var entry=visitLog.find(function(e){return e.date===doneDate;});
+      if(entry && entry.count>0){
+        entry.count--;
+        if(entry.count===0){
+          visitLog=visitLog.filter(function(e){return e.date!==doneDate;});
+        }
+      }
+    }
+  }
+  delete c.doneAt;
+  cases.push(c);renderCases();renderHist();renderVisitLog();
   saveCases();
 }
 function clearAllDone(){
@@ -2755,7 +2771,7 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
       var rowStyle=(isLateNight?lateStyle:hasTm?'background:#fffbf0;border-left:3px solid #f6ad55;padding-left:6px;border-radius:4px;':pinStyle);
       var safeId=c.id.replace(/[^a-zA-Z0-9_\-]/g,'_');
       var escapedId=c.id.replace(/'/g,"\\'");
-      h+='<div class="tl-row" id="tlrow-'+safeId+'" style="'+rowStyle+'">'+
+      h+='<div class="tl-row" id="tlrow-'+safeId+'" data-dayidx="'+(dayIdx!==undefined?dayIdx:0)+'" data-itemidx="'+i+'" style="'+rowStyle+'">'+
         '<div style="display:flex;flex-direction:column;align-items:flex-end;min-width:72px;gap:2px">'+
         '<div class="tl-t" style="min-width:unset;padding-top:0">'+fmt(c.st)+'<br><span style="color:#a0aec0;font-size:.7rem">〜'+fmt(c.st+c.dur)+'</span></div>'+
         '<div style="display:flex;gap:2px">'+
@@ -2763,6 +2779,7 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
         (!last?'<button onclick="reorderSched('+(dayIdx!==undefined?dayIdx:0)+','+i+',1)" title="下へ" style="padding:1px 6px;font-size:.8rem;background:#ebf4ff;color:#2b6cb0;border:none;border-radius:5px;cursor:pointer;line-height:1">▼</button>':'')+
         '</div>'+
         '<button id="tlbtn-'+safeId+'" onclick="schedDone(\''+escapedId+'\')" style="padding:2px 7px;font-size:.72rem;background:#c6f6d5;color:#276749;border:none;border-radius:6px;cursor:pointer;font-weight:700;white-space:nowrap">✅ 完了</button>'+
+        '<div class="drag-handle" title="長押しでドラッグ移動" style="cursor:grab;padding:2px 6px;font-size:.9rem;color:#a0aec0;user-select:none;touch-action:none">☰</div>'+
         '</div>'+
         '<div style="display:flex;flex-direction:column;align-items:center;padding-top:3px">'+
         '<div class="tl-dot'+(isLateNight?' w':hasTm?' e':'')+'"></div>'+
@@ -3357,6 +3374,192 @@ function loadSample(){
   ].forEach(function(c){cases.push(Object.assign({no:seq++,d1:""},c));});
   renderCases();
 }
+
+// ===== タッチドラッグ＆ドロップ（スケジュール並べ替え） =====
+(function(){
+  var _drag = null; // {el, dayIdx, itemIdx, clone, startY, scrollEl}
+
+  function getTlRows(dayIdx){
+    return Array.from(document.querySelectorAll('.tl-row[data-dayidx="'+dayIdx+'"]'));
+  }
+
+  function onTouchStart(e){
+    // ☰ハンドルのみ反応
+    if(!e.target.classList.contains('drag-handle')) return;
+    e.preventDefault();
+    var row = e.target.closest('.tl-row');
+    if(!row) return;
+    var dayIdx  = parseInt(row.dataset.dayidx);
+    var itemIdx = parseInt(row.dataset.itemidx);
+    var touch   = e.touches[0];
+
+    // ゴースト（半透明コピー）を作成
+    var rect = row.getBoundingClientRect();
+    var clone = row.cloneNode(true);
+    clone.style.cssText = [
+      'position:fixed',
+      'left:'+rect.left+'px',
+      'top:'+rect.top+'px',
+      'width:'+rect.width+'px',
+      'opacity:0.75',
+      'pointer-events:none',
+      'z-index:9999',
+      'box-shadow:0 4px 16px rgba(0,0,0,0.18)',
+      'border-radius:8px',
+      'background:#ebf8ff',
+      'transition:none'
+    ].join(';');
+    document.body.appendChild(clone);
+
+    // 元の行をグレーアウト
+    row.style.opacity = '0.3';
+
+    // スクロール親を探す
+    var scrollEl = row.closest('.card') || document.scrollingElement;
+
+    _drag = {
+      el: row,
+      dayIdx: dayIdx,
+      itemIdx: itemIdx,
+      clone: clone,
+      startY: touch.clientY,
+      cloneOffsetY: touch.clientY - rect.top,
+      scrollEl: scrollEl
+    };
+  }
+
+  function onTouchMove(e){
+    if(!_drag) return;
+    e.preventDefault();
+    var touch = e.touches[0];
+    var x = touch.clientX;
+    var y = touch.clientY;
+
+    // ゴーストを指に追従
+    _drag.clone.style.top = (y - _drag.cloneOffsetY) + 'px';
+
+    // ドロップ先候補行をハイライト
+    var rows = getTlRows(_drag.dayIdx);
+    rows.forEach(function(r){ r.style.borderTop = ''; r.style.borderBottom = ''; });
+
+    // タッチ座標の下にある tl-row を検出
+    _drag.clone.style.display = 'none';
+    var elBelow = document.elementFromPoint(x, y);
+    _drag.clone.style.display = '';
+    if(!elBelow) return;
+    var targetRow = elBelow.closest('.tl-row');
+    if(targetRow && targetRow !== _drag.el){
+      var targetIdx = parseInt(targetRow.dataset.itemidx);
+      if(targetIdx < _drag.itemIdx){
+        targetRow.style.borderTop = '2px solid #4299e1';
+      } else {
+        targetRow.style.borderBottom = '2px solid #4299e1';
+      }
+    }
+  }
+
+  function onTouchEnd(e){
+    if(!_drag) return;
+    var touch = e.changedTouches[0];
+
+    // ゴースト除去・元行を戻す
+    _drag.clone.remove();
+    _drag.el.style.opacity = '';
+
+    // ハイライト除去
+    var rows = getTlRows(_drag.dayIdx);
+    rows.forEach(function(r){ r.style.borderTop = ''; r.style.borderBottom = ''; });
+
+    // ドロップ先を特定
+    _drag.clone.style.display = 'none'; // 念のため
+    var elBelow = document.elementFromPoint(touch.clientX, touch.clientY);
+    if(elBelow){
+      var targetRow = elBelow.closest('.tl-row');
+      if(targetRow && targetRow !== _drag.el){
+        var fromIdx = _drag.itemIdx;
+        var toIdx   = parseInt(targetRow.dataset.itemidx);
+        if(!isNaN(toIdx) && fromIdx !== toIdx){
+          reorderSchedDirect(_drag.dayIdx, fromIdx, toIdx);
+        }
+      }
+    }
+
+    _drag = null;
+  }
+
+  // タッチイベントをdocumentレベルで捕捉（delegated）
+  document.addEventListener('touchstart',  onTouchStart, {passive:false});
+  document.addEventListener('touchmove',   onTouchMove,  {passive:false});
+  document.addEventListener('touchend',    onTouchEnd,   {passive:false});
+  document.addEventListener('touchcancel', function(){ 
+    if(!_drag) return;
+    _drag.clone.remove();
+    _drag.el.style.opacity = '';
+    _drag = null;
+  }, {passive:false});
+})();
+
+// 任意インデックス間の直接移動（ドラッグ用）
+function reorderSchedDirect(dayIdx, fromIdx, toIdx){
+  var ds = window._dayScheds && window._dayScheds[dayIdx];
+  if(!ds) return;
+  if(fromIdx < 0 || fromIdx >= ds.sched.length) return;
+  if(toIdx   < 0 || toIdx   >= ds.sched.length) return;
+
+  // 移動：fromIdxを取り出してtoIdxに挿入
+  var item = ds.sched.splice(fromIdx, 1)[0];
+  ds.sched.splice(toIdx, 0, item);
+
+  // 時刻を先頭から再計算（reorderSchedと同じロジック）
+  var DAY_START_MIN = 8*60+30;
+  var cur = ds.startMin;
+  var prevAdr = ds.startAdr;
+  var prevC = null;
+  var calB = ds.calBlocks || [];
+
+  function avoidCal(st, dur){
+    var g=0;
+    while(g++<calB.length*2+2){
+      var hit=null;
+      for(var bi=0;bi<calB.length;bi++){
+        if(st<calB[bi].end&&(st+dur)>calB[bi].start){hit=calB[bi];break;}
+      }
+      if(!hit) break;
+      st=hit.end+15;
+    }
+    return st;
+  }
+
+  ds.sched.forEach(function(sc){
+    var p1=(prevAdr==='__GPS__'&&window._gpsLat)?{lat:window._gpsLat,lng:window._gpsLng}:(prevC&&prevC.lat&&prevC.lng?{lat:prevC.lat,lng:prevC.lng}:getPos(prevAdr,null));
+    var p2=(sc.lat&&sc.lng)?{lat:sc.lat,lng:sc.lng}:getPos(sc.adr,sc);
+    var spd = ds.spd||40;
+    var cached = dmGet((prevAdr==='__GPS__'&&window._gpsLat)?'現在地(GPS)':prevAdr, sc.adr);
+    var t = cached!=null ? Math.min(180,Math.max(3,cached))
+          : ((p1&&p2) ? Math.min(180,Math.max(3,Math.round(km(p1,p2)/spd*60))) : 5);
+    sc.trv = t;
+    var arrived = cur + t;
+    if(sc.pin!=null){
+      sc.wait=Math.max(0,sc.pin-arrived); sc.st=Math.max(arrived,sc.pin);
+    } else if(sc.tm&&TM_RANGE[sc.tm]){
+      var stTm=Math.max(arrived,TM_RANGE[sc.tm][0]);
+      stTm=avoidCal(stTm,sc.dur);
+      sc.wait=Math.max(0,stTm-arrived); sc.st=stTm;
+    } else {
+      var stF=Math.max(arrived,Math.max(ds.startMin,DAY_START_MIN));
+      stF=avoidCal(stF,sc.dur);
+      sc.wait=0; sc.st=stF;
+    }
+    cur=sc.st+sc.dur; prevAdr=sc.adr; prevC=sc;
+  });
+
+  // カードを再描画
+  var card = document.getElementById('day-card-'+dayIdx);
+  if(card){
+    card.outerHTML = renderDay(ds.dayNum, ds.dStr, ds.sched, ds.skip, ds.spd, ds.startMin, ds.isNow, ds.calBlocks, dayIdx, ds.startAdr);
+  }
+}
+
 </script>
 </body>
 </html>
