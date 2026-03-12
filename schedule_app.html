@@ -2054,7 +2054,7 @@ function fetchDistanceMatrix(origins, destinations, callback){
     var url = 'https://maps.googleapis.com/maps/api/distancematrix/json'
       + '?origins=' + batch.origins.map(encodeURIComponent).join('|')
       + '&destinations=' + batch.dests.map(encodeURIComponent).join('|')
-      + '&mode=driving&language=ja&region=JP&units=metric'
+      + '&mode=driving&avoid=highways&language=ja&region=JP&units=metric'
       + '&key=' + GEOCODE_KEY;
 
     fetch(url)
@@ -2693,12 +2693,21 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
     departureLabel = '1件目（'+first.id+'）に間に合う出発時刻';
   } else if(calBlocks && calBlocks.length > 0){
     var firstBlock = calBlocks[0];
-    if(firstBlock.lat && firstBlock.lng){
-      var blockPos2 = {lat:firstBlock.lat, lng:firstBlock.lng};
-      var distKm2 = km(HOME_POS, blockPos2);
-      var trvMin2 = Math.max(5, Math.round(distKm2 / spd * 60));
+    if(firstBlock.location || (firstBlock.lat && firstBlock.lng)){
+      var fromAdrDep = startAdr === '__GPS__' ? '現在地(GPS)' : (startAdr || HOME_ADR);
+      var cachedDep = firstBlock.location ? dmGet(fromAdrDep, firstBlock.location) : null;
+      var trvMin2;
+      if(cachedDep != null){
+        trvMin2 = cachedDep;
+      } else if(firstBlock.lat && firstBlock.lng){
+        var depFromPos = (startAdr==='__GPS__'&&window._gpsLat)?{lat:window._gpsLat,lng:window._gpsLng}:getPos(startAdr||HOME_ADR,null);
+        var distKm2 = km(depFromPos||HOME_POS, {lat:firstBlock.lat,lng:firstBlock.lng});
+        trvMin2 = Math.max(5, Math.round(distKm2 * 1.5 / 80 * 60));
+      } else {
+        trvMin2 = 30;
+      }
       departureTime = firstBlock.start - 15 - trvMin2;
-      departureLabel = firstBlock.title+' 開始15分前到着（約'+distKm2.toFixed(0)+'km／'+trvMin2+'分）';
+      departureLabel = firstBlock.title+' 開始15分前到着（🚗 Googleマップ: '+trvMin2+'分）';
     }
   }
   if(isNow){
@@ -2712,14 +2721,53 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
       +'<span style="font-size:.75rem;color:#48bb78;margin-left:6px">（'+departureLabel+'）</span>'
       +'</div>';
   }
-  // カレンダー予定の表示
+  // カレンダー予定の表示（発着移動時間をDM APIで表示）
   if(calBlocks.length > 0){
     h+='<div style="margin-bottom:10px;padding:10px;background:#ebf8ff;border-radius:8px;border:1px solid #90cdf4">'
       +'<div style="font-size:.78rem;font-weight:600;color:#2c5282;margin-bottom:6px">📅 この日のカレンダー予定</div>';
-    calBlocks.forEach(function(b){
+    calBlocks.forEach(function(b, bi){
+      // このブロックへの到着移動時間を計算（前の案件 or 自宅から）
+      var trvToCalStr = '';
+      if(b.location){
+        // 直前の案件終了後にこのブロックへ向かう場合の移動時間
+        // 直前状態：このブロック開始前に終わった最後の案件
+        var prevForCal = null;
+        for(var pi = sched.length-1; pi >= 0; pi--){
+          if(sched[pi].st + sched[pi].dur <= b.start){ prevForCal = sched[pi]; break; }
+        }
+        var fromAdrCal = prevForCal ? prevForCal.adr : (startAdr === '__GPS__' ? '現在地(GPS)' : (startAdr || HOME_ADR));
+        var cached1 = dmGet(fromAdrCal, b.location);
+        var trvToCal;
+        if(cached1 != null){
+          trvToCal = cached1;
+        } else if(b.lat && b.lng){
+          var fromPosCal = prevForCal
+            ? ((prevForCal.lat&&prevForCal.lng)?{lat:prevForCal.lat,lng:prevForCal.lng}:getPos(prevForCal.adr,prevForCal))
+            : (startAdr==='__GPS__'&&window._gpsLat?{lat:window._gpsLat,lng:window._gpsLng}:getPos(startAdr||HOME_ADR,null));
+          trvToCal = fromPosCal ? Math.round(km(fromPosCal,{lat:b.lat,lng:b.lng})*1.5/80*60) : null;
+        }
+        if(trvToCal != null) trvToCalStr = '　<span style="color:#2b6cb0;font-size:.75rem">🚗 '+trvToCal+'分</span>';
+
+        // このブロック終了後、次の案件への移動時間
+        var nextForCal = null;
+        for(var ni = 0; ni < sched.length; ni++){
+          if(sched[ni].st >= b.end){ nextForCal = sched[ni]; break; }
+        }
+        if(nextForCal){
+          var cached2 = dmGet(b.location, nextForCal.adr);
+          var trvFromCal;
+          if(cached2 != null){
+            trvFromCal = cached2;
+          } else if(b.lat && b.lng && (nextForCal.lat||getPos(nextForCal.adr,nextForCal))){
+            var toPosCal = (nextForCal.lat&&nextForCal.lng)?{lat:nextForCal.lat,lng:nextForCal.lng}:getPos(nextForCal.adr,nextForCal);
+            trvFromCal = toPosCal ? Math.round(km({lat:b.lat,lng:b.lng},toPosCal)*1.5/80*60) : null;
+          }
+        }
+      }
       h+='<div style="font-size:.8rem;color:#2b6cb0;padding:3px 0">'
         +'⏰ '+fmt(b.start)+'〜'+fmt(b.end)+'　'+b.title
         +(b.location?'　<a href="https://maps.google.com/?q='+encodeURIComponent(b.location)+'" target="_blank" style="color:#4a90d9;font-size:.75rem;text-decoration:none">📍'+b.location+'</a>':'')
+        +trvToCalStr
         +'</div>';
     });
     h+='</div>';
@@ -3043,16 +3091,25 @@ function buildAllCore(){
       // → ブロック開始 - 会場までの移動時間 を実質的な終業時刻にする
       if(b.start >= 15*60 && b.end >= 24*60 && b.start < effectiveDayEnd){
         var trvToBlock = 0;
-        if(b.lat && b.lng){
-          // 会場座標がある場合：出発地（前日自宅 or effectiveStartAdr）から移動時間を計算
-          var fromPos2 = getPos(HOME_ADR, null); // 2日目以降は自宅起点が基本
-          if(fromPos2 && fromPos2.lat){
-            var dToBlock = km(fromPos2, {lat:b.lat, lng:b.lng});
-            trvToBlock = Math.min(300, Math.max(0, Math.round(dToBlock / (spd||40) * 60)));
+        if(b.location){
+          // Distance Matrixキャッシュを優先、なければ直線距離×1.5（道路係数）
+          var fromAdrForBlock = (d===0 && startAdr) ? startAdr : HOME_ADR;
+          var cachedBlock = dmGet(fromAdrForBlock === '__GPS__' ? '現在地(GPS)' : fromAdrForBlock, b.location);
+          if(cachedBlock != null){
+            trvToBlock = cachedBlock;
+          } else if(b.lat && b.lng){
+            var fromPos2 = (fromAdrForBlock === '__GPS__' && window._gpsLat)
+              ? {lat:window._gpsLat, lng:window._gpsLng}
+              : getPos(fromAdrForBlock, null);
+            if(fromPos2 && fromPos2.lat){
+              var dToBlock = km(fromPos2, {lat:b.lat, lng:b.lng});
+              // 直線距離×1.5（道路係数）÷時速80km（高速考慮）、上限なし
+              trvToBlock = Math.max(0, Math.round(dToBlock * 1.5 / 80 * 60));
+            }
           }
         }
-        // ブロック開始 - 移動時間 - 余裕15分 を終業時刻に
-        var safeEnd = b.start - trvToBlock - 15;
+        // ブロック開始 - 移動時間 - 余裕30分 を終業時刻に
+        var safeEnd = b.start - trvToBlock - 30;
         if(safeEnd < effectiveDayEnd) effectiveDayEnd = Math.max(safeEnd, 8*60+30);
       }
     });
@@ -3282,17 +3339,37 @@ function gcalFetchEvents(callback){
       gcalEvents = (data.items||[]).filter(function(e){
         // 終日予定・時刻なし予定は除外（時刻付き予定のみ）
         return e.start && e.start.dateTime;
-      }).map(function(e){
-        return {
+      }).reduce(function(arr, e){
+        var startDt = new Date(e.start.dateTime);
+        var endDt   = new Date(e.end.dateTime);
+        var startDate = e.start.dateTime.split('T')[0];
+        var endDate   = e.end.dateTime.split('T')[0];
+        // 開始日エントリ（通常）
+        arr.push({
           title:    e.summary || '（タイトルなし）',
-          start:    new Date(e.start.dateTime),
-          end:      new Date(e.end.dateTime),
-          dateStr:  e.start.dateTime.split('T')[0],
+          start:    startDt,
+          end:      endDt,
+          dateStr:  startDate,
           location: e.location || null,
           lat:      null,
           lng:      null
-        };
-      });
+        });
+        // 翌日またぎ：終了日が異なる場合、終了日にも「0:00〜終了時刻」のブロックを追加
+        if(endDate !== startDate){
+          var midnight = new Date(endDate + 'T00:00:00');
+          arr.push({
+            title:    e.summary || '（タイトルなし）',
+            start:    midnight,      // 0:00から
+            end:      endDt,         // 実際の終了時刻まで
+            dateStr:  endDate,
+            location: e.location || null,
+            lat:      null,
+            lng:      null,
+            isCarryOver: true        // 翌日またぎ継続フラグ
+          });
+        }
+        return arr;
+      }, []);
       // 場所情報がある予定をGeocodingで座標変換（全件完了を待つ）
       var geoTargets = gcalEvents.filter(function(ev){ return ev.location; });
       if(geoTargets.length === 0){
@@ -3309,6 +3386,12 @@ function gcalFetchEvents(callback){
             var fallback = getPos(ev.location, null);
             if(fallback && fallback.lat){ ev.lat=fallback.lat; ev.lng=fallback.lng; }
           }
+          // 翌日またぎ継続エントリにも座標を反映
+          gcalEvents.forEach(function(other){
+            if(other.isCarryOver && other.title===ev.title && other.location===ev.location && !other.lat){
+              other.lat = ev.lat; other.lng = ev.lng;
+            }
+          });
           geoCount++;
           if(geoCount >= geoTargets.length){
             gcalReady = true;
