@@ -2879,8 +2879,7 @@ function buildAllCore(){
   var slocType = document.getElementById("sloc-type") ? document.getElementById("sloc-type").value : "home";
   var day1Adr, day1Pos=null;
   if(slocType==="current" && window._gpsLat && window._gpsLng){
-    day1Adr = HOME_ADR; // アドレス文字列はフォールバック用
-    day1Pos = {lat:window._gpsLat, lng:window._gpsLng}; // GPS座標を直接使用
+    day1Adr = "__GPS__"; // GPS座標を出発地として使用
   } else if(slocType==="custom"){
     day1Adr = (document.getElementById("sloc") ? document.getElementById("sloc").value.trim() : "") || HOME_ADR;
   } else {
