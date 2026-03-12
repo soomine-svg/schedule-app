@@ -2726,49 +2726,51 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
     h+='<div style="margin-bottom:10px;padding:10px;background:#ebf8ff;border-radius:8px;border:1px solid #90cdf4">'
       +'<div style="font-size:.78rem;font-weight:600;color:#2c5282;margin-bottom:6px">📅 この日のカレンダー予定</div>';
     calBlocks.forEach(function(b, bi){
-      // このブロックへの到着移動時間を計算（前の案件 or 自宅から）
+      // このブロックへの到着移動時間（場所あり＆DMキャッシュあり時のみ表示）
       var trvToCalStr = '';
       if(b.location){
-        // 直前の案件終了後にこのブロックへ向かう場合の移動時間
-        // 直前状態：このブロック開始前に終わった最後の案件
         var prevForCal = null;
         for(var pi = sched.length-1; pi >= 0; pi--){
           if(sched[pi].st + sched[pi].dur <= b.start){ prevForCal = sched[pi]; break; }
         }
         var fromAdrCal = prevForCal ? prevForCal.adr : (startAdr === '__GPS__' ? '現在地(GPS)' : (startAdr || HOME_ADR));
         var cached1 = dmGet(fromAdrCal, b.location);
-        var trvToCal;
+        // DMキャッシュ（Googleマップ・高速なし）がある場合のみ表示
         if(cached1 != null){
-          trvToCal = cached1;
-        } else if(b.lat && b.lng){
-          var fromPosCal = prevForCal
-            ? ((prevForCal.lat&&prevForCal.lng)?{lat:prevForCal.lat,lng:prevForCal.lng}:getPos(prevForCal.adr,prevForCal))
-            : (startAdr==='__GPS__'&&window._gpsLat?{lat:window._gpsLat,lng:window._gpsLng}:getPos(startAdr||HOME_ADR,null));
-          trvToCal = fromPosCal ? Math.round(km(fromPosCal,{lat:b.lat,lng:b.lng})*1.5/80*60) : null;
+          trvToCalStr = '　<span style="color:#2b6cb0;font-size:.75rem">🚗 Googleマップ: '+cached1+'分</span>';
+        } else {
+          // キャッシュなし → バックグラウンドで取得してから再描画
+          (function(fa, loc){
+            fetchDistanceMatrix([fa], [loc], function(){
+              var got = dmGet(fa, loc);
+              if(got != null) buildAll();
+            });
+          })(fromAdrCal, b.location);
         }
-        if(trvToCal != null) trvToCalStr = '　<span style="color:#2b6cb0;font-size:.75rem">🚗 '+trvToCal+'分</span>';
 
-        // このブロック終了後、次の案件への移動時間
+        // このブロック終了後、次の案件への移動時間（DMキャッシュあり時のみ）
         var nextForCal = null;
         for(var ni = 0; ni < sched.length; ni++){
           if(sched[ni].st >= b.end){ nextForCal = sched[ni]; break; }
         }
-        if(nextForCal){
-          var cached2 = dmGet(b.location, nextForCal.adr);
-          var trvFromCal;
-          if(cached2 != null){
-            trvFromCal = cached2;
-          } else if(b.lat && b.lng && (nextForCal.lat||getPos(nextForCal.adr,nextForCal))){
-            var toPosCal = (nextForCal.lat&&nextForCal.lng)?{lat:nextForCal.lat,lng:nextForCal.lng}:getPos(nextForCal.adr,nextForCal);
-            trvFromCal = toPosCal ? Math.round(km({lat:b.lat,lng:b.lng},toPosCal)*1.5/80*60) : null;
-          }
+        // nextForCalの変数は計算ロジックで使用するため保持（表示は行わない）
+      }
+      // isCarryOver（翌日またぎ継続）の場合、帰宅移動時間を表示（DMキャッシュあり時のみ）
+      var returnTrvStr = '';
+      if(b.isCarryOver && b.location){
+        var cachedRet = dmGet(b.location, HOME_ADR);
+        if(cachedRet != null){
+          returnTrvStr = '　<span style="color:#c05621;font-size:.75rem">🏠 帰宅 Googleマップ: '+cachedRet+'分</span>';
+        } else {
+          // キャッシュなし → バックグラウンドで取得
+          (function(loc){
+            fetchDistanceMatrix([loc], [HOME_ADR], function(){
+              if(dmGet(loc, HOME_ADR) != null) buildAll();
+            });
+          })(b.location);
         }
       }
-      h+='<div style="font-size:.8rem;color:#2b6cb0;padding:3px 0">'
-        +'⏰ '+fmt(b.start)+'〜'+fmt(b.end)+'　'+b.title
-        +(b.location?'　<a href="https://maps.google.com/?q='+encodeURIComponent(b.location)+'" target="_blank" style="color:#4a90d9;font-size:.75rem;text-decoration:none">📍'+b.location+'</a>':'')
-        +trvToCalStr
-        +'</div>';
+      h+='<div style="font-size:.8rem;color:#2b6cb0;padding:3px 0">'        +'⏰ '+fmt(b.start)+'〜'+fmt(b.end)+'　'+b.title+(b.isCarryOver?' <span style="font-size:.72rem;color:#718096">（滞在中）</span>':'')        +(b.location?'　<a href="https://maps.google.com/?q='+encodeURIComponent(b.location)+'" target="_blank" style="color:#4a90d9;font-size:.75rem;text-decoration:none">📍'+b.location+'</a>':'')        +trvToCalStr+returnTrvStr        +'</div>';
     });
     h+='</div>';
   }
@@ -3125,14 +3127,31 @@ function buildAllCore(){
         .forEach(function(b){
           if(b.end > morningEnd){ morningEnd = b.end; lastMorningBlock = b; }
         });
-      effectiveStartMin = Math.max(adjustedStart, morningEnd + 15);
-      if(lastMorningBlock && lastMorningBlock.location){
-        effectiveStartAdr = lastMorningBlock.location;
+      if(lastMorningBlock && lastMorningBlock.isCarryOver){
+        // 翌日またぎ継続ブロック（例: 長崎滞在〜12:45）の場合
+        // → 会場から自宅（都城）への帰宅移動時間を加算し、出発地は自宅に戻す
+        var returnTrv = 0;
+        if(lastMorningBlock.location){
+          var cachedReturn = dmGet(lastMorningBlock.location, HOME_ADR);
+          if(cachedReturn != null){
+            returnTrv = cachedReturn;
+          } else if(lastMorningBlock.lat && lastMorningBlock.lng){
+            var dReturn = km({lat:lastMorningBlock.lat, lng:lastMorningBlock.lng}, HOME_POS);
+            returnTrv = Math.max(0, Math.round(dReturn * 1.5 / 80 * 60));
+          }
+        }
+        effectiveStartMin = Math.max(adjustedStart, morningEnd + returnTrv + 15);
+        effectiveStartAdr = HOME_ADR; // 帰宅後の出発地は自宅
+      } else {
+        effectiveStartMin = Math.max(adjustedStart, morningEnd + 15);
+        if(lastMorningBlock && lastMorningBlock.location){
+          effectiveStartAdr = lastMorningBlock.location;
+        }
       }
     }
-    // 直前のカレンダー予定終了地点を出発地として使う
+    // 直前のカレンダー予定終了地点を出発地として使う（isCarryOverは除外）
     calBlocks.forEach(function(b){
-      if(b.end <= effectiveStartMin && b.location){
+      if(!b.isCarryOver && b.end <= effectiveStartMin && b.location){
         effectiveStartAdr = b.location;
       }
     });
@@ -3429,12 +3448,13 @@ function gcalGetBlocks(dateStr){
       // end=0:00（次の日の00:00でJSが返す場合）も終日扱い
       if(endMin === 0) endMin = 24*60;
       return {
-        start:    startMin,
-        end:      endMin,
-        title:    e.title,
-        location: e.location || null,
-        lat:      e.lat || null,
-        lng:      e.lng || null
+        start:       startMin,
+        end:         endMin,
+        title:       e.title,
+        location:    e.location || null,
+        lat:         e.lat || null,
+        lng:         e.lng || null,
+        isCarryOver: e.isCarryOver || false
       };
     })
     .sort(function(a,b){ return a.start-b.start; });
