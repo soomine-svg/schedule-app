@@ -74,6 +74,11 @@ header h1{font-size:1.1rem;font-weight:700}
 <link rel="icon" href="data:image/png;base64,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">
 <!-- Google Identity Services -->
 <script src="https://accounts.google.com/gsi/client" async defer></script>
+<script>
+// Google Maps JavaScript API（DistanceMatrixService + Geocoder用）
+function _gmapsReady(){ window._gmapsLoaded = true; }
+</script>
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC-bIBrdlwdoPvvNgw0miQvfv_Z17AQunM&libraries=&callback=_gmapsReady&loading=async" async defer></script>
 </head>
 <body>
 <header>
@@ -1887,21 +1892,27 @@ function csvMsg(msg){
 // 住所→緯度経度（Geocoding API）
 // 案件登録時に1回だけ呼ぶ。結果はcaseのlat/lngに保存
 function geocodeAddress(adr, callback){
-  var url = "https://maps.googleapis.com/maps/api/geocode/json?address="
-    + encodeURIComponent(adr)
-    + "&key=" + GEOCODE_KEY
-    + "&language=ja&region=JP";
-  fetch(url)
-    .then(function(r){ return r.json(); })
-    .then(function(data){
-      if(data.status==="OK" && data.results.length){
-        var loc = data.results[0].geometry.location;
-        callback(loc.lat, loc.lng, null);
+  // Maps JavaScript API の Geocoder を使用（CORS回避）
+  function _doGeo(){
+    if(!window._gmapsLoaded || !window.google || !window.google.maps){
+      var waited = (window._gmapsGeoWaitMs || 0) + 200;
+      window._gmapsGeoWaitMs = waited;
+      if(waited > 5000){ callback(null, null, 'Maps API timeout'); return; }
+      setTimeout(_doGeo, 200);
+      return;
+    }
+    window._gmapsGeoWaitMs = 0;
+    var geocoder = new google.maps.Geocoder();
+    geocoder.geocode({ address: adr, region: 'JP', language: 'ja' }, function(results, status){
+      if(status === 'OK' && results.length){
+        var loc = results[0].geometry.location;
+        callback(loc.lat(), loc.lng(), null);
       } else {
-        callback(null, null, data.status);
+        callback(null, null, status);
       }
-    })
-    .catch(function(e){ callback(null, null, e.message); });
+    });
+  }
+  _doGeo();
 }
 
 function getPos(adr, caseObj){
@@ -2020,23 +2031,19 @@ function dmSet(fromAdr, toAdr, minutes){
 function fetchDistanceMatrix(origins, destinations, callback){
   if(!origins.length || !destinations.length){ callback(null); return; }
   // 未キャッシュペアのみ対象
-  var missingPairs = [];
   var uniqueOrigins = [], uniqueDests = [];
   origins.forEach(function(o){
     destinations.forEach(function(d){
       if(o !== d && dmGet(o, d) == null){
-        missingPairs.push([o, d]);
         if(uniqueOrigins.indexOf(o) < 0) uniqueOrigins.push(o);
         if(uniqueDests.indexOf(d) < 0) uniqueDests.push(d);
       }
     });
   });
-  if(!missingPairs.length){ callback(null); return; }
+  if(!uniqueOrigins.length){ callback(null); return; }
 
-  // Distance Matrix APIはorigins×destinationsを一括処理
-  // Google APIの制限：1リクエストあたり最大25origins×25destinations=625elements
-  // 超える場合は分割
-  var MAX_ELEM = 625;
+  // Maps JavaScript API の DistanceMatrixService を使用（CORS回避）
+  // Google APIの制限: 1リクエストあたり最大25origins×25destinations
   var MAX_O = 25, MAX_D = 25;
   var batches = [];
   for(var oi=0; oi<uniqueOrigins.length; oi+=MAX_O){
@@ -2050,17 +2057,28 @@ function fetchDistanceMatrix(origins, destinations, callback){
   var remaining2 = batches.length;
   var hasError = false;
 
-  batches.forEach(function(batch){
-    var url = 'https://maps.googleapis.com/maps/api/distancematrix/json'
-      + '?origins=' + batch.origins.map(encodeURIComponent).join('|')
-      + '&destinations=' + batch.dests.map(encodeURIComponent).join('|')
-      + '&mode=driving&avoid=highways&language=ja&region=JP&units=metric'
-      + '&key=' + GEOCODE_KEY;
-
-    fetch(url)
-      .then(function(r){ return r.json(); })
-      .then(function(data){
-        if(data.status === 'OK'){
+  function _doFetch(){
+    if(!window._gmapsLoaded || !window.google || !window.google.maps){
+      // Maps JS APIがまだロード中 → 最大5秒待機してリトライ
+      var waited = (window._gmapsWaitMs || 0) + 200;
+      window._gmapsWaitMs = waited;
+      if(waited > 5000){ callback('error'); return; }
+      setTimeout(_doFetch, 200);
+      return;
+    }
+    window._gmapsWaitMs = 0;
+    var svc = new google.maps.DistanceMatrixService();
+    batches.forEach(function(batch){
+      svc.getDistanceMatrix({
+        origins: batch.origins,
+        destinations: batch.dests,
+        travelMode: google.maps.TravelMode.DRIVING,
+        avoidHighways: true,
+        language: 'ja',
+        region: 'JP',
+        unitSystem: google.maps.UnitSystem.METRIC
+      }, function(data, status){
+        if(status === 'OK'){
           data.rows.forEach(function(row, ri){
             row.elements.forEach(function(el, di){
               if(el.status === 'OK'){
@@ -2070,16 +2088,15 @@ function fetchDistanceMatrix(origins, destinations, callback){
             });
           });
           _dmCacheSave();
+        } else {
+          hasError = true;
         }
         remaining2--;
         if(remaining2 === 0) callback(hasError ? 'partial' : null);
-      })
-      .catch(function(e){
-        hasError = true;
-        remaining2--;
-        if(remaining2 === 0) callback('error');
       });
-  });
+    });
+  }
+  _doFetch();
 }
 
 // アドレスリストで事前にDistance Matrixをフェッチしてキャッシュを埋める
@@ -2738,15 +2755,8 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
         // DMキャッシュ（Googleマップ・高速なし）がある場合のみ表示
         if(cached1 != null){
           trvToCalStr = '　<span style="color:#2b6cb0;font-size:.75rem">🚗 Googleマップ: '+cached1+'分</span>';
-        } else {
-          // キャッシュなし → バックグラウンドで取得してから再描画
-          (function(fa, loc){
-            fetchDistanceMatrix([fa], [loc], function(){
-              var got = dmGet(fa, loc);
-              if(got != null) buildAll();
-            });
-          })(fromAdrCal, b.location);
         }
+        // キャッシュなし時はprefetchDistanceMatrixがスケジュール作成時に一括取得するので個別fetchは行わない
 
         // このブロック終了後、次の案件への移動時間（DMキャッシュあり時のみ）
         var nextForCal = null;
@@ -2761,14 +2771,8 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
         var cachedRet = dmGet(b.location, HOME_ADR);
         if(cachedRet != null){
           returnTrvStr = '　<span style="color:#c05621;font-size:.75rem">🏠 帰宅 Googleマップ: '+cachedRet+'分</span>';
-        } else {
-          // キャッシュなし → バックグラウンドで取得
-          (function(loc){
-            fetchDistanceMatrix([loc], [HOME_ADR], function(){
-              if(dmGet(loc, HOME_ADR) != null) buildAll();
-            });
-          })(b.location);
         }
+        // キャッシュなし時はprefetchDistanceMatrixが一括取得するので個別fetchは行わない
       }
       h+='<div style="font-size:.8rem;color:#2b6cb0;padding:3px 0">'        +'⏰ '+fmt(b.start)+'〜'+fmt(b.end)+'　'+b.title+(b.isCarryOver?' <span style="font-size:.72rem;color:#718096">（滞在中）</span>':'')        +(b.location?'　<a href="https://maps.google.com/?q='+encodeURIComponent(b.location)+'" target="_blank" style="color:#4a90d9;font-size:.75rem;text-decoration:none">📍'+b.location+'</a>':'')        +trvToCalStr+returnTrvStr        +'</div>';
     });
