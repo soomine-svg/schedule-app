@@ -3039,10 +3039,21 @@ function buildAllCore(){
     // effectiveDayEnd: 夕方以降のブロックが20:15より早く始まる場合はそこで打ち切る
     var effectiveDayEnd = 20*60+15;
     calBlocks.forEach(function(b){
-      // 15:00以降に始まるブロックが終日まで続く（end>=24:00 or end<=start）場合
-      // → そのブロック開始までを実質的な終業時刻にする
+      // 15:00以降に始まるブロックが終日まで続く（end>=24:00）場合
+      // → ブロック開始 - 会場までの移動時間 を実質的な終業時刻にする
       if(b.start >= 15*60 && b.end >= 24*60 && b.start < effectiveDayEnd){
-        effectiveDayEnd = b.start;
+        var trvToBlock = 0;
+        if(b.lat && b.lng){
+          // 会場座標がある場合：出発地（前日自宅 or effectiveStartAdr）から移動時間を計算
+          var fromPos2 = getPos(HOME_ADR, null); // 2日目以降は自宅起点が基本
+          if(fromPos2 && fromPos2.lat){
+            var dToBlock = km(fromPos2, {lat:b.lat, lng:b.lng});
+            trvToBlock = Math.min(300, Math.max(0, Math.round(dToBlock / (spd||40) * 60)));
+          }
+        }
+        // ブロック開始 - 移動時間 - 余裕15分 を終業時刻に
+        var safeEnd = b.start - trvToBlock - 15;
+        if(safeEnd < effectiveDayEnd) effectiveDayEnd = Math.max(safeEnd, 8*60+30);
       }
     });
 
@@ -3069,7 +3080,22 @@ function buildAllCore(){
       }
     });
 
-    console.log('Day'+(d+1)+' '+dStr+' pool:['+todayPool.map(function(c){return c.id;}).join(',')+'] blocks:'+calBlocks.length+' dayEnd:'+(effectiveDayEnd?Math.floor(effectiveDayEnd/60)+':'+(('0'+(effectiveDayEnd%60)).slice(-2)):'none'));
+    console.log('Day'+(d+1)+' '+dStr+' pool:['+todayPool.map(function(c){return c.id;}).join(',')+'] blocks:'+calBlocks.length+' dayEnd:'+(effectiveDayEnd?Math.floor(effectiveDayEnd/60)+':'+(('0'+(effectiveDayEnd%60)).slice(-2)):'none')+' startMin:'+Math.floor(effectiveStartMin/60)+':'+(('0'+(effectiveStartMin%60)).slice(-2)));
+
+    // 実働時間がなければ全件翌日へ繰り越し
+    if(effectiveDayEnd <= effectiveStartMin + 15){
+      console.log('Day'+(d+1)+' 実働時間なし → 全件翌日繰越');
+      var html_card = '<div class="card"><h2>'+['🌅 1日目','☀️ 2日目','🌆 3日目'][d]+'　'+dStr+'</h2>'+
+        '<div class="al al-y">📅 カレンダー予定の移動時間を考慮すると実働時間がありません。全件翌日以降に繰越します。</div></div>';
+      html += html_card;
+      window._dayScheds = window._dayScheds || [];
+      window._dayScheds[d] = { sched:[], skip:todayPool.concat(carriedOver), spd:spd, startMin:effectiveStartMin, startAdr:effectiveStartAdr, dStr:dStr, dayNum:d+1, isNow:isNow&&d===0, calBlocks:calBlocks };
+      remaining = todayPool.concat(carriedOver).concat(remaining.filter(function(c){ return todayPool.indexOf(c)<0 && carriedOver.indexOf(c)<0; }));
+      // 重複排除
+      var rm2={}; remaining=remaining.filter(function(c){ return rm2[c.id]?false:(rm2[c.id]=true); });
+      continue;
+    }
+
     var result = scheduleDay(todayPool, effectiveStartMin, effectiveStartAdr, spd, date, calBlocks, effectiveDayEnd);
     var todaySch = result.sched;
     var consumed = result.consumedIds;
