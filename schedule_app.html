@@ -2901,42 +2901,92 @@ function buildAll(){
       var customAdr = (document.getElementById("sloc") ? document.getElementById("sloc").value.trim() : "");
       if(customAdr) addrs.push(customAdr);
     }
-    return addrs;
+    // カレンダー会場住所も追加（DMキャッシュに含めるため）
+    gcalEvents.forEach(function(ev){
+      if(ev.location) addrs.push(ev.location);
+    });
+    // 重複排除
+    return addrs.filter(function(a, i, arr){ return arr.indexOf(a) === i; });
   }
 
   function proceedToBuild(){
-    if(gcalToken){
-      document.getElementById('sresult').innerHTML
-        ='<div class="al al-y">⏳ カレンダーの予定を最新に更新中...</div>';
-      gcalFetchEvents(function(){ buildAllCore(); });
+    // カレンダー会場住所を含めた全住所でDMキャッシュ確認・取得
+    var allAddrs2 = collectAllAddrs();
+    var hasMissing2 = false;
+    for(var i2=0; i2<allAddrs2.length && !hasMissing2; i2++){
+      for(var j2=0; j2<allAddrs2.length && !hasMissing2; j2++){
+        if(i2 !== j2 && dmGet(allAddrs2[i2], allAddrs2[j2]) == null) hasMissing2 = true;
+      }
+    }
+    if(hasMissing2){
+      var _fetchStart2 = Date.now();
+      var _fetchTimer2 = setInterval(function(){
+        var sec2 = Math.round((Date.now() - _fetchStart2) / 1000);
+        var el2 = document.getElementById('sresult');
+        if(el2) el2.innerHTML = '<div class="al al-y">🗺️ 道路距離を取得中（カレンダー会場含む）... '+sec2+'秒経過</div>';
+      }, 1000);
+      prefetchDistanceMatrix(allAddrs2, function(){
+        clearInterval(_fetchTimer2);
+        buildAllCore();
+      });
     } else {
       buildAllCore();
     }
   }
 
-  // Distance Matrix API: 未キャッシュペアがあれば事前フェッチ
-  var allAddrs = collectAllAddrs();
-  // 未キャッシュペアの有無をチェック
-  var hasMissing = false;
-  for(var i=0; i<allAddrs.length && !hasMissing; i++){
-    for(var j=0; j<allAddrs.length && !hasMissing; j++){
-      if(i !== j && dmGet(allAddrs[i], allAddrs[j]) == null) hasMissing = true;
-    }
-  }
-
-  if(hasMissing){
-    var _fetchStart = Date.now();
-    var _fetchTimer = setInterval(function(){
-      var sec = Math.round((Date.now() - _fetchStart) / 1000);
-      var el = document.getElementById('sresult');
-      if(el) el.innerHTML = '<div class="al al-y">🗺️ 道路距離を取得中... '+sec+'秒経過 <span style="font-size:.8rem;color:#718096">（初回のみかかります。10秒以上かかる場合は直線距離で代替します）</span></div>';
-    }, 1000);
-    prefetchDistanceMatrix(allAddrs, function(){
-      clearInterval(_fetchTimer);
-      proceedToBuild();
+  // ① まずカレンダー予定を取得（会場住所を把握するため）
+  // ② その後、案件住所＋カレンダー会場住所をまとめてDM取得
+  // ③ 最後にスケジュール作成
+  if(gcalToken){
+    document.getElementById('sresult').innerHTML
+      ='<div class="al al-y">⏳ カレンダーの予定を取得中...</div>';
+    gcalFetchEvents(function(){
+      // カレンダー取得完了 → DM取得（会場住所含む）→ buildAllCore
+      var allAddrs = collectAllAddrs();
+      var hasMissing = false;
+      for(var i=0; i<allAddrs.length && !hasMissing; i++){
+        for(var j=0; j<allAddrs.length && !hasMissing; j++){
+          if(i !== j && dmGet(allAddrs[i], allAddrs[j]) == null) hasMissing = true;
+        }
+      }
+      if(hasMissing){
+        var _fetchStart = Date.now();
+        var _fetchTimer = setInterval(function(){
+          var sec = Math.round((Date.now() - _fetchStart) / 1000);
+          var el = document.getElementById('sresult');
+          if(el) el.innerHTML = '<div class="al al-y">🗺️ 道路距離を取得中（カレンダー会場含む）... '+sec+'秒経過 <span style="font-size:.8rem;color:#718096">（初回のみかかります）</span></div>';
+        }, 1000);
+        prefetchDistanceMatrix(allAddrs, function(){
+          clearInterval(_fetchTimer);
+          buildAllCore();
+        });
+      } else {
+        buildAllCore();
+      }
     });
   } else {
-    proceedToBuild();
+    // カレンダー未接続：案件住所のみでDM取得
+    var allAddrs = collectAllAddrs();
+    var hasMissing = false;
+    for(var i=0; i<allAddrs.length && !hasMissing; i++){
+      for(var j=0; j<allAddrs.length && !hasMissing; j++){
+        if(i !== j && dmGet(allAddrs[i], allAddrs[j]) == null) hasMissing = true;
+      }
+    }
+    if(hasMissing){
+      var _fetchStart = Date.now();
+      var _fetchTimer = setInterval(function(){
+        var sec = Math.round((Date.now() - _fetchStart) / 1000);
+        var el = document.getElementById('sresult');
+        if(el) el.innerHTML = '<div class="al al-y">🗺️ 道路距離を取得中... '+sec+'秒経過 <span style="font-size:.8rem;color:#718096">（初回のみかかります。10秒以上かかる場合は直線距離で代替します）</span></div>';
+      }, 1000);
+      prefetchDistanceMatrix(allAddrs, function(){
+        clearInterval(_fetchTimer);
+        buildAllCore();
+      });
+    } else {
+      buildAllCore();
+    }
   }
 }
 var _buildAllWaitCount = 0;
