@@ -3127,19 +3127,24 @@ function buildAllCore(){
         .forEach(function(b){
           if(b.end > morningEnd){ morningEnd = b.end; lastMorningBlock = b; }
         });
-      if(lastMorningBlock && lastMorningBlock.isCarryOver){
-        // 翌日またぎ継続ブロック（例: 長崎滞在〜12:45）の場合
-        // → 会場から自宅（都城）への帰宅移動時間を加算し、出発地は自宅に戻す
+      // 午前ブロック群にisCarryOver（前日からの滞在継続）が含まれるか判定
+      var hasCarryOverMorning = calBlocks.some(function(b){ return b.start < 12*60 && b.isCarryOver; });
+      if(hasCarryOverMorning){
+        // 前日から遠方滞在中（例: 長崎）→ 午前の予定がすべて終わってから帰宅
+        // 帰宅元は isCarryOver ブロックの場所（滞在地）を使う
+        var carryOverBlock = calBlocks.filter(function(b){ return b.start < 12*60 && b.isCarryOver; })
+          .reduce(function(a, b){ return b.end > a.end ? b : a; });
         var returnTrv = 0;
-        if(lastMorningBlock.location){
-          var cachedReturn = dmGet(lastMorningBlock.location, HOME_ADR);
+        if(carryOverBlock.location){
+          var cachedReturn = dmGet(carryOverBlock.location, HOME_ADR);
           if(cachedReturn != null){
             returnTrv = cachedReturn;
-          } else if(lastMorningBlock.lat && lastMorningBlock.lng){
-            var dReturn = km({lat:lastMorningBlock.lat, lng:lastMorningBlock.lng}, HOME_POS);
+          } else if(carryOverBlock.lat && carryOverBlock.lng){
+            var dReturn = km({lat:carryOverBlock.lat, lng:carryOverBlock.lng}, HOME_POS);
             returnTrv = Math.max(0, Math.round(dReturn * 1.5 / 80 * 60));
           }
         }
+        // morningEnd（最後の午前予定終了）＋ 帰宅移動時間 ＋ 余裕15分
         effectiveStartMin = Math.max(adjustedStart, morningEnd + returnTrv + 15);
         effectiveStartAdr = HOME_ADR; // 帰宅後の出発地は自宅
       } else {
