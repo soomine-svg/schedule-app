@@ -2229,9 +2229,9 @@ function canScheduleTodayCheck(c, targetDate, startMin, isNextDay){
   if(!c.tm || !TM_RANGE[c.tm]) return true; // 時間指定なし→いつでも可
   if(targetDate && !isTmAvailable(c.tm, targetDate)) return false; // 曜日不一致
   var wEnd = TM_RANGE[c.tm][1];
-  // 翌日モード1日目（isNextDay=true）は早朝案件（wEnd<=9:00）を免除
-  // 早朝出発で間に合う前提のためstartMin超えでも配置可
-  if(isNextDay && wEnd <= 9*60) return true;
+  // 出発時刻が窓終了前なら早朝案件を免除（どの日でも早朝出発で対応可）
+  var isEarlyDeparture = wEnd <= 9*60 && startMin < wEnd;
+  if(isEarlyDeparture) return true;
   if(startMin >= wEnd - 15) return false; // 窓終了済み
   return true;
 }
@@ -2279,7 +2279,9 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
       // 窓がすでに終了している場合は今日はスキップ（翌営業日へ）
       // 翌日モード1日目（isNextDay=true）かつ早朝案件（wEnd<=9:00）は免除
       var isEarlyMorning = wEnd <= 9*60;
-      if(startMin >= wEnd - 15 && !(isNextDay && isEarlyMorning)){
+      // 出発時刻が窓終了前なら早朝出発で対応可（どの日でも）
+      var canEarlyDepart = isEarlyMorning && startMin < wEnd;
+      if(startMin >= wEnd - 15 && !canEarlyDepart){
         timedNG.push(c);
         return;
       }
@@ -2530,15 +2532,14 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     var trvToTc = trv(prev, prevC, tc.adr, tc);
     var isEarlyMorningCase = wEnd <= 9*60; // 早朝案件（〜9時以前終了）
 
-    // 翌日モード早朝案件：窓に間に合う時刻に自宅から出発する形で逆算
-    if(isNextDay && isEarlyMorningCase){
+    // 早朝案件かつ出発時刻が窓終了前：窓に間に合う時刻に出発する形で逆算
+    var canEarlyDepart2 = isEarlyMorningCase && startMin < wEnd;
+    if(canEarlyDepart2){
       // 窓開始に間に合う出発時刻: wStart - trvToTc
-      // 窓終了15分前までに到着できるか確認
-      var earlyArrive = wStart; // 最善は窓開始ちょうど到着
       var earlyDepart = wStart - trvToTc; // 必要な出発時刻
-      if(earlyDepart < 0) return; // さすがに不可能
-      // 配置
-      var stEarly = Math.max(wStart, earlyArrive);
+      if(earlyDepart < 0) return; // さすがに不可能（深夜出発）
+      // 配置（窓開始時刻に訪問）
+      var stEarly = wStart;
       if(stEarly + tc.dur <= wEnd){
         place(tc, stEarly);
       }
