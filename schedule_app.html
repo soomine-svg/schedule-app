@@ -157,6 +157,7 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
             <option value="平日8-10">平日8〜10時</option>
             <option value="平日12-14">平日12〜14時</option>
             <option value="平日12-17">平日12〜17時</option>
+            <option value="平日14-16">平日14〜16時</option>
             <option value="平日16-18">平日16〜18時</option>
             <option value="平日17-20">平日17〜20時</option>
             <option value="平日18-20">平日18〜20時</option>
@@ -348,6 +349,7 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
           <option value="平日8-10">平日8〜10時</option>
           <option value="平日12-14">平日12〜14時</option>
           <option value="平日12-17">平日12〜17時</option>
+          <option value="平日14-16">平日14〜16時</option>
           <option value="平日16-18">平日16〜18時</option>
           <option value="平日17-20">平日17〜20時</option>
           <option value="平日18-20">平日18〜20時</option>
@@ -409,10 +411,42 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
 var TM_RANGE={
   "平日":[510,1215],"平日6-7":[360,420],"平日7-8":[420,480],
   "平日6-8":[360,480],"平日8-10":[480,600],"平日12-14":[720,840],
-  "平日12-17":[720,1020],"平日16-18":[960,1080],"平日17-20":[1020,1200],
+  "平日12-17":[720,1020],"平日14-16":[840,960],"平日16-18":[960,1080],"平日17-20":[1020,1200],
   "平日18-20":[1080,1200],"平日20-22":[1200,1320],
   "休日":[510,1215],"休日6-7":[360,420],"休日8-10":[480,600],"休日12-17":[720,1020],"休日17-20":[1020,1200]
 };
+
+// 時間帯別カラーテーマ（背景色・左ボーダー色・バッジ背景・バッジ文字色）
+function tmColorTheme(tm){
+  if(!tm) return null;
+  // 早朝（〜8時）: 青
+  if(tm==='平日6-7'||tm==='平日7-8'||tm==='平日6-8'||tm==='休日6-7')
+    return {row:'background:#ebf8ff;border-left:3px solid #4299e1;padding-left:6px;border-radius:4px;',
+            dot:'#4299e1', badge:'background:#bee3f8;color:#2b6cb0;'};
+  // 午前（8-10）: 緑
+  if(tm==='平日8-10'||tm==='休日8-10')
+    return {row:'background:#f0fff4;border-left:3px solid #48bb78;padding-left:6px;border-radius:4px;',
+            dot:'#48bb78', badge:'background:#c6f6d5;color:#276749;'};
+  // 昼（12〜16）: 黄
+  if(tm==='平日12-14'||tm==='平日12-17'||tm==='平日14-16'||tm==='休日12-17')
+    return {row:'background:#fffff0;border-left:3px solid #ecc94b;padding-left:6px;border-radius:4px;',
+            dot:'#ecc94b', badge:'background:#fefcbf;color:#744210;'};
+  // 夕方（16〜20）: オレンジ
+  if(tm==='平日16-18'||tm==='平日17-20'||tm==='休日17-20')
+    return {row:'background:#fffaf0;border-left:3px solid #ed8936;padding-left:6px;border-radius:4px;',
+            dot:'#ed8936', badge:'background:#fbd38d;color:#7b341e;'};
+  // 夜（18〜22）: 紫
+  if(tm==='平日18-20'||tm==='平日20-22')
+    return {row:'background:#faf5ff;border-left:3px solid #9f7aea;padding-left:6px;border-radius:4px;',
+            dot:'#9f7aea', badge:'background:#e9d8fd;color:#553c9a;'};
+  // 平日・休日（全日）: グレー
+  if(tm==='平日'||tm==='休日')
+    return {row:'background:#f7fafc;border-left:3px solid #a0aec0;padding-left:6px;border-radius:4px;',
+            dot:'#a0aec0', badge:'background:#e2e8f0;color:#4a5568;'};
+  // デフォルト（未知の値）: オレンジ
+  return {row:'background:#fffbf0;border-left:3px solid #f6ad55;padding-left:6px;border-radius:4px;',
+          dot:'#f6ad55', badge:'background:#fbd38d;color:#744210;'};
+}
 
 // ===== エリア座標 =====
 var AR=[
@@ -2184,7 +2218,7 @@ function getArea(adr){
 
 // 指定日に案件をスケジュール可能かチェック
 // startMin: その日の開始時刻（分）
-function canScheduleTodayCheck(c, targetDate, startMin){
+function canScheduleTodayCheck(c, targetDate, startMin, isNextDay){
   if(c.pin != null){
     if(c.pinDate && targetDate){
       var tdStr = targetDate.getFullYear()+'-'+('0'+(targetDate.getMonth()+1)).slice(-2)+'-'+('0'+targetDate.getDate()).slice(-2);
@@ -2195,6 +2229,9 @@ function canScheduleTodayCheck(c, targetDate, startMin){
   if(!c.tm || !TM_RANGE[c.tm]) return true; // 時間指定なし→いつでも可
   if(targetDate && !isTmAvailable(c.tm, targetDate)) return false; // 曜日不一致
   var wEnd = TM_RANGE[c.tm][1];
+  // 翌日モード1日目（isNextDay=true）は早朝案件（wEnd<=9:00）を免除
+  // 早朝出発で間に合う前提のためstartMin超えでも配置可
+  if(isNextDay && wEnd <= 9*60) return true;
   if(startMin >= wEnd - 15) return false; // 窓終了済み
   return true;
 }
@@ -2208,7 +2245,7 @@ function fmt(m){
 // startMin: 出発時刻(分), startAdr: 出発地住所
 // targetDate: Date（休日判定用）
 // 返値: { sched, consumedIds, notAvailTimed }
-function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effectiveDayEnd){
+function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effectiveDayEnd, isNextDay){
   calBlocks = calBlocks || [];
   var DAY_END      = 22*60+15; // 22:15 時間指定案件の最終終了
   var FREE_DAY_END = effectiveDayEnd
@@ -2240,7 +2277,9 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     if(!targetDate || isTmAvailable(c.tm, targetDate)){
       var wEnd = TM_RANGE[c.tm][1];
       // 窓がすでに終了している場合は今日はスキップ（翌営業日へ）
-      if(startMin >= wEnd - 15){
+      // 翌日モード1日目（isNextDay=true）かつ早朝案件（wEnd<=9:00）は免除
+      var isEarlyMorning = wEnd <= 9*60;
+      if(startMin >= wEnd - 15 && !(isNextDay && isEarlyMorning)){
         timedNG.push(c);
         return;
       }
@@ -2489,6 +2528,22 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     var wStart = TM_RANGE[tc.tm][0];
     var wEnd   = TM_RANGE[tc.tm][1];
     var trvToTc = trv(prev, prevC, tc.adr, tc);
+    var isEarlyMorningCase = wEnd <= 9*60; // 早朝案件（〜9時以前終了）
+
+    // 翌日モード早朝案件：窓に間に合う時刻に自宅から出発する形で逆算
+    if(isNextDay && isEarlyMorningCase){
+      // 窓開始に間に合う出発時刻: wStart - trvToTc
+      // 窓終了15分前までに到着できるか確認
+      var earlyArrive = wStart; // 最善は窓開始ちょうど到着
+      var earlyDepart = wStart - trvToTc; // 必要な出発時刻
+      if(earlyDepart < 0) return; // さすがに不可能
+      // 配置
+      var stEarly = Math.max(wStart, earlyArrive);
+      if(stEarly + tc.dur <= wEnd){
+        place(tc, stEarly);
+      }
+      return;
+    }
 
     // curから出発した場合の到着時刻
     var arriveAt = cur + trvToTc;
@@ -2868,9 +2923,9 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
       ).toFixed(1)+'km';
       var hasTm=c.tm&&TM_RANGE[c.tm];
       var isLateNight = hasTm && TM_RANGE[c.tm][0] >= 20*60; // 20:00以降開始 = イレギュラー夜間
+      var _tmTheme = hasTm ? tmColorTheme(c.tm) : null;
       var pinStyle=c.pin!=null?'background:#faf5ff;border-left:3px solid #9f7aea;padding-left:6px;border-radius:4px;':'';
-      var lateStyle=isLateNight?'background:#fef3ff;border-left:3px solid #b794f4;padding-left:6px;border-radius:4px;':'';
-      var rowStyle=(isLateNight?lateStyle:hasTm?'background:#fffbf0;border-left:3px solid #f6ad55;padding-left:6px;border-radius:4px;':pinStyle);
+      var rowStyle=c.pin!=null ? pinStyle : (_tmTheme ? _tmTheme.row : '');
       var safeId=c.id.replace(/[^a-zA-Z0-9_\-]/g,'_');
       var escapedId=c.id.replace(/'/g,"\\'");
       h+='<div class="tl-row" id="tlrow-'+safeId+'" data-dayidx="'+(dayIdx!==undefined?dayIdx:0)+'" data-itemidx="'+i+'" style="'+rowStyle+'">'+
@@ -2884,12 +2939,12 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
         '<div class="drag-handle" title="長押しでドラッグ移動" style="cursor:grab;padding:2px 6px;font-size:.9rem;color:#a0aec0;user-select:none;touch-action:none">☰</div>'+
         '</div>'+
         '<div style="display:flex;flex-direction:column;align-items:center;padding-top:3px">'+
-        '<div class="tl-dot'+(isLateNight?' w':hasTm?' e':'')+'"></div>'+
+        '<div class="tl-dot" style="'+(c.pin!=null?'background:#9f7aea':_tmTheme?'background:'+_tmTheme.dot:'')+';"></div>'+
         (last?'':'<div style="width:2px;flex:1;background:#e2e8f0;margin-top:2px;min-height:18px"></div>')+
         '</div>'+
         '<div class="tl-b">'+
         '<div class="tl-name">'+(c.ely?'⭐ ':'')+
-        (c.pin!=null?'<span style="background:#9f7aea;color:white;font-size:.72rem;padding:1px 6px;border-radius:10px;margin-right:4px;font-weight:700">📌'+(c.pinDate?c.pinDate.slice(5)+' ':'')+fmt(c.pin)+'着</span>':isLateNight?'<span style="background:#805ad5;color:white;font-size:.72rem;padding:1px 6px;border-radius:10px;margin-right:4px;font-weight:700">🌙 '+c.tm+'</span>':hasTm?'<span style="background:#f6ad55;color:#744210;font-size:.72rem;padding:1px 6px;border-radius:10px;margin-right:4px;font-weight:700">'+c.tm+'</span>':'')+
+        (c.pin!=null?'<span style="background:#9f7aea;color:white;font-size:.72rem;padding:1px 6px;border-radius:10px;margin-right:4px;font-weight:700">📌'+(c.pinDate?c.pinDate.slice(5)+' ':'')+fmt(c.pin)+'着</span>':_tmTheme?'<span style="'+_tmTheme.badge+'font-size:.72rem;padding:1px 6px;border-radius:10px;margin-right:4px;font-weight:700;">'+c.tm+'</span>':'')+
         (i+1)+'. '+c.id+'　<a href="https://maps.google.com/?q='+encodeURIComponent(c.adr)+'" target="_blank" style="color:inherit;text-decoration:none">'+c.adr+' 🗺️</a></div>'+
         '<div class="tl-sub">'+tlDeadlineBadge(c.d2)+'納期:'+c.d2+'　所要:'+c.dur+'分'+
         (c.wait>0?'　<span style="color:#d69e2e">⏳待機'+c.wait+'分</span>':'')+
@@ -3152,8 +3207,10 @@ function buildAllCore(){
 
       // ── 今日スケジュール可能な案件を全件todayPoolへ（詰め込み優先） ──
       // ピンDate指定が今日でない案件、曜日不一致案件は除外
-      var canToday = arr.filter(function(c){ return canScheduleTodayCheck(c, date, startMin); });
-      var cannotToday = arr.filter(function(c){ return !canScheduleTodayCheck(c, date, startMin); });
+      // 翌日モードの1日目(d===0,isNow===false)は早朝案件を免除
+      var _isNextDay = (!isNow && d === 0);
+      var canToday = arr.filter(function(c){ return canScheduleTodayCheck(c, date, startMin, _isNextDay); });
+      var cannotToday = arr.filter(function(c){ return !canScheduleTodayCheck(c, date, startMin, _isNextDay); });
 
       if(canToday.length === 0){
         // 全件今日不可 → 時間指定優先で1件だけ選ぶ
@@ -3274,7 +3331,7 @@ function buildAllCore(){
       continue;
     }
 
-    var result = scheduleDay(todayPool, effectiveStartMin, effectiveStartAdr, spd, date, calBlocks, effectiveDayEnd);
+    var result = scheduleDay(todayPool, effectiveStartMin, effectiveStartAdr, spd, date, calBlocks, effectiveDayEnd, !isNow && d===0);
     var todaySch = result.sched;
     var consumed = result.consumedIds;
     var notAvail = result.notAvailTimed||[];
