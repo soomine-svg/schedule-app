@@ -2229,9 +2229,9 @@ function canScheduleTodayCheck(c, targetDate, startMin, isNextDay){
   if(!c.tm || !TM_RANGE[c.tm]) return true; // 時間指定なし→いつでも可
   if(targetDate && !isTmAvailable(c.tm, targetDate)) return false; // 曜日不一致
   var wEnd = TM_RANGE[c.tm][1];
-  // 出発時刻が窓終了前なら早朝案件を免除（どの日でも早朝出発で対応可）
-  var isEarlyDeparture = wEnd <= 9*60 && startMin < wEnd;
-  if(isEarlyDeparture) return true;
+  // 通常出発(8:30)より前に窓が終わる早朝枠は常に配置可（早朝出発で対応）
+  var isEarlySlot = wEnd <= 8*60+30;
+  if(isEarlySlot) return true;
   if(startMin >= wEnd - 15) return false; // 窓終了済み
   return true;
 }
@@ -2278,10 +2278,9 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
       var wEnd = TM_RANGE[c.tm][1];
       // 窓がすでに終了している場合は今日はスキップ（翌営業日へ）
       // 翌日モード1日目（isNextDay=true）かつ早朝案件（wEnd<=9:00）は免除
-      var isEarlyMorning = wEnd <= 9*60;
-      // 出発時刻が窓終了前なら早朝出発で対応可（どの日でも）
-      var canEarlyDepart = isEarlyMorning && startMin < wEnd;
-      if(startMin >= wEnd - 15 && !canEarlyDepart){
+      // 通常出発(8:30)より前に窓が終わる早朝枠は常に配置可（早朝出発で対応）
+      var isEarlySlot2 = wEnd <= 8*60+30;
+      if(startMin >= wEnd - 15 && !isEarlySlot2){
         timedNG.push(c);
         return;
       }
@@ -2532,16 +2531,21 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     var trvToTc = trv(prev, prevC, tc.adr, tc);
     var isEarlyMorningCase = wEnd <= 9*60; // 早朝案件（〜9時以前終了）
 
-    // 早朝案件かつ出発時刻が窓終了前：窓に間に合う時刻に出発する形で逆算
-    var canEarlyDepart2 = isEarlyMorningCase && startMin < wEnd;
-    if(canEarlyDepart2){
-      // 窓開始に間に合う出発時刻: wStart - trvToTc
-      var earlyDepart = wStart - trvToTc; // 必要な出発時刻
-      if(earlyDepart < 0) return; // さすがに不可能（深夜出発）
-      // 配置（窓開始時刻に訪問）
-      var stEarly = wStart;
-      if(stEarly + tc.dur <= wEnd){
-        place(tc, stEarly);
+    // 通常出発(8:30)より前に窓が終わる早朝枠
+    if(isEarlyMorningCase){
+      var wLatestArrivalE = wEnd - 15; // 窓終了15分前が最遅現着（例:平日7-8は7:45）
+      var arriveFromCur = cur + trvToTc; // 現在位置から出発した場合の到着
+
+      if(arriveFromCur <= wLatestArrivalE){
+        // curから自然に移動して窓内に到着できる
+        var stE = Math.max(wStart, arriveFromCur); // 早着なら窓開始まで待機
+        if(stE + tc.dur <= wEnd) place(tc, stE);
+      } else {
+        // curからでは間に合わない → 早朝出発（wStart - 移動時間）で対応
+        var earlyDepart = wStart - trvToTc;
+        if(earlyDepart < 0) return; // 深夜出発になるので不可
+        var stE2 = wStart;
+        if(stE2 + tc.dur <= wEnd) place(tc, stE2);
       }
       return;
     }
