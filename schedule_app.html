@@ -2891,10 +2891,32 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
     h+='</div>';
   }
 
+  // 最終訪問→自宅の移動時間計算
+  var homeArrival = null;
+  var homeTrv = 0;
+  if(sched.length > 0){
+    var lastC2 = sched[sched.length-1];
+    var cachedHome = dmGet(lastC2.adr, HOME_ADR);
+    if(cachedHome != null){
+      homeTrv = cachedHome;
+    } else if(lastC2.lat && lastC2.lng){
+      var dHome = km({lat:lastC2.lat, lng:lastC2.lng}, HOME_POS);
+      homeTrv = Math.max(3, Math.round(dHome * 1.5 / 80 * 60));
+    } else {
+      var lastPos2 = getPos(lastC2.adr, lastC2);
+      if(lastPos2 && lastPos2.lat){
+        var dHome2 = km(lastPos2, HOME_POS);
+        homeTrv = Math.max(3, Math.round(dHome2 * 1.5 / 80 * 60));
+      }
+    }
+    homeArrival = end + homeTrv;
+  }
+
   h+='<div class="sum-row">'+
     '<div class="sum-box"><div class="n">'+sched.length+'</div><div class="l">訪問件数</div></div>'+
     '<div class="sum-box"><div class="n">'+Math.floor(tw/60)+'h'+(tw%60?tw%60+'m':'')+'</div><div class="l">作業時間</div></div>'+
     '<div class="sum-box"><div class="n">'+fmt(end)+'</div><div class="l">終了予定</div></div>'+
+    (homeArrival !== null ? '<div class="sum-box"><div class="n" style="color:#c05621">'+fmt(homeArrival)+'</div><div class="l">🏠 自宅着</div></div>' : '')+
     '</div>';
   if(totalKm>0) h+='<div style="text-align:center;margin-bottom:10px;font-size:.82rem;color:#4a5568">🗺 総移動距離（直線）: 約'+totalKm.toFixed(1)+'km</div>';
 
@@ -2967,6 +2989,20 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
           '</div></div>';
       }
     });
+    // 最終訪問→自宅 の帰宅行
+    if(sched.length > 0 && homeArrival !== null){
+      var lastCForHome = sched[sched.length-1];
+      var homeKm = km(
+        (lastCForHome.lat&&lastCForHome.lng)?{lat:lastCForHome.lat,lng:lastCForHome.lng}:getPos(lastCForHome.adr),
+        HOME_POS
+      ).toFixed(1);
+      h+='<div class="mv" style="background:#fff5eb;border-radius:6px">'+
+        '<div style="min-width:68px;text-align:right;color:#c05621;font-size:.72rem">▼ 帰宅</div>'+
+        '<div>🏠 約'+homeTrv+'分　'+homeKm+'km'+
+        '　<span style="color:#a0aec0;font-size:.7rem">'+getArea(lastCForHome.adr)+'→自宅（都城）</span>'+
+        '　<span style="font-weight:700;color:#c05621">着 '+fmt(homeArrival)+'</span>'+
+        '</div></div>';
+    }
     h+='</div>';
   }
 
