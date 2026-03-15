@@ -2543,7 +2543,11 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
       } else {
         // curからでは間に合わない → 早朝出発（wStart - 移動時間）で対応
         var earlyDepart = wStart - trvToTc;
-        if(earlyDepart < 0) return; // 深夜出発になるので不可
+        // 深夜出発 or 前の案件終了より前の出発が必要な場合はスキップ（翌日繰越）
+        if(earlyDepart < 0 || earlyDepart < cur){
+          console.log('[SKIP早朝] '+tc.id+' earlyDepart='+Math.floor(earlyDepart/60)+':'+(('0'+(earlyDepart%60)).slice(-2))+' cur='+Math.floor(cur/60)+':'+(('0'+(cur%60)).slice(-2)));
+          return;
+        }
         var stE2 = wStart;
         if(stE2 + tc.dur <= wEnd) place(tc, stE2);
       }
