@@ -2277,8 +2277,13 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     }
     if(!targetDate || isTmAvailable(c.tm, targetDate)){
       var wEnd = TM_RANGE[c.tm][1];
+      var wStart2 = TM_RANGE[c.tm][0];
+      // 「平日」「休日」全日指定（wStart=8:30, wEnd=20:15）→ freePoolと同様に扱う
+      // 具体的な時間窓がないため、timedAvailには入れずfreePoolに委ねる
+      var isFullDay = (wStart2 <= DAY_START && wEnd >= 20*60+15);
+      if(isFullDay) return; // freePoolへ（後述）
+
       // 窓がすでに終了している場合は今日はスキップ（翌営業日へ）
-      // 翌日モード1日目（isNextDay=true）かつ早朝案件（wEnd<=9:00）は免除
       // 通常出発(8:30)より前に窓が終わる早朝枠は常に配置可（早朝出発で対応）
       var isEarlySlot2 = wEnd <= 8*60+30;
       if(startMin >= wEnd - 15 && !isEarlySlot2){
@@ -2304,8 +2309,13 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     return aT - bT;
   });
 
-  // 時間指定なし案件（pinもtmもない）
-  var freePool = pool.filter(function(c){ return c.pin==null && (!c.tm || !TM_RANGE[c.tm]); });
+  // 時間指定なし + 「平日」「休日」全日指定（具体的な窓なし）をfreePoolに
+  var freePool = pool.filter(function(c){
+    if(c.pin != null) return false;
+    if(!c.tm || !TM_RANGE[c.tm]) return true; // 時間指定なし
+    var ws = TM_RANGE[c.tm][0], we = TM_RANGE[c.tm][1];
+    return (ws <= DAY_START && we >= 20*60+15); // 「平日」「休日」全日指定
+  });
 
 
 
@@ -2372,7 +2382,11 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
   // 自由案件の最適選択（現在地からの最近傍 + 帰路方向バイアス + 納期優先）
   function pickFree(fromAdr, fromC, excludeIds){
     var rem = freePool.filter(function(c){
-      return !placed[baseId(c.id)] && !(excludeIds && excludeIds[baseId(c.id)]);
+      if(placed[baseId(c.id)]) return false;
+      if(excludeIds && excludeIds[baseId(c.id)]) return false;
+      // 「平日」「休日」指定の場合は曜日チェック
+      if(c.tm && TM_RANGE[c.tm] && targetDate && !isTmAvailable(c.tm, targetDate)) return false;
+      return true;
     });
     if(!rem.length) return null;
     var fromPos = fromC && fromC.lat && fromC.lng
