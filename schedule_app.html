@@ -2035,6 +2035,7 @@ function isTmAvailable(tmKey, date){
   return true;
 }
 function km(a,b){
+  if(!a||!b||a.lat==null||b.lat==null) return 0; // 座標なし→0km（安全フォールバック）
   var R=6371,dLat=(b.lat-a.lat)*Math.PI/180,dLng=(b.lng-a.lng)*Math.PI/180;
   var x=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.sin(dLng/2)*Math.sin(dLng/2);
   return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
@@ -2322,14 +2323,17 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     return km(pos(fromAdr,fromC), pos(toAdr,toC));
   }
   function trv(fromAdr, fromC, toAdr, toC){
+    if(!fromAdr || !toAdr) return 3; // 住所なし→最小値
     // Distance Matrixキャッシュがあればそちらを優先（道路距離）
     var fa = (fromAdr === '__GPS__' && window._gpsLat) ? '現在地(GPS)' : fromAdr;
     var ta = toAdr;
     var cached = dmGet(fa, ta);
     if(cached != null) return Math.min(180, Math.max(3, cached));
     // フォールバック: 直線距離ベース
-    var d = dist(fromAdr, fromC, toAdr, toC);
-    return Math.min(180, Math.max(3, Math.round(d/spd*60)));
+    try{
+      var d = dist(fromAdr, fromC, toAdr, toC);
+      return Math.min(180, Math.max(3, Math.round(d/spd*60)));
+    } catch(e){ return 10; } // 座標エラー→10分デフォルト
   }
 
   // 案件を配置
@@ -2616,7 +2620,7 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
   }
 
   var consumedIds = {};
-  sched.forEach(function(c){ consumedIds[baseId(c.id)]=true; });
+  sched.forEach(function(c){ consumedIds[c.id]=true; }); // 完全IDで管理（枝番ごとに独立）
 
   return { sched:sched, consumedIds:consumedIds, notAvailTimed:timedNG };
 }
@@ -3382,7 +3386,7 @@ function buildAllCore(){
     var notAvail = result.notAvailTimed||[];
 
     // 今日消化できなかった案件
-    var notDone = todayPool.filter(function(c){ return !consumed[baseId(c.id)]; });
+    var notDone = todayPool.filter(function(c){ return !consumed[c.id]; }); // 完全IDで判定
     // notAvailはnotDoneに含まれているので重複排除
     var notDoneMap={};
     notDone.forEach(function(c){ notDoneMap[c.id]=true; });
