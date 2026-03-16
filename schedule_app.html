@@ -911,6 +911,22 @@ function setMode(m){
   schedMode=m;
   document.getElementById("mode-tomorrow").classList.toggle("on",m==="tomorrow");
   document.getElementById("mode-now").classList.toggle("on",m==="now");
+  // 「今からモード」選択時は自動的に出発地を現在地（GPS）に切り替え
+  if(m === "now"){
+    var slocEl = document.getElementById("sloc-type");
+    if(slocEl && slocEl.value !== "current"){
+      slocEl.value = "current";
+      onSlocType(); // GPS取得開始
+    }
+  }
+  // 「翌日モード」に戻したら自宅に戻す
+  if(m === "tomorrow"){
+    var slocEl2 = document.getElementById("sloc-type");
+    if(slocEl2 && slocEl2.value === "current"){
+      slocEl2.value = "home";
+      onSlocType();
+    }
+  }
 }
 
 function onSlocType(){
@@ -2298,6 +2314,9 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
 
   // 時間指定あり案件のソート：①ピン案件を時刻順に ②納期が早い順 → ③時刻が早い順
   timedAvail.sort(function(a,b){
+    // ピン案件は必ず先に処理（窓付き案件がcurを進める前にピン時刻で配置するため）
+    if(a.pin!=null && b.pin==null) return -1;
+    if(a.pin==null && b.pin!=null) return 1;
     var aT = a.pin!=null ? a.pin : (TM_RANGE[a.tm] ? TM_RANGE[a.tm][0] : 9999);
     var bT = b.pin!=null ? b.pin : (TM_RANGE[b.tm] ? TM_RANGE[b.tm][0] : 9999);
     // まず時刻順（ピン案件もtm案件も混在して時刻順に並べる）
@@ -2354,7 +2373,7 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     cur   = st + c.dur;
     prev  = c.adr;
     prevC = c;
-    placed[baseId(c.id)] = true;
+    placed[c.id] = true; placed[baseId(c.id)] = true; // 完全ID＆baseID両方登録
   }
 
   // 夕方以降のカレンダー予定の目的地座標を取得（経路最適化用）
@@ -2517,7 +2536,7 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
   // ── メインループ：時間指定案件を時刻順に処理 ──
   // curは前の案件終了後の時刻。巻き戻しは行わない
   timedAvail.forEach(function(tc){
-    if(placed[baseId(tc.id)]) return;
+    if(placed[tc.id]) return; // 完全IDでチェック
 
     // ── ピンポイント時刻案件 ──
     if(tc.pin != null){
