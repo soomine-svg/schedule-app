@@ -936,21 +936,30 @@ function onSlocType(){
   if(t==="current"){
     gpsStatus.style.display="block";
     gpsStatus.textContent="📡 GPS取得中...";
+    window._gpsLat=null; window._gpsLng=null;
+    window._gpsLoading=true; // buildAll() がGPS完了を待つためのフラグ
     if(navigator.geolocation){
       navigator.geolocation.getCurrentPosition(function(pos){
         window._gpsLat = pos.coords.latitude;
         window._gpsLng = pos.coords.longitude;
+        window._gpsLoading = false;
         gpsStatus.textContent="✅ 現在地取得済み（"+pos.coords.latitude.toFixed(4)+", "+pos.coords.longitude.toFixed(4)+")";
-      }, function(){
-        gpsStatus.textContent="⚠️ GPS取得失敗。自宅を使用します";
+      }, function(err){
+        window._gpsLoading = false;
+        var reason = err.code===1 ? '位置情報の使用が拒否されました' :
+                     err.code===2 ? '位置情報を取得できませんでした' :
+                     err.code===3 ? 'タイムアウトしました（8秒）' : 'エラーコード'+err.code;
+        gpsStatus.textContent="⚠️ GPS取得失敗（"+reason+"）。自宅を出発地として使用します";
         window._gpsLat=null; window._gpsLng=null;
-      });
+      }, {timeout:8000, maximumAge:30000, enableHighAccuracy:false});
     } else {
-      gpsStatus.textContent="⚠️ GPS非対応。自宅を使用します";
+      window._gpsLoading = false;
+      gpsStatus.textContent="⚠️ このブラウザはGPS非対応です。自宅を使用します";
     }
   } else {
     gpsStatus.style.display="none";
     window._gpsLat=null; window._gpsLng=null;
+    window._gpsLoading=false;
   }
 }
 
@@ -2430,23 +2439,27 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     var best=null, bestScore=Infinity;
     rem.forEach(function(c){
       var cPos = getPos(c.adr, c);
-      if(!cPos || !cPos.lat) return;
-      var dFrom = km(fromPos, cPos);
-      var dHome = homePos ? km(cPos, homePos) : 0;
 
-      // 納期優先ボーナス（km単位に揃える：平均移動速度40km/hで換算）
-      // 例：12km分のボーナス = 約18分移動節約に相当する優先度
+      // 納期優先ボーナス（km単位に揃える）
       var deadlineBonus = 0;
       if(c.d2){
         var daysLeft = Math.round((new Date(c.d2+'T00:00:00') - new Date(_refStr+'T00:00:00')) / 86400000);
-        if(daysLeft <= 0)  deadlineBonus = 8;   // 超過・当日: 強く優先（8km相当）
-        else if(daysLeft <= 1) deadlineBonus = 5;  // 明日（5km相当）
-        else if(daysLeft <= 3) deadlineBonus = 2.5; // 3日以内（2.5km相当）
-        else if(daysLeft <= 7) deadlineBonus = 1;   // 7日以内（1km相当）
+        if(daysLeft <= 0)  deadlineBonus = 8;
+        else if(daysLeft <= 1) deadlineBonus = 5;
+        else if(daysLeft <= 3) deadlineBonus = 2.5;
+        else if(daysLeft <= 7) deadlineBonus = 1;
       }
 
-      // スコア = 現在地→案件距離 + 案件→自宅距離×バイアス - 納期ボーナス
-      var score = dFrom + dHome * homeBias - deadlineBonus;
+      var score;
+      if(!cPos || !cPos.lat){
+        // 座標未取得案件: 遠距離扱い（200km相当）だが納期ボーナスは有効
+        // → 他の候補がなくなれば選ばれ、急ぎ案件なら早めに選ばれる
+        score = 200 - deadlineBonus;
+      } else {
+        var dFrom = km(fromPos, cPos);
+        var dHome = homePos ? km(cPos, homePos) : 0;
+        score = dFrom + dHome * homeBias - deadlineBonus;
+      }
       if(score < bestScore){ bestScore=score; best=c; }
     });
     return best || rem[0];
@@ -3044,9 +3057,19 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
   }
 
   if(skip.length){
+    var _td2=new Date(dStr+'T00:00:00');
+    var _tdStr2=_td2.getFullYear()+'-'+('0'+(_td2.getMonth()+1)).slice(-2)+'-'+('0'+_td2.getDate()).slice(-2);
     h+='<div style="margin-top:10px;padding:10px;background:#fff5f5;border-radius:8px;font-size:.8rem">'+
-      '<b style="color:#c53030">翌日繰越（'+skip.length+'件）：</b>　'+
-      skip.map(function(c){ return c.id+'('+getArea(c.adr)+')'; }).join('、')+'</div>';
+      '<b style="color:#c53030">翌日繰越（'+skip.length+'件）：</b><br>'+
+      skip.map(function(c){
+        var reason='';
+        if(c.pin!=null && c.pinDate && c.pinDate!==_tdStr2) reason='📌ピン日付不一致';
+        else if(c.tm && TM_RANGE[c.tm] && !isTmAvailable(c.tm,_td2)) reason='曜日不一致('+c.tm+')';
+        else if(c.tm && TM_RANGE[c.tm] && isNow && TM_RANGE[c.tm][1]-15 <= startMin) reason='窓終了済み('+c.tm+')';
+        else if(!c.lat||!c.lng) reason='座標未取得';
+        else reason='時間不足/距離';
+        return '<span style="display:inline-block;margin:2px 4px">'+c.id+'('+getArea(c.adr)+')<span style="color:#718096;font-size:.72rem">　'+reason+'</span></span>';
+      }).join('')+'</div>';
   }
   // 手動追加ボタン
   h+='<div style="margin-top:12px;text-align:right">'+
@@ -3057,6 +3080,22 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
 
 // ===== 3日分スケジュール作成 =====
 function buildAll(){
+  // GPS取得中の場合は完了を待ってから再実行（最大10秒）
+  if(window._gpsLoading){
+    var _gpsWait = (window._gpsWaitCount||0) + 1;
+    window._gpsWaitCount = _gpsWait;
+    if(_gpsWait <= 20){ // 500ms × 20 = 最大10秒
+      document.getElementById('sresult').innerHTML='<div class="al al-y">📡 GPS取得中... しばらくお待ちください（'+Math.round(_gpsWait*0.5)+'秒経過）</div>';
+      setTimeout(buildAll, 500);
+      return;
+    }
+    // 10秒超でタイムアウト扱い → 自宅で続行
+    window._gpsLoading = false;
+    window._gpsLat = null; window._gpsLng = null;
+    var gpsEl = document.getElementById('sloc-gps-status');
+    if(gpsEl) gpsEl.textContent = '⚠️ GPS待機タイムアウト。自宅を使用します';
+  }
+  window._gpsWaitCount = 0; // リセット
   if(!cases.length){
     document.getElementById("sresult").innerHTML='<div class="al al-y">案件がありません</div>';
     return;
@@ -3273,7 +3312,16 @@ function buildAllCore(){
         arr.forEach(function(c){ carriedOver.push(c); });
         return;
       }
-      if(arr.length===1){ todayPool.push(arr[0]); return; }
+      if(arr.length===1){
+        // 単独案件でも canScheduleTodayCheck を適用（pinDate・曜日・窓終了を正しく判定）
+        var _isND1 = (!isNow && d === 0);
+        if(canScheduleTodayCheck(arr[0], date, startMin, _isND1)){
+          todayPool.push(arr[0]);
+        } else {
+          carriedOver.push(arr[0]);
+        }
+        return;
+      }
 
       // ── 納期超過・当日締め切り案件は枝番制限を超えて全件今日に入れる ──
       var urgentAll = arr.filter(function(c){
@@ -3295,11 +3343,8 @@ function buildAllCore(){
       var cannotToday = arr.filter(function(c){ return !canScheduleTodayCheck(c, date, startMin, _isNextDay); });
 
       if(canToday.length === 0){
-        // 全件今日不可 → 時間指定優先で1件だけ選ぶ
-        var withTm = arr.filter(function(c){ return c.tm && TM_RANGE[c.tm]; });
-        var chosen = withTm.length ? withTm[0] : arr[0];
-        todayPool.push(chosen);
-        arr.filter(function(c){ return c !== chosen; }).forEach(function(c){ carriedOver.push(c); });
+        // 全件今日不可 → 全件carriedOverへ（timedNGループを防ぐ）
+        arr.forEach(function(c){ carriedOver.push(c); });
         return;
       }
 
