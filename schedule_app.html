@@ -911,12 +911,12 @@ function setMode(m){
   schedMode=m;
   document.getElementById("mode-tomorrow").classList.toggle("on",m==="tomorrow");
   document.getElementById("mode-now").classList.toggle("on",m==="now");
-  // 「今からモード」選択時は自動的に出発地を現在地（GPS）に切り替え
+  // 「今からモード」選択時は出発地を現在地（GPS）に切り替え＆毎回GPS再取得
   if(m === "now"){
     var slocEl = document.getElementById("sloc-type");
-    if(slocEl && slocEl.value !== "current"){
+    if(slocEl){
       slocEl.value = "current";
-      onSlocType(); // GPS取得開始
+      onSlocType(); // 値が既に"current"でも必ず再取得（失敗後の再試行対応）
     }
   }
   // 「翌日モード」に戻したら自宅に戻す
@@ -935,23 +935,51 @@ function onSlocType(){
   var gpsStatus = document.getElementById("sloc-gps-status");
   if(t==="current"){
     gpsStatus.style.display="block";
-    gpsStatus.textContent="📡 GPS取得中...";
+    window._gpsLat=null; window._gpsLng=null; // 取得前にリセット
+    gpsStatus.innerHTML="📡 GPS取得中...";
     if(navigator.geolocation){
+      var gpsOptions = {
+        enableHighAccuracy: false, // まずネットワーク測位（速い）
+        timeout: 20000,            // 20秒に延長
+        maximumAge: 120000         // 2分以内のキャッシュ位置を利用OK
+      };
       navigator.geolocation.getCurrentPosition(function(pos){
         window._gpsLat = pos.coords.latitude;
         window._gpsLng = pos.coords.longitude;
-        gpsStatus.textContent="✅ 現在地取得済み（"+pos.coords.latitude.toFixed(4)+", "+pos.coords.longitude.toFixed(4)+")";
-      }, function(){
-        gpsStatus.textContent="⚠️ GPS取得失敗。自宅を使用します";
+        console.log("[GPS] 取得成功:", pos.coords.latitude.toFixed(5), pos.coords.longitude.toFixed(5), "精度:", Math.round(pos.coords.accuracy)+"m");
+        gpsStatus.innerHTML="✅ 現在地取得済み（"+pos.coords.latitude.toFixed(4)+", "+pos.coords.longitude.toFixed(4)+"）　<span onclick='retryGps()' style='cursor:pointer;color:#2b6cb0;text-decoration:underline;font-size:.78rem'>🔁 再取得</span>";
+      }, function(err){
+        console.warn("[GPS] エラー code="+err.code+" msg="+err.message);
+        var msg = "⚠️ GPS取得失敗（コード"+err.code+"）";
+        if(err.code === 1) msg = "⚠️ 権限が拒否されています → アドレスバー横🔒から「位置情報を許可」してください";
+        else if(err.code === 2) msg = "⚠️ 位置情報取得不可（コード2）→ 電波確認・再試行してください";
+        else if(err.code === 3) msg = "⚠️ タイムアウト（コード3）→ 高精度モードで再試行します...";
+        gpsStatus.innerHTML=msg+"　<span onclick='retryGps()' style='cursor:pointer;color:#2b6cb0;text-decoration:underline;font-size:.78rem'>🔁 再取得</span>";
         window._gpsLat=null; window._gpsLng=null;
-      });
+        // タイムアウト(code=3)は高精度モードで自動リトライ
+        if(err.code === 3){
+          navigator.geolocation.getCurrentPosition(function(pos2){
+            window._gpsLat = pos2.coords.latitude;
+            window._gpsLng = pos2.coords.longitude;
+            console.log("[GPS] 高精度モード成功:", pos2.coords.latitude.toFixed(5), pos2.coords.longitude.toFixed(5));
+            gpsStatus.innerHTML="✅ 現在地取得済み（"+pos2.coords.latitude.toFixed(4)+", "+pos2.coords.longitude.toFixed(4)+"）　<span onclick='retryGps()' style='cursor:pointer;color:#2b6cb0;text-decoration:underline;font-size:.78rem'>🔁 再取得</span>";
+          }, function(err2){
+            console.warn("[GPS] 高精度モードも失敗 code="+err2.code);
+            gpsStatus.innerHTML="⚠️ GPS取得失敗（コード"+err2.code+"）。自宅を出発地とします　<span onclick='retryGps()' style='cursor:pointer;color:#2b6cb0;text-decoration:underline;font-size:.78rem'>🔁 再取得</span>";
+          }, {enableHighAccuracy:true, timeout:30000, maximumAge:0});
+        }
+      }, gpsOptions);
     } else {
-      gpsStatus.textContent="⚠️ GPS非対応。自宅を使用します";
+      gpsStatus.textContent="⚠️ このブラウザはGPS非対応です。自宅を使用します";
     }
   } else {
     gpsStatus.style.display="none";
     window._gpsLat=null; window._gpsLng=null;
   }
+}
+function retryGps(){
+  var slocEl = document.getElementById("sloc-type");
+  if(slocEl && slocEl.value === "current") onSlocType();
 }
 
 function onTmChange(){
@@ -2275,6 +2303,14 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
   var timedAvail = [];   // 今日訪問できる時間指定案件
   var timedNG    = [];   // 今日は訪問不可（平日→休日、休日→平日）
 
+  // デバッグ：7548追跡
+  pool.forEach(function(c){
+    if(String(c.id).indexOf('7548') >= 0){
+      var tdStr2 = targetDate ? (targetDate.getFullYear()+'-'+('0'+(targetDate.getMonth()+1)).slice(-2)+'-'+('0'+targetDate.getDate()).slice(-2)) : '?';
+      console.log('[DBG-7548] scheduleDay pool: id='+c.id+' tm='+c.tm+' pin='+c.pin+' dur='+c.dur+' date='+tdStr2+' dow='+targetDate.getDay());
+    }
+  });
+
   pool.forEach(function(c){
     // ピンポイント日時指定
     if(c.pin != null){
@@ -2312,6 +2348,14 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     }
   });
 
+  // デバッグ：7548の分類結果
+  (timedAvail.concat(timedNG).concat(freePool)).forEach(function(c){
+    if(String(c.id).indexOf('7548') >= 0){
+      var _cat = timedAvail.indexOf(c)>=0 ? 'timedAvail' : (timedNG.indexOf(c)>=0 ? 'timedNG' : 'freePool');
+      console.log('[DBG-7548] scheduleDay分類: id='+c.id+' → '+_cat);
+    }
+  });
+
   // 時間指定あり案件のソート：①ピン案件を時刻順に ②納期が早い順 → ③時刻が早い順
   timedAvail.sort(function(a,b){
     // ピン案件は必ず先に処理（窓付き案件がcurを進める前にピン時刻で配置するため）
@@ -2339,7 +2383,8 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
 
 
   var sched   = [];
-  var placed  = {};     // 配置済みbaseId
+  var placed  = {};     // 配置済みbaseId（freePool重複防止用）
+  var placedExact = {}; // 実際に配置した完全ID（timedAvailスキップ用）
   var cur     = startMin;
   var prev    = startAdr;
   var prevC   = null;   // 直前の案件オブジェクト
@@ -2374,6 +2419,7 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     prev  = c.adr;
     prevC = c;
     placed[c.id] = true; placed[baseId(c.id)] = true; // 完全ID＆baseID両方登録
+    placedExact[c.id] = true; // 実際に配置した完全IDのみ記録（timedAvailスキップ判定用）
   }
 
   // 夕方以降のカレンダー予定の目的地座標を取得（経路最適化用）
@@ -2401,7 +2447,17 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
   // 自由案件の最適選択（現在地からの最近傍 + 帰路方向バイアス + 納期優先）
   function pickFree(fromAdr, fromC, excludeIds){
     var rem = freePool.filter(function(c){
-      if(placed[baseId(c.id)]) return false;
+      // デバッグ：7548がフィルタされる理由
+      if(String(c.id).indexOf('7548') >= 0){
+        var _r1=placedExact[c.id], _r2=(baseId(c.id)!==c.id&&placed[baseId(c.id)]), _r3=(excludeIds&&excludeIds[baseId(c.id)]), _r4=(c.tm&&TM_RANGE[c.tm]&&targetDate&&!isTmAvailable(c.tm,targetDate));
+        if(_r1||_r2||_r3||_r4) console.log('[DBG-7548] pickFree除外: id='+c.id+' placedExact='+_r1+' basePlaced='+_r2+' excluded='+_r3+' tmNG='+_r4+' cur='+Math.floor(cur/60)+':'+(('0'+(cur%60)).slice(-2)));
+      }
+      // 自分自身が実際に配置済みならスキップ（完全IDで判定）
+      if(placedExact[c.id]) return false;
+      // 枝番制限：同baseIdの別枝が timedAvail で配置済みの場合はスキップ
+      // ただし "7548" 自体が "7548-1" のbaseIdに当たるだけでスキップしないよう
+      // baseId(c.id) !== c.id（= 自分が枝番）の場合のみ baseId チェック
+      if(baseId(c.id) !== c.id && placed[baseId(c.id)]) return false;
       if(excludeIds && excludeIds[baseId(c.id)]) return false;
       // 「平日」「休日」指定の場合は曜日チェック
       if(c.tm && TM_RANGE[c.tm] && targetDate && !isTmAvailable(c.tm, targetDate)) return false;
@@ -2415,7 +2471,7 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
 
     // 残り案件数に応じた帰路バイアス係数
     // 最速完了モードON時はバイアスゼロ（純粋な最近傍）
-    var total = freePool.filter(function(c){ return !placed[baseId(c.id)]; }).length;
+    var total = freePool.filter(function(c){ return !placedExact[c.id] && !(baseId(c.id) !== c.id && placed[baseId(c.id)]); }).length;
     var homeBias = window._fastMode ? 0 : (total <= 3 ? 0.6 : total <= 6 ? 0.35 : 0.15);
 
     // 今日の日付（targetDate）
@@ -2504,7 +2560,8 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
         // 残り時間に収まらない → 残り時間内に収まる別の案件を探す
         var timeLeft = deadline - st;
         var shortRem = freePool.filter(function(c){
-          return !placed[baseId(c.id)] && !skip[baseId(c.id)] && c.dur <= timeLeft;
+          var _isPlaced = placedExact[c.id] || (baseId(c.id) !== c.id && placed[baseId(c.id)]);
+          return !_isPlaced && !skip[baseId(c.id)] && c.dur <= timeLeft;
         });
         if(shortRem.length > 0){
           // 残り時間内に収まる案件を最近傍で選んで配置
@@ -2525,7 +2582,8 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
         skip[baseId(next.id)] = true;
         // 全候補スキップ済みなら終了
         var rem = freePool.filter(function(c){
-          return !placed[baseId(c.id)] && !skip[baseId(c.id)];
+          var _isPlaced2 = placedExact[c.id] || (baseId(c.id) !== c.id && placed[baseId(c.id)]);
+          return !_isPlaced2 && !skip[baseId(c.id)];
         });
         if(!rem.length) break;
       }
@@ -2536,7 +2594,7 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
   // ── メインループ：時間指定案件を時刻順に処理 ──
   // curは前の案件終了後の時刻。巻き戻しは行わない
   timedAvail.forEach(function(tc){
-    if(placed[tc.id]) return; // 完全IDでチェック
+    if(placedExact[tc.id]) return; // 実際に配置済みの完全IDでチェック（placed["7548"]がbaseId衝突で誤設定されても影響しない）
 
     // ── ピンポイント時刻案件 ──
     if(tc.pin != null){
@@ -2654,6 +2712,16 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
 
   var consumedIds = {};
   sched.forEach(function(c){ consumedIds[c.id]=true; }); // 完全IDで管理（枝番ごとに独立）
+
+  // デバッグ：7548が消化されたか確認
+  (timedAvail.concat(timedNG).concat(freePool)).forEach(function(c){
+    if(String(c.id).indexOf('7548') >= 0){
+      var _placed2 = consumedIds[c.id] ? '✅配置済' : '❌未配置';
+      var _inSched = sched.some(function(s){return s.id===c.id;}) ? 'sched有' : 'sched無';
+      var _inNG = timedNG.some(function(n){return n.id===c.id;}) ? 'timedNG有' : 'timedNG無';
+      console.log('[DBG-7548] scheduleDay結果: id='+c.id+' '+_placed2+' '+_inSched+' '+_inNG+' FREE_DAY_END='+Math.floor(FREE_DAY_END/60)+':'+(('0'+(FREE_DAY_END%60)).slice(-2))+' finalCur='+Math.floor(cur/60)+':'+(('0'+(cur%60)).slice(-2)));
+    }
+  });
 
   return { sched:sched, consumedIds:consumedIds, notAvailTimed:timedNG };
 }
@@ -3268,12 +3336,19 @@ function buildAllCore(){
 
     Object.keys(byBase).forEach(function(b){
       var arr=byBase[b];
+      // デバッグ：特定IDの追跡
+      var _dbg = arr.some(function(c){ return String(c.id).indexOf('7548') >= 0; });
+      if(_dbg) console.log('[DBG-7548] Day'+(d+1)+' '+dStr+' byBase処理: arr=['+arr.map(function(c){return c.id+'(tm:'+c.tm+',pin:'+c.pin+')';}).join(',')+']');
       // 今日すでに同baseIdを完了済みなら全て翌日へ
       if(doneBasesToday[b]){
+        if(_dbg) console.log('[DBG-7548] → doneBasesToday → carriedOver');
         arr.forEach(function(c){ carriedOver.push(c); });
         return;
       }
-      if(arr.length===1){ todayPool.push(arr[0]); return; }
+      if(arr.length===1){
+        if(_dbg) console.log('[DBG-7548] → arr.length===1 → todayPool');
+        todayPool.push(arr[0]); return;
+      }
 
       // ── 納期超過・当日締め切り案件は枝番制限を超えて全件今日に入れる ──
       var urgentAll = arr.filter(function(c){
@@ -3293,6 +3368,7 @@ function buildAllCore(){
       var _isNextDay = (!isNow && d === 0);
       var canToday = arr.filter(function(c){ return canScheduleTodayCheck(c, date, startMin, _isNextDay); });
       var cannotToday = arr.filter(function(c){ return !canScheduleTodayCheck(c, date, startMin, _isNextDay); });
+      if(_dbg) console.log('[DBG-7548] canToday=['+canToday.map(function(c){return c.id;}).join(',')+'] cannotToday=['+cannotToday.map(function(c){return c.id;}).join(',')+']');
 
       if(canToday.length === 0){
         // 全件今日不可 → 時間指定優先で1件だけ選ぶ
@@ -3398,6 +3474,11 @@ function buildAllCore(){
     });
 
     console.log('Day'+(d+1)+' '+dStr+' pool:['+todayPool.map(function(c){return c.id;}).join(',')+'] blocks:'+calBlocks.length+' dayEnd:'+(effectiveDayEnd?Math.floor(effectiveDayEnd/60)+':'+(('0'+(effectiveDayEnd%60)).slice(-2)):'none')+' startMin:'+Math.floor(effectiveStartMin/60)+':'+(('0'+(effectiveStartMin%60)).slice(-2)));
+    // 特定ID追跡ログ（7548等の消失デバッグ用）
+    var _trackId = '7548';
+    var _inPool = todayPool.some(function(c){return c.id===_trackId||baseId(c.id)===_trackId;});
+    var _inCarry = carriedOver.some(function(c){return c.id===_trackId||baseId(c.id)===_trackId;});
+    if(_inPool||_inCarry) console.log('[TRACK '+_trackId+'] Day'+(d+1)+' pool:'+_inPool+' carry:'+_inCarry);
 
     // 実働時間がなければ全件翌日へ繰り越し
     if(effectiveDayEnd <= effectiveStartMin + 15){
@@ -3417,6 +3498,14 @@ function buildAllCore(){
     var todaySch = result.sched;
     var consumed = result.consumedIds;
     var notAvail = result.notAvailTimed||[];
+    // 特定ID追跡ログ（scheduleDayの結果）
+    (function(){
+      var _trackId = '7548';
+      var _placed = todaySch.some(function(c){return c.id===_trackId;});
+      var _timedNG = notAvail.some(function(c){return c.id===_trackId;});
+      var _relevant = todayPool.some(function(c){return c.id===_trackId||baseId(c.id)===_trackId;});
+      if(_relevant) console.log('[TRACK '+_trackId+'] Day'+(d+1)+' result: placed='+_placed+' timedNG='+_timedNG+' consumed='+!!consumed[_trackId]);
+    })();
 
     // 今日消化できなかった案件
     var notDone = todayPool.filter(function(c){ return !consumed[c.id]; }); // 完全IDで判定
