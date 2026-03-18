@@ -1984,6 +1984,10 @@ function geocodeAddress(adr, callback){
 }
 
 function getPos(adr, caseObj){
+  // ── GPS座標が利用可能な場合は直接返す ──
+  if(adr === '__GPS__' && window._gpsLat && window._gpsLng){
+    return {k: '現在地(GPS)', lat: window._gpsLat, lng: window._gpsLng};
+  }
   // フォールバック座標（橘通 or 都城市一般）がセットされている場合はARで再ルックアップ
   var FALLBACK_LAT=31.9115, FALLBACK_LNG=131.4237;
   // 市区町村レベルのフォールバック座標一覧（精度が低いためAR再ルックアップ対象）
@@ -2258,7 +2262,9 @@ function canScheduleTodayCheck(c, targetDate, startMin, isNextDay){
   // 通常出発(8:30)より前に窓が終わる早朝枠は常に配置可（早朝出発で対応）
   var isEarlySlot = wEnd <= 8*60+30;
   if(isEarlySlot) return true;
-  if(startMin >= wEnd - 15) return false; // 窓終了済み
+  // Bug4-F: wLatestArrival を dur 考慮に合わせる
+  var wLatest = wEnd - Math.min(15, c.dur||10);
+  if(startMin >= wLatest) return false; // 窓終了済み
   return true;
 }
 
@@ -2545,11 +2551,14 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     }
   }
 
-  // ── メインループ：時間指定案件を1件ずつ処理 ──
-  // ── メインループ：時間指定案件を時刻順に処理 ──
-  // curは前の案件終了後の時刻。巻き戻しは行わない
+  // ── メインループ：時間指定案件を時刻順に処理（夜間枠除く）──
+  // 夜間案件（wStart >= 20:00）はfillFree後に別途処理
   timedAvail.forEach(function(tc){
-    if(placed[tc.id]) return; // 完全IDでチェック
+    // Bug3: 完全ID＋baseID両方でチェック（同日同baseId禁止）
+    if(placed[tc.id] || placed[baseId(tc.id)]) return;
+
+    // ── 夜間枠（wStart >= 20:00）はスキップ →後で処理 ──
+    if(tc.pin == null && tc.tm && TM_RANGE[tc.tm] && TM_RANGE[tc.tm][0] >= 20*60) return;
 
     // ── ピンポイント時刻案件 ──
     if(tc.pin != null){
@@ -2581,21 +2590,27 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     var trvToTc = trv(prev, prevC, tc.adr, tc);
     var isEarlyMorningCase = wEnd <= 9*60; // 早朝案件（〜9時以前終了）
 
-    // 通常出発(8:30)より前に窓が終わる早朝枠
+    // Bug4-A: wLatestArrivalE を dur 考慮に変更（dur < 15 でも正しく算出）
     if(isEarlyMorningCase){
-      var wLatestArrivalE = wEnd - 15; // 窓終了15分前が最遅現着（例:平日7-8は7:45）
+      var wLatestArrivalE = wEnd - Math.min(15, tc.dur);
       var arriveFromCur = cur + trvToTc; // 現在位置から出発した場合の到着
 
       if(arriveFromCur <= wLatestArrivalE){
         // curから自然に移動して窓内に到着できる
-        var stE = Math.max(wStart, arriveFromCur); // 早着なら窓開始まで待機
+        var stE = Math.max(wStart, arriveFromCur);
         if(stE + tc.dur <= wEnd) place(tc, stE);
       } else {
         // curからでは間に合わない → 早朝出発（wStart - 移動時間）で対応
         var earlyDepart = wStart - trvToTc;
-        // 深夜出発 or 前の案件終了より前の出発が必要な場合はスキップ（翌日繰越）
-        if(earlyDepart < 0 || earlyDepart < cur){
-          console.log('[SKIP早朝] '+tc.id+' earlyDepart='+Math.floor(earlyDepart/60)+':'+(('0'+(earlyDepart%60)).slice(-2))+' cur='+Math.floor(cur/60)+':'+(('0'+(cur%60)).slice(-2)));
+        // 深夜出発が必要な場合はスキップ（翌日繰越）
+        if(earlyDepart < 0){
+          return;
+        }
+        // Bug4-B: earlyDepart < cur でもすぐスキップせず、窓内到着できるか確認
+        if(earlyDepart < cur){
+          // 出発タイミングを逃したが、現在地から向かって窓内に収まるか確認
+          var stLate = Math.max(wStart, arriveFromCur);
+          if(stLate + tc.dur <= wEnd) place(tc, stLate);
           return;
         }
         var stE2 = wStart;
@@ -2606,8 +2621,8 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
 
     // curから出発した場合の到着時刻
     var arriveAt = cur + trvToTc;
-    // 窓終了15分前までに到着できなければスキップ（16:45着なら17:00終了窓でも可）
-    var wLatestArrival = wEnd - 15; // 窓終了の15分前が最遅現着
+    // Bug4-C: wLatestArrival を dur 考慮に変更（dur < 15 の案件でも正しく算出）
+    var wLatestArrival = wEnd - Math.min(15, tc.dur);
     if(arriveAt > wLatestArrival) return;
 
     // 窓前の隙間（08:30以降）に自由案件を詰める
@@ -2621,34 +2636,28 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     arriveAt = cur + trvToTc;
     if(arriveAt > wLatestArrival) return;
 
-    // ② 窓の意味：「wStartからwEnd-15分までに現着」
-    // wStartに合わせて出発するのではなく、自然なルート進行で窓内に入ればOK
+    // ② 窓の意味：「wStartからwEnd-min(15,dur)分までに現着」
     var st;
     if(arriveAt < wStart){
       // 早着の場合：「wStartに間に合う最遅出発時刻」まで自由案件を詰めてから向かう
-      // cur = arriveAt の人工的な時刻操作をせず、現時刻から出発タイミングを算出
-      var latestDepart = wStart - trvToTc; // この時刻より後に出発すると窓に遅刻
+      var latestDepart = wStart - trvToTc;
       if(latestDepart > Math.max(cur, FREE_START)){
-        fillFree(latestDepart); // 出発時刻まで自由案件を詰める（ルートの流れを維持）
-        trvToTc = trv(prev, prevC, tc.adr, tc); // 再計算（前の案件が変わった場合）
+        fillFree(latestDepart);
+        trvToTc = trv(prev, prevC, tc.adr, tc);
         arriveAt = cur + trvToTc;
       }
-      st = Math.max(wStart, arriveAt); // 窓開始以降に訪問（早着なら窓まで待機）
+      st = Math.max(wStart, arriveAt);
     } else {
-      // wStart <= arriveAt <= wLatestArrival: ルート進行上、窓内に自然到着 → そのまま訪問
       st = arriveAt;
     }
 
     var tcBlocked = calBlocks.some(function(b){
       return st < b.end && (st + tc.dur) > b.start;
     });
-    // 時間指定案件の締切：窓終了（wEnd）までに作業完了
-    // ① イレギュラー夜間案件（wStart >= 20:00）はeffectiveDayEnd制限を適用しない
-    //   （平日20-22等は通常業務時間外の特例案件のため、窓自体が締切）
-    var isLateNight = (wStart >= 20*60); // 20:00以降開始 = 訪問可能時間外イレギュラー
+    // 通常案件のみカレンダー制約を反映
     var tcDeadline = wEnd;
-    if(!isLateNight && effectiveDayEnd && effectiveDayEnd < tcDeadline){
-      tcDeadline = effectiveDayEnd; // 通常案件のみカレンダー制約を反映
+    if(effectiveDayEnd && effectiveDayEnd < tcDeadline){
+      tcDeadline = effectiveDayEnd;
     }
     if(!tcBlocked && st <= wLatestArrival && st + tc.dur <= tcDeadline) place(tc, st);
   });
@@ -2657,6 +2666,28 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
   // 残りの自由案件を最後まで詰める
   if(cur < FREE_START) cur = FREE_START;
   fillFree(FREE_DAY_END);
+
+  // ── Bug4-D: 夜間枠案件（wStart >= 20:00）をfillFree後に処理 ──
+  // fillFreeでcurが~20:15になった後、現在地から夜間案件へ移動する想定
+  timedAvail.filter(function(tc){
+    return tc.pin == null && tc.tm && TM_RANGE[tc.tm] && TM_RANGE[tc.tm][0] >= 20*60;
+  }).forEach(function(tc){
+    if(placed[tc.id] || placed[baseId(tc.id)]) return;
+    if(!isTmAvailable(tc.tm, targetDate)) return;
+    var wStart_ln = TM_RANGE[tc.tm][0];
+    var wEnd_ln   = TM_RANGE[tc.tm][1];
+    var trvToTc_ln = trv(prev, prevC, tc.adr, tc);
+    var arriveAt_ln = cur + trvToTc_ln;
+    var st_ln = Math.max(wStart_ln, arriveAt_ln);
+    var wLatestArrival_ln = wEnd_ln - Math.min(15, tc.dur);
+    var tcDeadline_ln = wEnd_ln; // 夜間案件はeffectiveDayEnd制限なし（窓自体が締切）
+    var tcBlocked_ln = calBlocks.some(function(b){
+      return st_ln < b.end && (st_ln + tc.dur) > b.start;
+    });
+    if(!tcBlocked_ln && st_ln <= wLatestArrival_ln && st_ln + tc.dur <= tcDeadline_ln){
+      place(tc, st_ln);
+    }
+  });
 
   sched.sort(function(a,b){ return a.st-b.st; });
 
@@ -2705,7 +2736,8 @@ function twoOptImprove(sched, startAdr, startMin, spd, calBlocks, freeStart, fre
       } else if(c.tm && TM_RANGE[c.tm]){
         var wS = TM_RANGE[c.tm][0], wE = TM_RANGE[c.tm][1];
         st = Math.max(cur + t, wS);
-        if(st > wE - 15 || st + c.dur > wE) return null; // 窓違反
+        var _wLatest = wE - Math.min(15, c.dur);
+        if(st > _wLatest || st + c.dur > wE) return null; // 窓違反
       } else {
         st = Math.max(cur + t, freeStart);
         if(st + c.dur > freeDayEnd) return null; // 終業後
@@ -3057,18 +3089,10 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
   }
 
   if(skip.length){
-    var _td2=new Date(dStr+'T00:00:00');
-    var _tdStr2=_td2.getFullYear()+'-'+('0'+(_td2.getMonth()+1)).slice(-2)+'-'+('0'+_td2.getDate()).slice(-2);
     h+='<div style="margin-top:10px;padding:10px;background:#fff5f5;border-radius:8px;font-size:.8rem">'+
       '<b style="color:#c53030">翌日繰越（'+skip.length+'件）：</b><br>'+
       skip.map(function(c){
-        var reason='';
-        if(c.pin!=null && c.pinDate && c.pinDate!==_tdStr2) reason='📌ピン日付不一致';
-        else if(c.tm && TM_RANGE[c.tm] && !isTmAvailable(c.tm,_td2)) reason='曜日不一致('+c.tm+')';
-        else if(c.tm && TM_RANGE[c.tm] && isNow && TM_RANGE[c.tm][1]-15 <= startMin) reason='窓終了済み('+c.tm+')';
-        else if(!c.lat||!c.lng) reason='座標未取得';
-        else reason='時間不足/距離';
-        return '<span style="display:inline-block;margin:2px 4px">'+c.id+'('+getArea(c.adr)+')<span style="color:#718096;font-size:.72rem">　'+reason+'</span></span>';
+        return '<span style="display:inline-block;margin:2px 4px">'+c.id+'('+getArea(c.adr)+')</span>';
       }).join('')+'</div>';
   }
   // 手動追加ボタン
@@ -3076,6 +3100,48 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
     '<button onclick="openAddCaseModal('+(dayIdx!=null?dayIdx:dayNum-1)+')" style="padding:5px 14px;font-size:.82rem;background:#ebf8ff;color:#2b6cb0;border:1.5px solid #bee3f8;border-radius:8px;cursor:pointer;font-weight:600">➕ この日に案件を追加</button>'+
     '</div>';
   return h+'</div>';
+}
+
+// ===== GPS→全案件のDistanceMatrix取得 =====
+function prefetchGpsDistanceMatrix(callback){
+  if(!window._gpsLat || !window._gpsLng){ callback(); return; }
+  function _doFetch(){
+    if(!window._gmapsLoaded || !window.google || !window.google.maps){
+      setTimeout(_doFetch, 200); return;
+    }
+    var dests = [HOME_ADR];
+    cases.forEach(function(c){ if(c.adr && dests.indexOf(c.adr) < 0) dests.push(c.adr); });
+    if(window.gcalEvents) window.gcalEvents.forEach(function(ev){ if(ev.location && dests.indexOf(ev.location)<0) dests.push(ev.location); });
+    var needDests = dests.filter(function(d){ return dmGet('現在地(GPS)', d) == null; });
+    if(!needDests.length){ callback(); return; }
+    var gpsOrigin = new google.maps.LatLng(window._gpsLat, window._gpsLng);
+    var svc = new google.maps.DistanceMatrixService();
+    var MAX_D = 25;
+    var gpsBatches = [];
+    for(var gi = 0; gi < needDests.length; gi += MAX_D) gpsBatches.push(needDests.slice(gi, gi + MAX_D));
+    var gpsRemaining = gpsBatches.length;
+    if(!gpsRemaining){ callback(); return; }
+    gpsBatches.forEach(function(batch){
+      svc.getDistanceMatrix({
+        origins: [gpsOrigin], destinations: batch,
+        travelMode: google.maps.TravelMode.DRIVING, avoidHighways: true,
+        language: 'ja', region: 'JP', unitSystem: google.maps.UnitSystem.METRIC
+      }, function(data, status){
+        if(status === 'OK' && data.rows && data.rows[0]){
+          data.rows[0].elements.forEach(function(el, di){
+            if(el.status === 'OK'){
+              var mins = Math.max(3, Math.round(el.duration.value / 60));
+              dmSet('現在地(GPS)', batch[di], mins);
+            }
+          });
+          _dmCacheSave();
+        }
+        gpsRemaining--;
+        if(gpsRemaining === 0) callback();
+      });
+    });
+  }
+  _doFetch();
 }
 
 // ===== 3日分スケジュール作成 =====
@@ -3173,6 +3239,19 @@ function buildAll(){
     }
   }
 
+  function maybePrefetchGpsThenBuild(){
+    var _slocType = document.getElementById("sloc-type") ? document.getElementById("sloc-type").value : "home";
+    if(_slocType === 'current' && window._gpsLat && window._gpsLng){
+      var _gpsFetchEl = document.getElementById('sresult');
+      if(_gpsFetchEl) _gpsFetchEl.innerHTML = '<div class="al al-y">📡 現在地からの道路距離を取得中...</div>';
+      prefetchGpsDistanceMatrix(function(){
+        doFullDmAndBuild();
+      });
+    } else {
+      doFullDmAndBuild();
+    }
+  }
+
   if(gcalToken){
     document.getElementById('sresult').innerHTML
       ='<div class="al al-y">⏳ カレンダーの予定を取得中...</div>';
@@ -3181,11 +3260,11 @@ function buildAll(){
       document.getElementById('sresult').innerHTML
         ='<div class="al al-y">🗺️ カレンダー会場の道路距離を取得中...</div>';
       prefetchCalendarVenues(function(){
-        doFullDmAndBuild();
+        maybePrefetchGpsThenBuild();
       });
     });
   } else {
-    doFullDmAndBuild();
+    maybePrefetchGpsThenBuild();
   }
 }
 var _buildAllWaitCount = 0;
