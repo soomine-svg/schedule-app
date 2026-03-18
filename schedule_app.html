@@ -69,6 +69,26 @@ header h1{font-size:1.1rem;font-weight:700}
 .sched-mode{display:flex;gap:6px;margin-bottom:14px}
 .smode{padding:8px 16px;border:2px solid #e2e8f0;border-radius:8px;cursor:pointer;font-size:.85rem;font-weight:600;background:white;color:#4a5568}
 .smode.on{border-color:#2b6cb0;background:#ebf4ff;color:#2b6cb0}
+
+/* ===== タッチ長押しドラッグ ===== */
+/* タッチデバイスでは▲▼ボタン・☰ハンドルを非表示 */
+@media (pointer: coarse) {
+  .reorder-arrows { display: none !important; }
+  .drag-handle    { display: none !important; }
+  .tl-row { user-select: none; -webkit-user-select: none; }
+}
+/* 長押し中のハイライト */
+.tl-row.lp-active {
+  background: #ebf8ff !important;
+  box-shadow: 0 0 0 2px #4299e1;
+  border-radius: 8px;
+  transition: box-shadow 0.15s;
+}
+/* ドラッグ中は元の行を薄く */
+.tl-row.dragging {
+  opacity: 0.25 !important;
+  transform: scale(0.97);
+}
 </style>
 <link rel="apple-touch-icon" href="data:image/png;base64,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">
 <link rel="icon" href="data:image/png;base64,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">
@@ -3044,7 +3064,7 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
       h+='<div class="tl-row" id="tlrow-'+safeId+'" data-dayidx="'+(dayIdx!==undefined?dayIdx:0)+'" data-itemidx="'+i+'" style="'+rowStyle+'">'+
         '<div style="display:flex;flex-direction:column;align-items:flex-end;min-width:72px;gap:2px">'+
         '<div class="tl-t" style="min-width:unset;padding-top:0">'+fmt(c.st)+'<br><span style="color:#a0aec0;font-size:.7rem">〜'+fmt(c.st+c.dur)+'</span></div>'+
-        '<div style="display:flex;gap:2px">'+
+        '<div class="reorder-arrows" style="display:flex;gap:2px">'+
         (i>0?'<button onclick="reorderSched('+(dayIdx!==undefined?dayIdx:0)+','+i+',-1)" title="上へ" style="padding:1px 6px;font-size:.8rem;background:#ebf4ff;color:#2b6cb0;border:none;border-radius:5px;cursor:pointer;line-height:1">▲</button>':'')+
         (!last?'<button onclick="reorderSched('+(dayIdx!==undefined?dayIdx:0)+','+i+',1)" title="下へ" style="padding:1px 6px;font-size:.8rem;background:#ebf4ff;color:#2b6cb0;border:none;border-radius:5px;cursor:pointer;line-height:1">▼</button>':'')+
         '</div>'+
@@ -3887,104 +3907,94 @@ function loadSample(){
   renderCases();
 }
 
-// ===== タッチドラッグ＆ドロップ（スケジュール並べ替え） =====
+// ===== タッチ長押しドラッグ＆ドロップ（スケジュール並べ替え） =====
 (function(){
-  var _drag = null; // {el, dayIdx, itemIdx, clone, startY, scrollEl}
+  var _drag          = null;   // アクティブなドラッグ状態
+  var _lpTimer       = null;   // 長押しタイマー
+  var _lpData        = null;   // 長押し開始時のデータ
 
+  var LONG_PRESS_MS  = 350;    // 長押し判定時間（ms）
+  var CANCEL_PX      = 8;      // 長押しキャンセルとみなす移動量（px）
+
+  /* ── ヘルパー ── */
   function getTlRows(dayIdx){
     return Array.from(document.querySelectorAll('.tl-row[data-dayidx="'+dayIdx+'"]'));
   }
 
-  function onTouchStart(e){
-    // ☰ハンドルのみ反応
-    if(!e.target.classList.contains('drag-handle')) return;
-    e.preventDefault();
-    var row = e.target.closest('.tl-row');
-    if(!row) return;
-    var dayIdx  = parseInt(row.dataset.dayidx);
-    var itemIdx = parseInt(row.dataset.itemidx);
-    var touch   = e.touches[0];
+  function clearHighlights(dayIdx){
+    getTlRows(dayIdx).forEach(function(r){
+      r.style.borderTop = ''; r.style.borderBottom = '';
+    });
+  }
+
+  /* ── 長押しタイマーをキャンセル ── */
+  function cancelLp(){
+    if(_lpTimer){ clearTimeout(_lpTimer); _lpTimer = null; }
+    if(_lpData){
+      _lpData.row.classList.remove('lp-active');
+      _lpData = null;
+    }
+  }
+
+  /* ── 長押し完了 → ドラッグ起動 ── */
+  function activateDrag(data){
+    _lpData = null; // lpDataをクリア（cancelLpで二度処理しないように）
+
+    var row   = data.row;
+    var touch = data.touch;
+    var rect  = row.getBoundingClientRect();
+
+    // 触覚フィードバック（iOS/Android対応端末のみ）
+    if(navigator.vibrate) navigator.vibrate(30);
+
+    // 長押しハイライトをドラッグ中スタイルに切り替え
+    row.classList.remove('lp-active');
+    row.classList.add('dragging');
 
     // ゴースト（半透明コピー）を作成
-    var rect = row.getBoundingClientRect();
     var clone = row.cloneNode(true);
     clone.style.cssText = [
       'position:fixed',
       'left:'+rect.left+'px',
       'top:'+rect.top+'px',
       'width:'+rect.width+'px',
-      'opacity:0.75',
+      'opacity:0.80',
       'pointer-events:none',
       'z-index:9999',
-      'box-shadow:0 4px 16px rgba(0,0,0,0.18)',
-      'border-radius:8px',
+      'box-shadow:0 8px 24px rgba(0,0,0,0.22)',
+      'border-radius:10px',
       'background:#ebf8ff',
-      'transition:none'
+      'border:2px solid #4299e1',
+      'transition:none',
+      'transform:scale(1.02)'
     ].join(';');
     document.body.appendChild(clone);
 
-    // 元の行をグレーアウト
-    row.style.opacity = '0.3';
-
-    // スクロール親を探す
-    var scrollEl = row.closest('.card') || document.scrollingElement;
-
     _drag = {
-      el: row,
-      dayIdx: dayIdx,
-      itemIdx: itemIdx,
-      clone: clone,
-      startY: touch.clientY,
-      cloneOffsetY: touch.clientY - rect.top,
-      scrollEl: scrollEl
+      el:           row,
+      dayIdx:       data.dayIdx,
+      itemIdx:      data.itemIdx,
+      clone:        clone,
+      cloneOffsetY: touch.clientY - rect.top
     };
   }
 
-  function onTouchMove(e){
+  /* ── ドラッグ終了 ── */
+  function endDrag(touch){
     if(!_drag) return;
-    e.preventDefault();
-    var touch = e.touches[0];
-    var x = touch.clientX;
-    var y = touch.clientY;
 
-    // ゴーストを指に追従
-    _drag.clone.style.top = (y - _drag.cloneOffsetY) + 'px';
-
-    // ドロップ先候補行をハイライト
-    var rows = getTlRows(_drag.dayIdx);
-    rows.forEach(function(r){ r.style.borderTop = ''; r.style.borderBottom = ''; });
-
-    // タッチ座標の下にある tl-row を検出
-    _drag.clone.style.display = 'none';
-    var elBelow = document.elementFromPoint(x, y);
-    _drag.clone.style.display = '';
-    if(!elBelow) return;
-    var targetRow = elBelow.closest('.tl-row');
-    if(targetRow && targetRow !== _drag.el){
-      var targetIdx = parseInt(targetRow.dataset.itemidx);
-      if(targetIdx < _drag.itemIdx){
-        targetRow.style.borderTop = '2px solid #4299e1';
-      } else {
-        targetRow.style.borderBottom = '2px solid #4299e1';
-      }
-    }
-  }
-
-  function onTouchEnd(e){
-    if(!_drag) return;
-    var touch = e.changedTouches[0];
-
-    // ゴースト除去・元行を戻す
     _drag.clone.remove();
-    _drag.el.style.opacity = '';
+    _drag.el.classList.remove('dragging');
+    _drag.el.style.opacity  = '';
+    _drag.el.style.transform = '';
 
-    // ハイライト除去
-    var rows = getTlRows(_drag.dayIdx);
-    rows.forEach(function(r){ r.style.borderTop = ''; r.style.borderBottom = ''; });
+    clearHighlights(_drag.dayIdx);
 
-    // ドロップ先を特定
-    _drag.clone.style.display = 'none'; // 念のため
+    // ドロップ先を特定（ゴーストを一瞬隠してelementFromPointで検出）
+    _drag.clone.style.display = 'none';
     var elBelow = document.elementFromPoint(touch.clientX, touch.clientY);
+    // clone はすでに remove 済みなので display 戻し不要
+
     if(elBelow){
       var targetRow = elBelow.closest('.tl-row');
       if(targetRow && targetRow !== _drag.el){
@@ -3995,20 +4005,101 @@ function loadSample(){
         }
       }
     }
-
     _drag = null;
   }
 
-  // タッチイベントをdocumentレベルで捕捉（delegated）
-  document.addEventListener('touchstart',  onTouchStart, {passive:false});
-  document.addEventListener('touchmove',   onTouchMove,  {passive:false});
-  document.addEventListener('touchend',    onTouchEnd,   {passive:false});
-  document.addEventListener('touchcancel', function(){ 
-    if(!_drag) return;
-    _drag.clone.remove();
-    _drag.el.style.opacity = '';
-    _drag = null;
-  }, {passive:false});
+  /* ══════════════ イベントハンドラ ══════════════ */
+
+  document.addEventListener('touchstart', function(e){
+    // ボタン・リンク上は除外（✅完了ボタン等を正常動作させる）
+    var tgt = e.target;
+    if(tgt.tagName === 'BUTTON' || tgt.tagName === 'A' ||
+       tgt.closest('button') || tgt.closest('a') ||
+       tgt.classList.contains('drag-handle')) return;
+
+    var row = tgt.closest('.tl-row');
+    if(!row) return;
+
+    var touch = e.touches[0];
+    _lpData = {
+      row:     row,
+      dayIdx:  parseInt(row.dataset.dayidx),
+      itemIdx: parseInt(row.dataset.itemidx),
+      touch:   touch,
+      startX:  touch.clientX,
+      startY:  touch.clientY
+    };
+
+    // 長押し開始をユーザーに予告（薄いハイライト）
+    row.classList.add('lp-active');
+
+    // 350ms後にドラッグ起動
+    _lpTimer = setTimeout(function(){
+      _lpTimer = null;
+      if(_lpData) activateDrag(_lpData);
+    }, LONG_PRESS_MS);
+
+  }, {passive: false});  // passive:false にしてtouchmove側でscroll防止可能に
+
+  document.addEventListener('touchmove', function(e){
+    // ── ドラッグ中 ──
+    if(_drag){
+      e.preventDefault();   // スクロール完全ブロック
+      var touch = e.touches[0];
+      var x = touch.clientX, y = touch.clientY;
+
+      // ゴーストを指に追従
+      _drag.clone.style.top = (y - _drag.cloneOffsetY) + 'px';
+
+      // ドロップ先候補行をハイライト
+      clearHighlights(_drag.dayIdx);
+      _drag.clone.style.display = 'none';
+      var elBelow = document.elementFromPoint(x, y);
+      _drag.clone.style.display = '';
+      if(elBelow){
+        var targetRow = elBelow.closest('.tl-row');
+        if(targetRow && targetRow !== _drag.el){
+          var tIdx = parseInt(targetRow.dataset.itemidx);
+          if(tIdx < _drag.itemIdx){
+            targetRow.style.borderTop    = '2px solid #4299e1';
+          } else {
+            targetRow.style.borderBottom = '2px solid #4299e1';
+          }
+        }
+      }
+      return;
+    }
+
+    // ── 長押し待機中：指が動いたら長押しキャンセル（スクロール優先） ──
+    if(_lpData){
+      var t  = e.touches[0];
+      var dx = Math.abs(t.clientX - _lpData.startX);
+      var dy = Math.abs(t.clientY - _lpData.startY);
+      if(dx > CANCEL_PX || dy > CANCEL_PX){
+        cancelLp();
+      }
+    }
+  }, {passive: false});
+
+  document.addEventListener('touchend', function(e){
+    cancelLp();
+    if(_drag){
+      e.preventDefault();
+      endDrag(e.changedTouches[0]);
+    }
+  }, {passive: false});
+
+  document.addEventListener('touchcancel', function(){
+    cancelLp();
+    if(_drag){
+      _drag.clone.remove();
+      _drag.el.classList.remove('dragging');
+      _drag.el.style.opacity = '';
+      clearHighlights(_drag.dayIdx);
+      _drag = null;
+    }
+  }, {passive: false});
+
 })();
 
 // 任意インデックス間の直接移動（ドラッグ用）
