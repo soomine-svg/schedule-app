@@ -931,12 +931,13 @@ function setMode(m){
   schedMode=m;
   document.getElementById("mode-tomorrow").classList.toggle("on",m==="tomorrow");
   document.getElementById("mode-now").classList.toggle("on",m==="now");
-  // 「今からモード」選択時は自動的に出発地を現在地（GPS）に切り替え
+  // 「今からモード」選択時：常に現在地（GPS）に切り替えてGPS取得を（再）起動
+  // ※条件ガードなし：GPS失敗後の再試行・ドロップダウン手動変更後もGPSを必ず再取得する
   if(m === "now"){
     var slocEl = document.getElementById("sloc-type");
-    if(slocEl && slocEl.value !== "current"){
+    if(slocEl){
       slocEl.value = "current";
-      onSlocType(); // GPS取得開始
+      onSlocType(); // GPS取得（再）開始
     }
   }
   // 「翌日モード」に戻したら自宅に戻す
@@ -955,26 +956,31 @@ function onSlocType(){
   var gpsStatus = document.getElementById("sloc-gps-status");
   if(t==="current"){
     gpsStatus.style.display="block";
-    gpsStatus.textContent="📡 GPS取得中...";
+    gpsStatus.innerHTML='<span style="color:#2b6cb0">📡 GPS取得中...</span>';
     window._gpsLat=null; window._gpsLng=null;
-    window._gpsLoading=true; // buildAll() がGPS完了を待つためのフラグ
+    window._gpsLoading=true;
     if(navigator.geolocation){
       navigator.geolocation.getCurrentPosition(function(pos){
         window._gpsLat = pos.coords.latitude;
         window._gpsLng = pos.coords.longitude;
         window._gpsLoading = false;
-        gpsStatus.textContent="✅ 現在地取得済み（"+pos.coords.latitude.toFixed(4)+", "+pos.coords.longitude.toFixed(4)+")";
+        gpsStatus.innerHTML='<span style="color:#276749;font-weight:600">✅ 現在地取得済み（'
+          +pos.coords.latitude.toFixed(4)+', '+pos.coords.longitude.toFixed(4)+'）</span>';
       }, function(err){
         window._gpsLoading = false;
-        var reason = err.code===1 ? '位置情報の使用が拒否されました' :
-                     err.code===2 ? '位置情報を取得できませんでした' :
-                     err.code===3 ? 'タイムアウトしました（8秒）' : 'エラーコード'+err.code;
-        gpsStatus.textContent="⚠️ GPS取得失敗（"+reason+"）。自宅を出発地として使用します";
         window._gpsLat=null; window._gpsLng=null;
-      }, {timeout:8000, maximumAge:30000, enableHighAccuracy:false});
+        var reason = err.code===1 ? '位置情報の使用が拒否されました（ブラウザ設定で許可してください）' :
+                     err.code===2 ? '位置情報を取得できませんでした' :
+                     err.code===3 ? 'タイムアウト（再取得ボタンをお試しください）' : 'エラーコード'+err.code;
+        gpsStatus.innerHTML='<span style="color:#c53030">⚠️ GPS取得失敗：'+reason+'</span>'
+          +'　<button onclick="onSlocType()" style="margin-left:6px;padding:3px 10px;font-size:.75rem;'
+          +'background:#ebf4ff;color:#2b6cb0;border:1.5px solid #bee3f8;border-radius:6px;cursor:pointer;font-weight:600">'
+          +'🔄 再取得</button>'
+          +'<div style="font-size:.72rem;color:#a0aec0;margin-top:3px">自宅を出発地として続行するにはそのままスケジュール作成してください</div>';
+      }, {timeout:10000, maximumAge:0, enableHighAccuracy:false});
     } else {
       window._gpsLoading = false;
-      gpsStatus.textContent="⚠️ このブラウザはGPS非対応です。自宅を使用します";
+      gpsStatus.innerHTML='<span style="color:#c53030">⚠️ このブラウザはGPS非対応です（HTTPSページで開いてください）</span>';
     }
   } else {
     gpsStatus.style.display="none";
@@ -3125,22 +3131,42 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
 // ===== GPS→全案件のDistanceMatrix取得 =====
 function prefetchGpsDistanceMatrix(callback){
   if(!window._gpsLat || !window._gpsLng){ callback(); return; }
+  var _waitMs = 0;
+  var _called = false;
+  function _safeCallback(){
+    if(_called) return;
+    _called = true;
+    callback();
+  }
   function _doFetch(){
     if(!window._gmapsLoaded || !window.google || !window.google.maps){
-      setTimeout(_doFetch, 200); return;
+      _waitMs += 200;
+      if(_waitMs > 8000){
+        // Maps APIロード待機タイムアウト → 直線距離フォールバックで続行
+        console.warn('[GPS-DM] Maps API未ロード - スキップして続行');
+        _safeCallback();
+        return;
+      }
+      setTimeout(_doFetch, 200);
+      return;
     }
     var dests = [HOME_ADR];
     cases.forEach(function(c){ if(c.adr && dests.indexOf(c.adr) < 0) dests.push(c.adr); });
     if(window.gcalEvents) window.gcalEvents.forEach(function(ev){ if(ev.location && dests.indexOf(ev.location)<0) dests.push(ev.location); });
     var needDests = dests.filter(function(d){ return dmGet('現在地(GPS)', d) == null; });
-    if(!needDests.length){ callback(); return; }
+    if(!needDests.length){ _safeCallback(); return; }
     var gpsOrigin = new google.maps.LatLng(window._gpsLat, window._gpsLng);
     var svc = new google.maps.DistanceMatrixService();
     var MAX_D = 25;
     var gpsBatches = [];
     for(var gi = 0; gi < needDests.length; gi += MAX_D) gpsBatches.push(needDests.slice(gi, gi + MAX_D));
     var gpsRemaining = gpsBatches.length;
-    if(!gpsRemaining){ callback(); return; }
+    if(!gpsRemaining){ _safeCallback(); return; }
+    // DM APIタイムアウト保険（10秒）
+    var _dmTimeout = setTimeout(function(){
+      console.warn('[GPS-DM] DM API タイムアウト - スキップして続行');
+      _safeCallback();
+    }, 10000);
     gpsBatches.forEach(function(batch){
       svc.getDistanceMatrix({
         origins: [gpsOrigin], destinations: batch,
@@ -3157,7 +3183,10 @@ function prefetchGpsDistanceMatrix(callback){
           _dmCacheSave();
         }
         gpsRemaining--;
-        if(gpsRemaining === 0) callback();
+        if(gpsRemaining === 0){
+          clearTimeout(_dmTimeout);
+          _safeCallback();
+        }
       });
     });
   }
@@ -3179,7 +3208,8 @@ function buildAll(){
     window._gpsLoading = false;
     window._gpsLat = null; window._gpsLng = null;
     var gpsEl = document.getElementById('sloc-gps-status');
-    if(gpsEl) gpsEl.textContent = '⚠️ GPS待機タイムアウト。自宅を使用します';
+    if(gpsEl) gpsEl.innerHTML = '<span style="color:#c53030">⚠️ GPS待機タイムアウト。自宅を出発地として使用します。</span>'
+      +'　<button onclick="onSlocType()" style="margin-left:6px;padding:3px 10px;font-size:.75rem;background:#ebf4ff;color:#2b6cb0;border:1.5px solid #bee3f8;border-radius:6px;cursor:pointer;font-weight:600">🔄 再取得</button>';
   }
   window._gpsWaitCount = 0; // リセット
   if(!cases.length){
