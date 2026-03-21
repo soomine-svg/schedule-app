@@ -2316,6 +2316,12 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
   var timedAvail = [];   // 今日訪問できる時間指定案件
   var timedNG    = [];   // 今日は訪問不可（平日→休日、休日→平日）
 
+  // 締め切り超過判定ヘルパー（scheduleDay スコープ内）
+  var _sdTodayStr = targetDate
+    ? (targetDate.getFullYear()+'-'+('0'+(targetDate.getMonth()+1)).slice(-2)+'-'+('0'+targetDate.getDate()).slice(-2))
+    : null;
+  function isDeadlineUrgent(c){ return c.d2 && _sdTodayStr && c.d2 <= _sdTodayStr; }
+
   pool.forEach(function(c){
     // ピンポイント日時指定
     if(c.pin != null){
@@ -2349,6 +2355,9 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
       }
       timedAvail.push(c);
     } else {
+      // Bug2修正: 締め切り超過案件は曜日不一致でもtimedNGに落とさず、freePool扱いで配置する
+      // （return のみ → freePool の filter 条件で拾われる）
+      if(isDeadlineUrgent(c)) return;
       timedNG.push(c);
     }
   });
@@ -2369,12 +2378,15 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     return aT - bT;
   });
 
-  // 時間指定なし + 「平日」「休日」全日指定（具体的な窓なし）をfreePoolに
+  // 時間指定なし + 「平日」「休日」全日指定 + 締め切り超過で曜日不一致 → freePoolへ
   var freePool = pool.filter(function(c){
     if(c.pin != null) return false;
     if(!c.tm || !TM_RANGE[c.tm]) return true; // 時間指定なし
     var ws = TM_RANGE[c.tm][0], we = TM_RANGE[c.tm][1];
-    return (ws <= DAY_START && we >= 20*60+15); // 「平日」「休日」全日指定
+    if(ws <= DAY_START && we >= 20*60+15) return true; // 「平日」「休日」全日指定
+    // Bug2修正: 締め切り超過 + 曜日不一致 → free案件として強制配置
+    if(isDeadlineUrgent(c) && targetDate && !isTmAvailable(c.tm, targetDate)) return true;
+    return false;
   });
 
 
@@ -3195,6 +3207,12 @@ function prefetchGpsDistanceMatrix(callback){
 
 // ===== 3日分スケジュール作成 =====
 function buildAll(){
+  // 通常のスケジュール作成ボタン押下時はオーバーライドをリセット
+  // （「無視して実行」からの再実行時は _allDayOverrides が設定済みなので保持）
+  if(!window._allDayOverrideInProgress){
+    window._allDayOverrides = [];
+  }
+  window._allDayOverrideInProgress = false;
   // GPS取得中の場合は完了を待ってから再実行（最大10秒）
   if(window._gpsLoading){
     var _gpsWait = (window._gpsWaitCount||0) + 1;
@@ -3398,9 +3416,24 @@ function buildAllCore(){
     // 終日予定チェック：終日予定がある日はスキップ
     var isAllDay = gcalAllDayDates.indexOf(dStr) >= 0;
     if(isAllDay){
-      html+='<div class="card"><h2>'+['🌅 1日目','☀️ 2日目','🌆 3日目'][d]+'　'+dStr+'</h2>'+
-        '<div class="al al-y">📅 終日予定があるためスキップ（案件は翌日以降に繰越）</div></div>';
-      continue;
+      // どのイベントかを特定して表示
+      var _allDayEvt = gcalAllDayEvents.find ? gcalAllDayEvents.find(function(e){ return e.date===dStr; }) : null;
+      var _allDayTitle = _allDayEvt ? '「'+_allDayEvt.title+'」' : '';
+      // 「無視して作成」用のオーバーライド日付リストに入っている場合はスキップしない
+      if(!window._allDayOverrides) window._allDayOverrides = [];
+      if(window._allDayOverrides.indexOf(dStr) >= 0){
+        // オーバーライド済み → スキップしない
+      } else {
+        html+='<div class="card"><h2>'+['🌅 1日目','☀️ 2日目','🌆 3日目'][d]+'　'+dStr+'</h2>'+
+          '<div class="al al-y">📅 終日予定'+_allDayTitle+'があるためスキップ（案件は翌日以降に繰越）'+
+          '<div style="margin-top:8px;font-size:.78rem;color:#718096">心当たりがない場合はGoogleカレンダーで「'+dStr+'」の予定を確認してください（誕生日・繰り返し予定・インポート予定など）</div>'+
+          '<div style="margin-top:6px">'+
+          '<button onclick="(function(){if(!window._allDayOverrides)window._allDayOverrides=[];window._allDayOverrides.push(\''+dStr+'\');window._allDayOverrideInProgress=true;buildAll();})()" '+
+          'style="padding:5px 14px;font-size:.8rem;background:#fff5f5;color:#c53030;border:1.5px solid #fc8181;border-radius:7px;cursor:pointer;font-weight:600">'+
+          '⚠️ この終日予定を無視してスケジュールを作成する</button>'+
+          '</div></div></div>';
+        continue;
+      }
     }
 
     // 枝番ルール：各ベースIDから今日1件（時間指定優先）
@@ -3441,18 +3474,9 @@ function buildAllCore(){
         arr.forEach(function(c){ carriedOver.push(c); });
         return;
       }
-      if(arr.length===1){
-        // 単独案件でも canScheduleTodayCheck を適用（pinDate・曜日・窓終了を正しく判定）
-        var _isND1 = (!isNow && d === 0);
-        if(canScheduleTodayCheck(arr[0], date, startMin, _isND1)){
-          todayPool.push(arr[0]);
-        } else {
-          carriedOver.push(arr[0]);
-        }
-        return;
-      }
 
-      // ── 納期超過・当日締め切り案件は枝番制限を超えて全件今日に入れる ──
+      // ── 納期超過・当日締め切り案件：arr.length問わず曜日・窓チェックを飛ばして強制今日投入 ──
+      // Bug2修正: 元は arr.length>1 の時しか urgentAll が走らなかった
       var urgentAll = arr.filter(function(c){
         if(!c.d2) return false;
         return c.d2 <= todayDStr; // 今日以前が締め切り→絶対今日
@@ -3461,6 +3485,17 @@ function buildAllCore(){
         urgentAll.forEach(function(c){ todayPool.push(c); });
         arr.filter(function(c){ return urgentAll.indexOf(c) < 0; })
           .forEach(function(c){ carriedOver.push(c); });
+        return;
+      }
+
+      if(arr.length===1){
+        // 単独案件でも canScheduleTodayCheck を適用（pinDate・曜日・窓終了を正しく判定）
+        var _isND1 = (!isNow && d === 0);
+        if(canScheduleTodayCheck(arr[0], date, startMin, _isND1)){
+          todayPool.push(arr[0]);
+        } else {
+          carriedOver.push(arr[0]);
+        }
         return;
       }
 
@@ -3628,12 +3663,17 @@ function buildAllCore(){
   }
 
   if(remaining.length){
+    var _todayR = localDateStr(now);
     html+='<div class="card" style="border-left:4px solid #fc8181">'+
       '<h2>⚠️ 4日目以降に繰越（'+remaining.length+'件）</h2>'+
       '<div style="font-size:.8rem;color:#718096;margin-bottom:8px">※ 時間指定と出発地の距離的な制約で3日以内に消化できなかった案件です</div>'+
       remaining.map(function(c){
-        return '<div class="ci"><div class="ci-body">'+
-          '<div class="ci-name">'+c.id+'　<a href="https://maps.google.com/?q='+encodeURIComponent(c.adr)+'" target="_blank" style="color:inherit;text-decoration:none">'+c.adr+' 🗺️</a></div>'+
+        var _overdue = c.d2 && c.d2 <= _todayR;
+        var _badge = _overdue
+          ? '<span style="background:#fc8181;color:white;font-size:.72rem;padding:1px 7px;border-radius:9px;font-weight:700;margin-right:4px">⚠️ 納期超過</span>'
+          : '';
+        return '<div class="ci" style="'+(_overdue?'border-left:4px solid #fc8181;background:#fff5f5':'')+'"><div class="ci-body">'+
+          '<div class="ci-name">'+_badge+c.id+'　<a href="https://maps.google.com/?q='+encodeURIComponent(c.adr)+'" target="_blank" style="color:inherit;text-decoration:none">'+c.adr+' 🗺️</a></div>'+
           '<div class="ci-sub">納期:'+c.d2+(c.tm?'　指定:'+c.tm:'')+'</div></div></div>';
       }).join('')+'</div>';
   }
@@ -3679,6 +3719,7 @@ var gcalToken      = null;  // アクセストークン
 var gcalReady      = false; // Geocoding完了フラグ
 var gcalEvents     = [];    // 取得した予定リスト
 var gcalAllDayDates = [];   // 終日予定がある日付リスト（例: ["2026-03-07"]）
+var gcalAllDayEvents = [];  // 終日予定の詳細（{date, title}）
 
 // Google Identity Services でトークン取得
 var gcalTokenClient = null;
@@ -3732,6 +3773,7 @@ function gcalDisconnect(){
   gcalToken  = null;
   gcalEvents = [];
   gcalAllDayDates = [];
+  gcalAllDayEvents = [];
   setSyncBar('案件データはローカル保存中　Googleログインでスマホと同期可能', false);
   var st=document.getElementById('gcal-status');
   if(st) st.textContent = '未接続　スケジュール作成時にカレンダーの予定を自動反映します';
@@ -3765,10 +3807,14 @@ function gcalFetchEvents(callback){
         document.getElementById('gcal-status').textContent = '❌ 取得エラー: '+data.error.message;
         return;
       }
-      // 終日予定を抽出して日付リストに保存
-      gcalAllDayDates = (data.items||[]).filter(function(e){
+      // 終日予定を抽出して日付リスト・詳細リストに保存
+      var _allDayItems = (data.items||[]).filter(function(e){
         return e.start && e.start.date && !e.start.dateTime;
-      }).map(function(e){ return e.start.date; });
+      });
+      gcalAllDayDates = _allDayItems.map(function(e){ return e.start.date; });
+      gcalAllDayEvents = _allDayItems.map(function(e){
+        return { date: e.start.date, title: e.summary || '（タイトルなし）' };
+      });
 
       gcalEvents = (data.items||[]).filter(function(e){
         // 終日予定・時刻なし予定は除外（時刻付き予定のみ）
