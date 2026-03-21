@@ -2060,20 +2060,103 @@ function getPos(adr, caseObj){
   return result;
 }
 
-// 日本の祝日判定（簡易版）
+// 日本の祝日判定（正確版：春分・秋分計算＋振替休日対応）
 function isJpHoliday(date){
   var y=date.getFullYear(), m=date.getMonth()+1, d=date.getDate();
-  // 固定祝日
-  var fixed=[[1,1],[2,11],[2,23],[4,29],[5,3],[5,4],[5,5],[8,11],[9,23],[10,14],[11,3],[11,23],[12,23]];
-  for(var i=0;i<fixed.length;i++){
-    if(fixed[i][0]===m&&fixed[i][1]===d)return true;
+  var dow=date.getDay(); // 0=日,6=土
+
+  // ── 春分の日（3月）・秋分の日（9月）を天文計算で算出 ──
+  // 国立天文台の略算式（1980年〜2099年対応）
+  function getShunbun(year){
+    if(year <= 1979) return 21;
+    if(year <= 2099) return Math.floor(20.8431 + 0.242194*(year-1980) - Math.floor((year-1980)/4));
+    return 21;
   }
-  // 成人の日(1月第2月曜), 海の日(7月第3月曜), 敬老の日(9月第3月曜)
-  // 体育の日(10月第2月曜), 春分の日・秋分の日は省略（近似）
-  var dow=date.getDay(); // 0=日
-  // 振替休日（祝日が日曜→翌月曜）
-  // 春分(3/20〜21), 秋分(9/22〜23) 近似
-  if(m===3&&(d===20||d===21))return true;
+  function getShuubun(year){
+    if(year <= 1979) return 23;
+    if(year <= 2099) return Math.floor(23.2488 + 0.242194*(year-1980) - Math.floor((year-1980)/4));
+    return 23;
+  }
+  var shunbunDay  = getShunbun(y);  // 春分の日（日付）
+  var shuubunDay  = getShuubun(y);  // 秋分の日（日付）
+
+  // ── 祝日判定コア関数（振替なし） ──
+  function isHolidayCore(yy, mm, dd){
+    var dow2 = new Date(yy, mm-1, dd).getDay();
+    var shun = getShunbun(yy);
+    var shuu = getShuubun(yy);
+    // 固定祝日
+    if(mm===1  && dd===1)  return true; // 元日
+    if(mm===2  && dd===11) return true; // 建国記念の日
+    if(mm===2  && dd===23) return true; // 天皇誕生日
+    if(mm===3  && dd===shun) return true; // 春分の日
+    if(mm===4  && dd===29) return true; // 昭和の日
+    if(mm===5  && dd===3)  return true; // 憲法記念日
+    if(mm===5  && dd===4)  return true; // みどりの日
+    if(mm===5  && dd===5)  return true; // こどもの日
+    if(mm===8  && dd===11) return true; // 山の日
+    if(mm===9  && dd===shuu) return true; // 秋分の日
+    if(mm===10 && dow2===1 && dd >= 8 && dd <= 14) return true; // スポーツの日（10月第2月曜）
+    if(mm===11 && dd===3)  return true; // 文化の日
+    if(mm===11 && dd===23) return true; // 勤労感謝の日
+    // ハッピーマンデー（成人の日：1月第2月曜）
+    if(mm===1 && dow2===1 && dd >= 8 && dd <= 14) return true;
+    // ハッピーマンデー（海の日：7月第3月曜）
+    if(mm===7 && dow2===1 && dd >= 15 && dd <= 21) return true;
+    // ハッピーマンデー（敬老の日：9月第3月曜）
+    if(mm===9 && dow2===1 && dd >= 15 && dd <= 21) return true;
+    // 国民の休日（祝日に挟まれた平日）
+    var prev2 = new Date(yy, mm-1, dd-1); var ppm=prev2.getMonth()+1; var ppd=prev2.getDate();
+    var next2 = new Date(yy, mm-1, dd+1); var nnm=next2.getMonth()+1; var nnd=next2.getDate();
+    if(isHolidayCoreSimple(yy, ppm, ppd, shun, shuu) && isHolidayCoreSimple(yy, nnm, nnd, shun, shuu) && dow2 !== 0 && dow2 !== 6) return true;
+    return false;
+  }
+  // 再帰回避用シンプル版（国民の休日判定内で使用）
+  function isHolidayCoreSimple(yy, mm, dd, shun, shuu){
+    var dow2 = new Date(yy, mm-1, dd).getDay();
+    if(mm===1  && dd===1)  return true;
+    if(mm===2  && dd===11) return true;
+    if(mm===2  && dd===23) return true;
+    if(mm===3  && dd===shun) return true;
+    if(mm===4  && dd===29) return true;
+    if(mm===5  && dd===3)  return true;
+    if(mm===5  && dd===4)  return true;
+    if(mm===5  && dd===5)  return true;
+    if(mm===8  && dd===11) return true;
+    if(mm===9  && dd===shuu) return true;
+    if(mm===11 && dd===3)  return true;
+    if(mm===11 && dd===23) return true;
+    if(mm===1 && dow2===1 && dd >= 8 && dd <= 14) return true;
+    if(mm===7 && dow2===1 && dd >= 15 && dd <= 21) return true;
+    if(mm===9 && dow2===1 && dd >= 15 && dd <= 21) return true;
+    if(mm===10 && dow2===1 && dd >= 8 && dd <= 14) return true;
+    return false;
+  }
+
+  // 対象日が祝日か
+  if(isHolidayCore(y, m, d)) return true;
+
+  // ── 振替休日：祝日が日曜なら翌月曜（または翌々以降の非祝日月曜）が振替 ──
+  // 前日に遡って「日曜の祝日」を探す
+  if(dow === 1){ // 月曜
+    // 直前の日曜が祝日なら振替休日
+    var prevSun = new Date(y, m-1, d-1);
+    if(isHolidayCore(prevSun.getFullYear(), prevSun.getMonth()+1, prevSun.getDate())) return true;
+    // 直前2日が連休＋日曜祝日ケース（5月4日など複数日振替）
+    var prev2d = new Date(y, m-1, d-2);
+    if(isHolidayCore(prev2d.getFullYear(), prev2d.getMonth()+1, prev2d.getDate()) &&
+       isHolidayCore(prevSun.getFullYear(), prevSun.getMonth()+1, prevSun.getDate())) return true;
+  }
+  // 火曜以降への振替（連休明け複数振替）
+  if(dow >= 2 && dow <= 4){
+    var check = new Date(y, m-1, d);
+    for(var back = 1; back <= 3; back++){
+      check.setDate(check.getDate()-1);
+      var cd = check.getDay();
+      if(cd === 0 && isHolidayCore(check.getFullYear(), check.getMonth()+1, check.getDate())) return true;
+      if(cd !== 0 && !isHolidayCore(check.getFullYear(), check.getMonth()+1, check.getDate())) break;
+    }
+  }
   return false;
 }
 
@@ -2602,16 +2685,13 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     if(tc.pin != null){
       var trvToPin = trv(prev, prevC, tc.adr, tc);
       var arrive = cur + trvToPin;
-      // 指定時刻に間に合う場合はピン時刻で待機、過ぎている場合はASAP（訪問可能時間を無視）
       var stPin = (arrive <= tc.pin) ? tc.pin : arrive;
 
-      // ピン時刻に余裕がある場合のみピン直前まで自由案件を詰める
       if(arrive < tc.pin){
         var latestDepart = tc.pin - trvToPin;
         if(latestDepart > cur && latestDepart > FREE_START){
           fillFree(latestDepart);
         }
-        // 再計算
         trvToPin = trv(prev, prevC, tc.adr, tc);
         arrive = cur + trvToPin;
         stPin = (arrive <= tc.pin) ? tc.pin : arrive;
@@ -2626,30 +2706,24 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     var wStart = TM_RANGE[tc.tm][0];
     var wEnd   = TM_RANGE[tc.tm][1];
     var trvToTc = trv(prev, prevC, tc.adr, tc);
-    var isEarlyMorningCase = wEnd <= 9*60; // 早朝案件（〜9時以前終了）
+    var isEarlyMorningCase = wEnd <= 9*60;
 
-    // Bug4-A: wLatestArrivalE を dur 考慮に変更（dur < 15 でも正しく算出）
     if(isEarlyMorningCase){
       var wLatestArrivalE = wEnd - Math.min(15, tc.dur);
-      var arriveFromCur = cur + trvToTc; // 現在位置から出発した場合の到着
+      var arriveFromCur = cur + trvToTc;
 
       if(arriveFromCur <= wLatestArrivalE){
-        // curから自然に移動して窓内に到着できる
         var stE = Math.max(wStart, arriveFromCur);
         if(stE + tc.dur <= wEnd) place(tc, stE);
       } else {
-        // curからでは間に合わない → 早朝出発（wStart - 移動時間）で対応
         var earlyDepart = wStart - trvToTc;
-        // 深夜出発が必要な場合はスキップ（翌日繰越）
         if(earlyDepart < 0){
-          return;
+          return; // 深夜出発必要 → urgentFallbackで救済
         }
-        // Bug4-B: earlyDepart < cur でもすぐスキップせず、窓内到着できるか確認
         if(earlyDepart < cur){
-          // 出発タイミングを逃したが、現在地から向かって窓内に収まるか確認
           var stLate = Math.max(wStart, arriveFromCur);
           if(stLate + tc.dur <= wEnd) place(tc, stLate);
-          return;
+          return; // 窓に収まらなければ urgentFallbackで救済
         }
         var stE2 = wStart;
         if(stE2 + tc.dur <= wEnd) place(tc, stE2);
@@ -2657,27 +2731,21 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
       return;
     }
 
-    // curから出発した場合の到着時刻
     var arriveAt = cur + trvToTc;
-    // Bug4-C: wLatestArrival を dur 考慮に変更（dur < 15 の案件でも正しく算出）
     var wLatestArrival = wEnd - Math.min(15, tc.dur);
-    if(arriveAt > wLatestArrival) return;
+    if(arriveAt > wLatestArrival) return; // urgentFallbackで救済
 
-    // 窓前の隙間（08:30以降）に自由案件を詰める
     if(wStart > FREE_START && wStart > cur){
       var fillDeadline = Math.min(wStart, wEnd - tc.dur - trvToTc);
       if(fillDeadline > Math.max(cur, FREE_START)) fillFree(fillDeadline);
     }
 
-    // 再計算
     trvToTc = trv(prev, prevC, tc.adr, tc);
     arriveAt = cur + trvToTc;
-    if(arriveAt > wLatestArrival) return;
+    if(arriveAt > wLatestArrival) return; // urgentFallbackで救済
 
-    // ② 窓の意味：「wStartからwEnd-min(15,dur)分までに現着」
     var st;
     if(arriveAt < wStart){
-      // 早着の場合：「wStartに間に合う最遅出発時刻」まで自由案件を詰めてから向かう
       var latestDepart = wStart - trvToTc;
       if(latestDepart > Math.max(cur, FREE_START)){
         fillFree(latestDepart);
@@ -2692,7 +2760,6 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     var tcBlocked = calBlocks.some(function(b){
       return st < b.end && (st + tc.dur) > b.start;
     });
-    // 通常案件のみカレンダー制約を反映
     var tcDeadline = wEnd;
     if(effectiveDayEnd && effectiveDayEnd < tcDeadline){
       tcDeadline = effectiveDayEnd;
@@ -2700,6 +2767,32 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     if(!tcBlocked && st <= wLatestArrival && st + tc.dur <= tcDeadline) place(tc, st);
   });
 ;
+
+  // ── urgentFallback：締め切り超過で窓を外れた案件をASAP強制配置 ──
+  // （早朝窓の経過・窓時刻の超過など、通常ルールでは弾かれる緊急案件を救済）
+  timedAvail.forEach(function(tc){
+    if(placed[tc.id] || placed[baseId(tc.id)]) return; // 配置済みはスキップ
+    if(!isDeadlineUrgent(tc)) return;                  // 締め切り超過のみ対象
+    if(tc.pin != null) return;                          // ピン案件はスキップ（ASAPで既配置済み）
+    if(tc.tm && TM_RANGE[tc.tm] && TM_RANGE[tc.tm][0] >= 20*60) return; // 夜間は後で処理
+
+    // 現在地からASAPで移動して配置
+    var _t = trv(prev, prevC, tc.adr, tc);
+    var _st = Math.max(cur + _t, FREE_START);
+    // カレンダーブロック回避
+    var _g = 0;
+    while(_g++ < calBlocks.length * 2 + 2){
+      var _hit = null;
+      for(var _bi = 0; _bi < calBlocks.length; _bi++){
+        if(_st < calBlocks[_bi].end && (_st + tc.dur) > calBlocks[_bi].start){
+          _hit = calBlocks[_bi]; break;
+        }
+      }
+      if(!_hit) break;
+      _st = _hit.end + 15;
+    }
+    if(_st + tc.dur <= DAY_END) place(tc, _st);
+  });
 
   // 残りの自由案件を最後まで詰める
   if(cur < FREE_START) cur = FREE_START;
@@ -3522,7 +3615,8 @@ function buildAllCore(){
       return c.tm && TM_RANGE[c.tm] && isTmAvailable(c.tm, date) && TM_RANGE[c.tm][0] < DAY_START;
     });
     var adjustedStart = startMin;
-    if(earlyWindows.length > 0){
+    var hasEarlyWindow = earlyWindows.length > 0;
+    if(hasEarlyWindow){
       var earliest = Math.min.apply(null, earlyWindows.map(function(c){ return TM_RANGE[c.tm][0]; }));
       adjustedStart = Math.min(startMin, earliest);
     }
@@ -3562,10 +3656,11 @@ function buildAllCore(){
     });
 
     // 午前予定があればstartMinをその後にシフト（全日対応）
+    // ただし早朝指定案件がある場合はシフトしない（早朝出発が必要なため）
     var hasMorning = calBlocks.some(function(b){ return b.start < 12*60; });
     var effectiveStartMin = adjustedStart;
     var effectiveStartAdr = startAdr;
-    if(hasMorning){
+    if(hasMorning && !hasEarlyWindow){
       var morningEnd = 0;
       var lastMorningBlock = null;
       calBlocks.filter(function(b){ return b.start < 12*60; })
@@ -3598,6 +3693,10 @@ function buildAllCore(){
           effectiveStartAdr = lastMorningBlock.location;
         }
       }
+    } else if(hasMorning && hasEarlyWindow){
+      // 早朝案件あり：カレンダー午前予定はカレンダーブロックとして回避させる（startMinは前倒しのまま）
+      // startAdrは自宅のまま（早朝出発するため）
+      // ※ calBlocks の avoidCal で午前予定時間帯を自動スキップ
     }
     // 直前のカレンダー予定終了地点を出発地として使う（isCarryOverは除外）
     calBlocks.forEach(function(b){
