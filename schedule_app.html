@@ -3907,10 +3907,13 @@ function gcalFetchEvents(callback){
         return;
       }
       // 終日予定を抽出して日付リスト・詳細リストに保存
+      // transparency:"transparent" = 祝日カレンダー・空き時間扱い → 業務スキップ対象外
+      // transparency:"opaque"(または未指定) = ユーザーが登録した「終日・終日不在」→ スキップ対象
       var _allDayItems = (data.items||[]).filter(function(e){
-        return e.start && e.start.date && !e.start.dateTime;
+        return e.start && e.start.date && !e.start.dateTime
+          && e.transparency !== 'transparent'; // 祝日カレンダー等のfree予定を除外
       });
-      gcalAllDayDates = _allDayItems.map(function(e){ return e.start.date; });
+      gcalAllDayDates  = _allDayItems.map(function(e){ return e.start.date; });
       gcalAllDayEvents = _allDayItems.map(function(e){
         return { date: e.start.date, title: e.summary || '（タイトルなし）' };
       });
