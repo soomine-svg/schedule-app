@@ -2363,17 +2363,11 @@ function canScheduleTodayCheck(c, targetDate, startMin, isNextDay){
       var tdStr = targetDate.getFullYear()+'-'+('0'+(targetDate.getMonth()+1)).slice(-2)+'-'+('0'+targetDate.getDate()).slice(-2);
       if(tdStr !== c.pinDate) return false;
     }
-    return true; // ピン案件は時刻を過ぎてもASAP配置
+    return true;
   }
   if(!c.tm || !TM_RANGE[c.tm]) return true; // 時間指定なし→いつでも可
-  if(targetDate && !isTmAvailable(c.tm, targetDate)) return false; // 曜日不一致
-  var wEnd = TM_RANGE[c.tm][1];
-  // 通常出発(8:30)より前に窓が終わる早朝枠は常に配置可（早朝出発で対応）
-  var isEarlySlot = wEnd <= 8*60+30;
-  if(isEarlySlot) return true;
-  // Bug4-F: wLatestArrival を dur 考慮に合わせる
-  var wLatest = wEnd - Math.min(15, c.dur||10);
-  if(startMin >= wLatest) return false; // 窓終了済み
+  if(targetDate && !isTmAvailable(c.tm, targetDate)) return false; // 曜日不一致は翌日へ
+  // 時間指定あり・曜日OK → 窓終了済みでも当日pool投入（scheduleDay内のtimedFallbackで配置）
   return true;
 }
 
@@ -2709,25 +2703,31 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     var isEarlyMorningCase = wEnd <= 9*60;
 
     if(isEarlyMorningCase){
+      // 早朝案件：wStartに到着するために必要な出発時刻を逆算
+      // cur は通常出発時刻（8:30など）なので、早朝窓に対しては cur と無関係に判定する
       var wLatestArrivalE = wEnd - Math.min(15, tc.dur);
-      var arriveFromCur = cur + trvToTc;
 
-      if(arriveFromCur <= wLatestArrivalE){
-        var stE = Math.max(wStart, arriveFromCur);
-        if(stE + tc.dur <= wEnd) place(tc, stE);
+      // ① wStart - trvToTc = 必要出発時刻。深夜（0時未満）なら不可
+      var earlyDepart = wStart - trvToTc;
+      if(earlyDepart < 0){
+        // 深夜出発が必要 → 物理的に不可能。urgentFallbackに委ねる
       } else {
-        var earlyDepart = wStart - trvToTc;
-        if(earlyDepart < 0){
-          return; // 深夜出発必要 → urgentFallbackで救済
+        // ② 到着時刻 = max(wStart, earlyDepart + trvToTc) = max(wStart, wStart) = wStart
+        //    （earlyDepart前に出れば必ずwStartに到着）
+        var stE = wStart; // 窓開始時刻に到着
+        if(stE + tc.dur <= wEnd){
+          place(tc, stE);
+          return;
         }
-        if(earlyDepart < cur){
-          var stLate = Math.max(wStart, arriveFromCur);
-          if(stLate + tc.dur <= wEnd) place(tc, stLate);
-          return; // 窓に収まらなければ urgentFallbackで救済
+        // 所要時間が窓を超える場合：cur から向かって間に合うだけ試みる
+        var arriveFromCur2 = cur + trvToTc;
+        var stE2 = Math.max(wStart, arriveFromCur2);
+        if(stE2 + tc.dur <= wEnd){
+          place(tc, stE2);
+          return;
         }
-        var stE2 = wStart;
-        if(stE2 + tc.dur <= wEnd) place(tc, stE2);
       }
+      // 配置できなかった → urgentFallbackで救済（締め切り超過のみ）
       return;
     }
 
@@ -2768,17 +2768,27 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
   });
 ;
 
-  // ── urgentFallback：締め切り超過で窓を外れた案件をASAP強制配置 ──
-  // （早朝窓の経過・窓時刻の超過など、通常ルールでは弾かれる緊急案件を救済）
+  // ── timedFallback：時間指定案件で未配置のものをASAP強制配置 ──
+  // timedAvailに入った案件は曜日チェック済みなので、
+  // 窓を逃した・移動時間不足などで配置されなかった全案件を救済する
   timedAvail.forEach(function(tc){
     if(placed[tc.id] || placed[baseId(tc.id)]) return; // 配置済みはスキップ
-    if(!isDeadlineUrgent(tc)) return;                  // 締め切り超過のみ対象
-    if(tc.pin != null) return;                          // ピン案件はスキップ（ASAPで既配置済み）
+    if(tc.pin != null) return;  // ピン案件はASAPで既処理済み
     if(tc.tm && TM_RANGE[tc.tm] && TM_RANGE[tc.tm][0] >= 20*60) return; // 夜間は後で処理
 
-    // 現在地からASAPで移動して配置
     var _t = trv(prev, prevC, tc.adr, tc);
-    var _st = Math.max(cur + _t, FREE_START);
+    var _wS = TM_RANGE[tc.tm] ? TM_RANGE[tc.tm][0] : FREE_START;
+    var _wE = TM_RANGE[tc.tm] ? TM_RANGE[tc.tm][1] : DAY_END;
+    var _isEarly = TM_RANGE[tc.tm] && _wE <= 9*60;
+
+    var _st;
+    if(_isEarly){
+      // 早朝窓案件：窓開始時刻に配置
+      _st = Math.max(_wS, cur + _t);
+    } else {
+      // 通常案件：ASAP（FREE_START以降）
+      _st = Math.max(cur + _t, FREE_START);
+    }
     // カレンダーブロック回避
     var _g = 0;
     while(_g++ < calBlocks.length * 2 + 2){
@@ -3618,7 +3628,9 @@ function buildAllCore(){
     var hasEarlyWindow = earlyWindows.length > 0;
     if(hasEarlyWindow){
       var earliest = Math.min.apply(null, earlyWindows.map(function(c){ return TM_RANGE[c.tm][0]; }));
-      adjustedStart = Math.min(startMin, earliest);
+      // 早朝窓の60分前を出発開始時刻とする（移動時間バッファ）
+      // これによりscheduleDayのcurが早朝窓に対応できる値になる
+      adjustedStart = Math.max(0, earliest - 60);
     }
     // 今からモードの1日目は現在時刻より前に巻き戻さない
     if(isNow && d===0) adjustedStart = Math.max(adjustedStart, startMin);
