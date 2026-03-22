@@ -2703,31 +2703,30 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     var isEarlyMorningCase = wEnd <= 9*60;
 
     if(isEarlyMorningCase){
-      // 早朝案件：wStartに到着するために必要な出発時刻を逆算
-      // cur は通常出発時刻（8:30など）なので、早朝窓に対しては cur と無関係に判定する
       var wLatestArrivalE = wEnd - Math.min(15, tc.dur);
+      // cur（現在の仮想時刻）からこの案件に向かった場合の到着時刻
+      var arriveFromCur = cur + trvToTc;
 
-      // ① wStart - trvToTc = 必要出発時刻。深夜（0時未満）なら不可
-      var earlyDepart = wStart - trvToTc;
-      if(earlyDepart < 0){
-        // 深夜出発が必要 → 物理的に不可能。urgentFallbackに委ねる
-      } else {
-        // ② 到着時刻 = max(wStart, earlyDepart + trvToTc) = max(wStart, wStart) = wStart
-        //    （earlyDepart前に出れば必ずwStartに到着）
-        var stE = wStart; // 窓開始時刻に到着
-        if(stE + tc.dur <= wEnd){
-          place(tc, stE);
-          return;
-        }
-        // 所要時間が窓を超える場合：cur から向かって間に合うだけ試みる
-        var arriveFromCur2 = cur + trvToTc;
-        var stE2 = Math.max(wStart, arriveFromCur2);
-        if(stE2 + tc.dur <= wEnd){
-          place(tc, stE2);
-          return;
-        }
+      if(arriveFromCur <= wLatestArrivalE){
+        // ✅ curから自然に移動して窓内に到着できる → そのまま配置
+        var stE = Math.max(wStart, arriveFromCur); // 早着なら窓開始まで待機
+        if(stE + tc.dur <= wEnd){ place(tc, stE); return; }
       }
-      // 配置できなかった → urgentFallbackで救済（締め切り超過のみ）
+      // curからでは間に合わない → 早朝出発（wStart - 移動時間）で対応
+      var earlyDepart = wStart - trvToTc;
+      if(earlyDepart < 0) return; // 深夜出発が必要 → 不可能
+      // earlyDepart が cur より前 = 今から向かっても窓に入れるか確認
+      if(earlyDepart < cur){
+        // 出発タイミングは過ぎたが、窓内（wStart〜wEnd）に収まるなら配置
+        if(arriveFromCur <= wEnd - tc.dur){
+          var stLate = Math.max(wStart, arriveFromCur);
+          if(stLate + tc.dur <= wEnd){ place(tc, stLate); return; }
+        }
+        return; // 窓に収まらない
+      }
+      // earlyDepart >= cur → wStart に間に合う出発が可能
+      var stE2 = wStart;
+      if(stE2 + tc.dur <= wEnd){ place(tc, stE2); return; }
       return;
     }
 
@@ -3628,9 +3627,9 @@ function buildAllCore(){
     var hasEarlyWindow = earlyWindows.length > 0;
     if(hasEarlyWindow){
       var earliest = Math.min.apply(null, earlyWindows.map(function(c){ return TM_RANGE[c.tm][0]; }));
-      // 早朝窓の60分前を出発開始時刻とする（移動時間バッファ）
-      // これによりscheduleDayのcurが早朝窓に対応できる値になる
-      adjustedStart = Math.max(0, earliest - 60);
+      // 早朝窓の最大移動時間（3時間）を差し引いた時刻を出発開始時刻とする
+      // これにより cur が窓開始より十分前になり、trvToTc との比較が正しく動作する
+      adjustedStart = Math.max(0, earliest - 180);
     }
     // 今からモードの1日目は現在時刻より前に巻き戻さない
     if(isNow && d===0) adjustedStart = Math.max(adjustedStart, startMin);
@@ -3716,6 +3715,29 @@ function buildAllCore(){
         effectiveStartAdr = b.location;
       }
     });
+
+    // ── 早朝案件がある場合：該当案件の移動時間キャッシュが異常に短ければ削除して再計算させる ──
+    // （過去の誤ったadjustedStartでキャッシュされた短時間エントリを除去）
+    if(hasEarlyWindow){
+      var _startAdrForCheck = effectiveStartAdr === '__GPS__' ? '現在地(GPS)' : (effectiveStartAdr || HOME_ADR);
+      earlyWindows.forEach(function(c){
+        var cached = dmGet(_startAdrForCheck, c.adr);
+        // 30分未満は疑わしい（都城から1時間圏外ならあり得ない）
+        // HOME_ADR基準で直線距離が20km超なのに30分未満ならキャッシュ削除
+        if(cached != null && cached < 30){
+          var homeP = getPos(HOME_ADR, null);
+          var caseP = getPos(c.adr, c);
+          if(homeP && caseP){
+            var straightKm = km(homeP, caseP);
+            if(straightKm > 15){ // 直線15km超なのに30分未満→異常
+              console.warn('[早朝DMキャッシュ異常] '+_startAdrForCheck+'→'+c.adr+': '+cached+'分（直線'+straightKm.toFixed(1)+'km）→ 削除して再計算');
+              delete _dmCache[_startAdrForCheck + '||' + c.adr];
+              _dmCacheSave();
+            }
+          }
+        }
+      });
+    }
 
     console.log('Day'+(d+1)+' '+dStr+' pool:['+todayPool.map(function(c){return c.id;}).join(',')+'] blocks:'+calBlocks.length+' dayEnd:'+(effectiveDayEnd?Math.floor(effectiveDayEnd/60)+':'+(('0'+(effectiveDayEnd%60)).slice(-2)):'none')+' startMin:'+Math.floor(effectiveStartMin/60)+':'+(('0'+(effectiveStartMin%60)).slice(-2)));
 
