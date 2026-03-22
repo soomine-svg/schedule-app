@@ -2366,8 +2366,7 @@ function canScheduleTodayCheck(c, targetDate, startMin, isNextDay){
     return true;
   }
   if(!c.tm || !TM_RANGE[c.tm]) return true; // 時間指定なし→いつでも可
-  if(targetDate && !isTmAvailable(c.tm, targetDate)) return false; // 曜日不一致は翌日へ
-  // 時間指定あり・曜日OK → 窓終了済みでも当日pool投入（scheduleDay内のtimedFallbackで配置）
+  if(targetDate && !isTmAvailable(c.tm, targetDate)) return false; // 曜日不一致は翌日へ（絶対）
   return true;
 }
 
@@ -2393,77 +2392,71 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
   var timedAvail = [];   // 今日訪問できる時間指定案件
   var timedNG    = [];   // 今日は訪問不可（平日→休日、休日→平日）
 
-  // 締め切り超過判定ヘルパー（scheduleDay スコープ内）
-  var _sdTodayStr = targetDate
-    ? (targetDate.getFullYear()+'-'+('0'+(targetDate.getMonth()+1)).slice(-2)+'-'+('0'+targetDate.getDate()).slice(-2))
-    : null;
-  function isDeadlineUrgent(c){ return c.d2 && _sdTodayStr && c.d2 <= _sdTodayStr; }
-
   pool.forEach(function(c){
-    // ピンポイント日時指定
     if(c.pin != null){
-      // 日付指定がある場合：対象日と一致しない日はスキップ（翌日以降へ）
       if(c.pinDate && targetDate){
         var td=targetDate;
         var tdStr=td.getFullYear()+'-'+('0'+(td.getMonth()+1)).slice(-2)+'-'+('0'+td.getDate()).slice(-2);
         if(tdStr !== c.pinDate){ timedNG.push(c); return; }
       }
-      // ピンポイント案件は訪問可能時間を無視してスケジュール（時刻を過ぎていてもASAPで配置）
       timedAvail.push(c);
       return;
     }
     if(!c.tm || !TM_RANGE[c.tm]){
       return; // 時間指定なしはfreePool
     }
-    if(!targetDate || isTmAvailable(c.tm, targetDate)){
-      var wEnd = TM_RANGE[c.tm][1];
-      var wStart2 = TM_RANGE[c.tm][0];
-      // 「平日」「休日」全日指定（wStart=8:30, wEnd=20:15）→ freePoolと同様に扱う
-      // 具体的な時間窓がないため、timedAvailには入れずfreePoolに委ねる
-      var isFullDay = (wStart2 <= DAY_START && wEnd >= 20*60+15);
-      if(isFullDay) return; // freePoolへ（後述）
+    // 曜日不一致は絶対に翌日（平日指定を休日に訪問しない）
+    if(targetDate && !isTmAvailable(c.tm, targetDate)){
+      timedNG.push(c);
+      return;
+    }
+    // 「平日」「休日」全日指定 → freePoolへ
+    var wStart2 = TM_RANGE[c.tm][0], wEnd2 = TM_RANGE[c.tm][1];
+    if(wStart2 <= DAY_START && wEnd2 >= 20*60+15){ return; }
 
-      // 窓がすでに終了している場合は今日はスキップ（翌営業日へ）
-      // 通常出発(8:30)より前に窓が終わる早朝枠は常に配置可（早朝出発で対応）
-      var isEarlySlot2 = wEnd <= 8*60+30;
-      if(startMin >= wEnd - 15 && !isEarlySlot2){
+    // 窓終了済みの判定：今からモードのみ適用（翌日モードは必ず窓が先にある）
+    // ただし早朝・夜間案件は startMin と無関係に翌日から持ち越されてきているので除外しない
+    var isEarlyWindow = wEnd2 <= 9*60;     // 早朝窓（〜9時）
+    var isNightWindow = wStart2 >= 20*60;   // 夜間窓（20時〜）
+    if(!isEarlyWindow && !isNightWindow){
+      // 通常時間帯の窓：startMinが窓終了間際なら今日は無理
+      if(startMin >= wEnd2 - Math.min(15, c.dur||10)){
         timedNG.push(c);
         return;
       }
-      timedAvail.push(c);
-    } else {
-      // Bug2修正: 締め切り超過案件は曜日不一致でもtimedNGに落とさず、freePool扱いで配置する
-      // （return のみ → freePool の filter 条件で拾われる）
-      if(isDeadlineUrgent(c)) return;
-      timedNG.push(c);
     }
+    timedAvail.push(c);
   });
 
-  // 時間指定あり案件のソート：①ピン案件を時刻順に ②納期が早い順 → ③時刻が早い順
+  // 時間指定あり案件のソート順：
+  // ①早朝窓(wEnd≤9:00)を絶対最優先 → fillFreeでcurが進む前に処理する
+  // ②ピン案件（時刻順）
+  // ③早朝優先チェックあり（ely）
+  // ④時刻順 → 納期順
   timedAvail.sort(function(a,b){
-    // ピン案件は必ず先に処理（窓付き案件がcurを進める前にピン時刻で配置するため）
+    var aIsEarly = !a.pin && a.tm && TM_RANGE[a.tm] && TM_RANGE[a.tm][1] <= 9*60;
+    var bIsEarly = !b.pin && b.tm && TM_RANGE[b.tm] && TM_RANGE[b.tm][1] <= 9*60;
+    if(aIsEarly && !bIsEarly) return -1;
+    if(!aIsEarly && bIsEarly) return 1;
     if(a.pin!=null && b.pin==null) return -1;
     if(a.pin==null && b.pin!=null) return 1;
+    if(a.ely && !b.ely) return -1;
+    if(!a.ely && b.ely) return 1;
     var aT = a.pin!=null ? a.pin : (TM_RANGE[a.tm] ? TM_RANGE[a.tm][0] : 9999);
     var bT = b.pin!=null ? b.pin : (TM_RANGE[b.tm] ? TM_RANGE[b.tm][0] : 9999);
-    // まず時刻順（ピン案件もtm案件も混在して時刻順に並べる）
-    if(Math.abs(aT - bT) > 30) return aT - bT; // 30分以上の差なら時刻優先
-    // 同時刻帯（30分以内）なら納期優先
+    if(Math.abs(aT - bT) > 30) return aT - bT;
     var aD = a.d2 || '9999-99-99';
     var bD = b.d2 || '9999-99-99';
     if(aD !== bD) return aD < bD ? -1 : 1;
     return aT - bT;
   });
 
-  // 時間指定なし + 「平日」「休日」全日指定 + 締め切り超過で曜日不一致 → freePoolへ
+  // 時間指定なし + 「平日」「休日」全日指定（具体的な窓なし）をfreePoolに
   var freePool = pool.filter(function(c){
     if(c.pin != null) return false;
     if(!c.tm || !TM_RANGE[c.tm]) return true; // 時間指定なし
     var ws = TM_RANGE[c.tm][0], we = TM_RANGE[c.tm][1];
-    if(ws <= DAY_START && we >= 20*60+15) return true; // 「平日」「休日」全日指定
-    // Bug2修正: 締め切り超過 + 曜日不一致 → free案件として強制配置
-    if(isDeadlineUrgent(c) && targetDate && !isTmAvailable(c.tm, targetDate)) return true;
-    return false;
+    return (ws <= DAY_START && we >= 20*60+15); // 「平日」「休日」全日指定のみ
   });
 
 
@@ -2666,13 +2659,13 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     }
   }
 
-  // ── メインループ：時間指定案件を時刻順に処理（夜間枠除く）──
-  // 夜間案件（wStart >= 20:00）はfillFree後に別途処理
+  // ── メインループ：時間指定案件を処理 ──
+  // 区分①早朝（wEnd <= 9:00）  区分②通常（9:00〜20:00）  区分③夜間（wStart >= 20:00）
+  // 夜間はfillFree後に処理するためここではスキップ
   timedAvail.forEach(function(tc){
-    // Bug3: 完全ID＋baseID両方でチェック（同日同baseId禁止）
     if(placed[tc.id] || placed[baseId(tc.id)]) return;
 
-    // ── 夜間枠（wStart >= 20:00）はスキップ →後で処理 ──
+    // ── 区分③夜間（wStart >= 20:00）→後で処理 ──
     if(tc.pin == null && tc.tm && TM_RANGE[tc.tm] && TM_RANGE[tc.tm][0] >= 20*60) return;
 
     // ── ピンポイント時刻案件 ──
@@ -2680,70 +2673,49 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
       var trvToPin = trv(prev, prevC, tc.adr, tc);
       var arrive = cur + trvToPin;
       var stPin = (arrive <= tc.pin) ? tc.pin : arrive;
-
       if(arrive < tc.pin){
         var latestDepart = tc.pin - trvToPin;
-        if(latestDepart > cur && latestDepart > FREE_START){
-          fillFree(latestDepart);
-        }
+        if(latestDepart > cur && latestDepart > FREE_START) fillFree(latestDepart);
         trvToPin = trv(prev, prevC, tc.adr, tc);
         arrive = cur + trvToPin;
         stPin = (arrive <= tc.pin) ? tc.pin : arrive;
       }
-
-      if(stPin + tc.dur <= DAY_END){
-        place(tc, stPin);
-      }
+      if(stPin + tc.dur <= DAY_END) place(tc, stPin);
       return;
     }
 
     var wStart = TM_RANGE[tc.tm][0];
     var wEnd   = TM_RANGE[tc.tm][1];
-    var trvToTc = trv(prev, prevC, tc.adr, tc);
-    var isEarlyMorningCase = wEnd <= 9*60;
+    var wLatestArrival = wEnd - Math.min(15, tc.dur);
 
-    if(isEarlyMorningCase){
-      var wLatestArrivalE = wEnd - Math.min(15, tc.dur);
-      // cur（現在の仮想時刻）からこの案件に向かった場合の到着時刻
-      var arriveFromCur = cur + trvToTc;
+    // ── 区分①早朝（wEnd <= 9:00）──
+    // ルール：「出発地からwStartに移動するのに必要な出発時刻（earlyDepart）が0以上」なら配置可
+    // curはadjustedStartから始まるので、早朝出発が可能かどうかは earlyDepart >= 0 で判定
+    if(wEnd <= 9*60){
+      var trvToTc_e = trv(prev, prevC, tc.adr, tc);
+      var earlyDepart = wStart - trvToTc_e; // 必要出発時刻
+      if(earlyDepart < 0) return; // 深夜出発が必要→不可・翌日繰越
 
-      if(arriveFromCur <= wLatestArrivalE){
-        // ✅ curから自然に移動して窓内に到着できる → そのまま配置
-        var stE = Math.max(wStart, arriveFromCur); // 早着なら窓開始まで待機
+      // curから向かった場合の到着
+      var arriveE = cur + trvToTc_e;
+      if(arriveE <= wLatestArrival){
+        // curから自然に移動して窓内に到着できる
+        var stE = Math.max(wStart, arriveE);
         if(stE + tc.dur <= wEnd){ place(tc, stE); return; }
+      } else if(earlyDepart >= cur){
+        // curよりも前に出れる → wStart着で配置
+        if(wStart + tc.dur <= wEnd){ place(tc, wStart); return; }
       }
-      // curからでは間に合わない → 早朝出発（wStart - 移動時間）で対応
-      var earlyDepart = wStart - trvToTc;
-      if(earlyDepart < 0) return; // 深夜出発が必要 → 不可能
-      // earlyDepart が cur より前 = 今から向かっても窓に入れるか確認
-      if(earlyDepart < cur){
-        // 出発タイミングは過ぎたが、窓内（wStart〜wEnd）に収まるなら配置
-        if(arriveFromCur <= wEnd - tc.dur){
-          var stLate = Math.max(wStart, arriveFromCur);
-          if(stLate + tc.dur <= wEnd){ place(tc, stLate); return; }
-        }
-        return; // 窓に収まらない
-      }
-      // earlyDepart >= cur → wStart に間に合う出発が可能
-      var stE2 = wStart;
-      if(stE2 + tc.dur <= wEnd){ place(tc, stE2); return; }
+      // いずれも不可 → 翌日繰越（return のみ）
       return;
     }
 
+    // ── 区分②通常（9:00〜20:00）──
+    var trvToTc = trv(prev, prevC, tc.adr, tc);
     var arriveAt = cur + trvToTc;
-    var wLatestArrival = wEnd - Math.min(15, tc.dur);
-    if(arriveAt > wLatestArrival) return; // urgentFallbackで救済
+    if(arriveAt > wLatestArrival) return; // 間に合わない → 翌日繰越
 
-    if(wStart > FREE_START && wStart > cur){
-      var fillDeadline = Math.min(wStart, wEnd - tc.dur - trvToTc);
-      if(fillDeadline > Math.max(cur, FREE_START)) fillFree(fillDeadline);
-    }
-
-    trvToTc = trv(prev, prevC, tc.adr, tc);
-    arriveAt = cur + trvToTc;
-    if(arriveAt > wLatestArrival) return; // urgentFallbackで救済
-
-    var st;
+    // 窓開始より前に着く場合：窓前の時間に自由案件を詰める
     if(arriveAt < wStart){
       var latestDepart = wStart - trvToTc;
       if(latestDepart > Math.max(cur, FREE_START)){
@@ -2751,82 +2723,33 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
         trvToTc = trv(prev, prevC, tc.adr, tc);
         arriveAt = cur + trvToTc;
       }
-      st = Math.max(wStart, arriveAt);
-    } else {
-      st = arriveAt;
     }
+    if(arriveAt > wLatestArrival) return;
 
-    var tcBlocked = calBlocks.some(function(b){
-      return st < b.end && (st + tc.dur) > b.start;
-    });
-    var tcDeadline = wEnd;
-    if(effectiveDayEnd && effectiveDayEnd < tcDeadline){
-      tcDeadline = effectiveDayEnd;
-    }
+    var st = Math.max(wStart, arriveAt);
+    var tcBlocked = calBlocks.some(function(b){ return st < b.end && (st + tc.dur) > b.start; });
+    var tcDeadline = (effectiveDayEnd && effectiveDayEnd < wEnd) ? effectiveDayEnd : wEnd;
     if(!tcBlocked && st <= wLatestArrival && st + tc.dur <= tcDeadline) place(tc, st);
-  });
-;
-
-  // ── timedFallback：時間指定案件で未配置のものをASAP強制配置 ──
-  // timedAvailに入った案件は曜日チェック済みなので、
-  // 窓を逃した・移動時間不足などで配置されなかった全案件を救済する
-  timedAvail.forEach(function(tc){
-    if(placed[tc.id] || placed[baseId(tc.id)]) return; // 配置済みはスキップ
-    if(tc.pin != null) return;  // ピン案件はASAPで既処理済み
-    if(tc.tm && TM_RANGE[tc.tm] && TM_RANGE[tc.tm][0] >= 20*60) return; // 夜間は後で処理
-
-    var _t = trv(prev, prevC, tc.adr, tc);
-    var _wS = TM_RANGE[tc.tm] ? TM_RANGE[tc.tm][0] : FREE_START;
-    var _wE = TM_RANGE[tc.tm] ? TM_RANGE[tc.tm][1] : DAY_END;
-    var _isEarly = TM_RANGE[tc.tm] && _wE <= 9*60;
-
-    var _st;
-    if(_isEarly){
-      // 早朝窓案件：窓開始時刻に配置
-      _st = Math.max(_wS, cur + _t);
-    } else {
-      // 通常案件：ASAP（FREE_START以降）
-      _st = Math.max(cur + _t, FREE_START);
-    }
-    // カレンダーブロック回避
-    var _g = 0;
-    while(_g++ < calBlocks.length * 2 + 2){
-      var _hit = null;
-      for(var _bi = 0; _bi < calBlocks.length; _bi++){
-        if(_st < calBlocks[_bi].end && (_st + tc.dur) > calBlocks[_bi].start){
-          _hit = calBlocks[_bi]; break;
-        }
-      }
-      if(!_hit) break;
-      _st = _hit.end + 15;
-    }
-    if(_st + tc.dur <= DAY_END) place(tc, _st);
   });
 
   // 残りの自由案件を最後まで詰める
   if(cur < FREE_START) cur = FREE_START;
   fillFree(FREE_DAY_END);
 
-  // ── Bug4-D: 夜間枠案件（wStart >= 20:00）をfillFree後に処理 ──
-  // fillFreeでcurが~20:15になった後、現在地から夜間案件へ移動する想定
+  // ── 区分③夜間（wStart >= 20:00）fillFree後に処理 ──
   timedAvail.filter(function(tc){
     return tc.pin == null && tc.tm && TM_RANGE[tc.tm] && TM_RANGE[tc.tm][0] >= 20*60;
   }).forEach(function(tc){
     if(placed[tc.id] || placed[baseId(tc.id)]) return;
     if(!isTmAvailable(tc.tm, targetDate)) return;
-    var wStart_ln = TM_RANGE[tc.tm][0];
-    var wEnd_ln   = TM_RANGE[tc.tm][1];
-    var trvToTc_ln = trv(prev, prevC, tc.adr, tc);
-    var arriveAt_ln = cur + trvToTc_ln;
-    var st_ln = Math.max(wStart_ln, arriveAt_ln);
-    var wLatestArrival_ln = wEnd_ln - Math.min(15, tc.dur);
-    var tcDeadline_ln = wEnd_ln; // 夜間案件はeffectiveDayEnd制限なし（窓自体が締切）
-    var tcBlocked_ln = calBlocks.some(function(b){
-      return st_ln < b.end && (st_ln + tc.dur) > b.start;
-    });
-    if(!tcBlocked_ln && st_ln <= wLatestArrival_ln && st_ln + tc.dur <= tcDeadline_ln){
-      place(tc, st_ln);
-    }
+    var wStart_n = TM_RANGE[tc.tm][0];
+    var wEnd_n   = TM_RANGE[tc.tm][1];
+    var trvToTc_n = trv(prev, prevC, tc.adr, tc);
+    var arriveAt_n = cur + trvToTc_n;
+    var st_n = Math.max(wStart_n, arriveAt_n);
+    var wLatest_n = wEnd_n - Math.min(15, tc.dur);
+    var tcBlocked_n = calBlocks.some(function(b){ return st_n < b.end && (st_n + tc.dur) > b.start; });
+    if(!tcBlocked_n && st_n <= wLatest_n && st_n + tc.dur <= wEnd_n) place(tc, st_n);
   });
 
   sched.sort(function(a,b){ return a.st-b.st; });
