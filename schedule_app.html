@@ -1209,6 +1209,19 @@ function writeToSheet(sid, el){
   });
 }
 
+function findSheetByName(callback){
+  fetch("https://www.googleapis.com/drive/v3/files?q=name%3D'HP_Canvas_Data'+and+mimeType%3D'application%2Fvnd.google-apps.spreadsheet'&fields=files(id,name)",{
+    headers:{'Authorization':'Bearer '+gcalToken}
+  }).then(function(r){ return r.json(); })
+  .then(function(d){
+    if(d.files && d.files.length > 0){
+      callback(d.files[0].id);
+    } else {
+      callback(null);
+    }
+  }).catch(function(){ callback(null); });
+}
+
 function createAndSaveSheet(){
   var el = document.getElementById('sync-sheet-status');
   if(el) el.textContent = '☁️ シートを新規作成中...';
@@ -1236,8 +1249,23 @@ function loadCasesFromSheet(callback){
   if(el) el.textContent = '☁️ シートからデータ取得中...';
   fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sid+'/values/A1',{
     headers:{'Authorization':'Bearer '+gcalToken}
-  }).then(function(r){ return r.json(); })
+  }).then(function(r){
+    if(r.status===404){
+      // シートが見つからない→Drive APIで名前検索
+      return findSheetByName(function(foundId){
+        if(foundId){
+          localStorage.setItem(SHEET_ID_KEY, foundId);
+          loadCasesFromSheet(callback);
+        } else {
+          if(el) el.textContent = '✅ シート接続済み（新規）';
+          if(callback) callback();
+        }
+      });
+    }
+    return r.json();
+  })
   .then(function(d){
+    if(!d) return;
     if(d.values && d.values[0] && d.values[0][0]){
       try{
         var remote = JSON.parse(d.values[0][0]);
