@@ -115,7 +115,7 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
   <span id="sync-status" style="font-size:.8rem;color:#a0aec0">案件データはローカル保存中　Googleログインでスマホと同期可能</span>
   <button id="sync-login-btn" onclick="gcalConnect()"
     style="background:#4285f4;color:white;border:none;padding:6px 14px;border-radius:7px;font-size:.8rem;font-weight:600;cursor:pointer">
-    📅 ログインして同期（スマホはここをタップ）
+    📅 Googleカレンダーと連携
   </button>
   <button id="sync-logout-btn" onclick="gcalDisconnect()"
     style="display:none;background:#e2e8f0;color:#4a5568;border:none;padding:6px 12px;border-radius:7px;font-size:.8rem;cursor:pointer">
@@ -124,6 +124,10 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
   <button onclick="location.reload()" title="最新データに更新"
     style="background:#e2e8f0;color:#4a5568;border:none;padding:6px 10px;border-radius:7px;font-size:.85rem;cursor:pointer;margin-left:2px">
     🔄
+  </button>
+  <button id="force-sync-btn" onclick="forceSyncToSheet()"
+    style="display:none;background:#38a169;color:white;border:none;padding:6px 14px;border-radius:7px;font-size:.8rem;font-weight:700;cursor:pointer">
+    💾 今すぐシートに保存（28件→スマホへ）
   </button>
   <span id="sync-sheet-status" style="font-size:.78rem;color:#718096;margin-left:4px"></span>
 </div>
@@ -1262,6 +1266,8 @@ function setSyncBar(msg, loggedIn){
   var lb=document.getElementById('sync-login-btn'), db=document.getElementById('sync-logout-btn');
   if(lb) lb.style.display = loggedIn ? 'none' : '';
   if(db) db.style.display = loggedIn ? '' : 'none';
+  var fb=document.getElementById('force-sync-btn');
+  if(fb) fb.style.display = loggedIn ? '' : 'none';
   var st=document.getElementById('gcal-status');
   if(st) st.textContent = loggedIn ? msg : '未接続　スケジュール作成時にカレンダーの予定を自動反映します';
   var lb2=document.getElementById('gcal-btn'), db2=document.getElementById('gcal-disconnect');
@@ -1269,25 +1275,31 @@ function setSyncBar(msg, loggedIn){
   if(db2) db2.style.display = loggedIn ? '' : 'none';
 }
 
+// PCから強制的にシートへ保存する
+function forceSyncToSheet(){
+  if(!gcalToken){ alert('先にGoogleログインしてください'); return; }
+  var el = document.getElementById('sync-sheet-status');
+  if(el) el.textContent = '☁️ シートに保存中...';
+  var sid = localStorage.getItem(SHEET_ID_KEY) || FIXED_SHEET_ID;
+  var data = JSON.stringify({cases:cases, done:done, visitLog:visitLog, seq:seq, updatedAt: Date.now()});
+  fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sid+'/values/A1?valueInputOption=RAW',{
+    method:'PUT',
+    headers:{'Authorization':'Bearer '+gcalToken,'Content-Type':'application/json'},
+    body: JSON.stringify({values:[[data]]})
+  }).then(function(r){
+    if(!r.ok) return r.json().then(function(e){ throw new Error((e.error&&e.error.message)||r.status); });
+    var now = new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    if(el) el.textContent = '✅ '+cases.length+'件をシートに保存（'+now+'）　スマホでログインして確認を';
+  }).catch(function(e){
+    if(el) el.textContent = '❌ 保存失敗: '+e.message;
+    console.error('forceSyncToSheet error:', e);
+  });
+}
+
 function renderCases(){
   document.getElementById("cnt").textContent=cases.length;
   var el=document.getElementById("clist");
-  if(!cases.length){
-    if(gcalToken){
-      el.innerHTML='<div class="empty">案件がありません</div>';
-    } else {
-      el.innerHTML=''
-        +'<div class="al al-y" style="text-align:center">'
-        +'<div style="font-size:1rem;font-weight:700;margin-bottom:8px">📱 スマホでデータを表示するには</div>'
-        +'<div style="font-size:.85rem;margin-bottom:12px;line-height:1.7">'
-        +'① PCで右上の「Googleカレンダーと連携」ログイン<br>'
-        +'② データが自動でクラウドに保存される<br>'
-        +'③ スマホで下のボタンをタップ</div>'
-        +'<button onclick="gcalConnect()" style="background:#4285f4;color:white;border:none;padding:12px 24px;border-radius:10px;font-size:.95rem;font-weight:700;cursor:pointer;width:100%">📅 Googleでログインして同期する</button>'
-        +'</div>';
-    }
-    return;
-  }
+  if(!cases.length){el.innerHTML='<div class="empty">案件がありません</div>';return;}
   var sq=document.getElementById("case-search");
   var q=sq?sq.value.trim().toLowerCase():"";
   var filtered=q?cases.filter(function(c){
@@ -3812,12 +3824,8 @@ function gcalInit(){
       setSyncBar('✅ Google接続済み　データ同期中...', true);
       // シートからデータ読み込み → その後カレンダー取得
       loadCasesFromSheet(function(){
-        setSyncBar('✅ Google接続済み　案件数: ' + cases.length + '件', true);
-        if(cases.length === 0){
-          var el = document.getElementById('clist');
-          if(el) el.innerHTML = '<div class="al al-y">⚠️ Googleシートにデータが見つかりませんでした。<br>'
-            + '<b>PCからも一度Googleログインしてデータを同期</b>してからスマホで再読み込みしてください。</div>';
-        }
+        var caseCount = cases.length;
+        setSyncBar('✅ Google接続済み　案件数: '+caseCount+'件', true);
         gcalFetchEvents();
       });
     }
