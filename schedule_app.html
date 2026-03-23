@@ -129,6 +129,10 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
     style="display:none;background:#38a169;color:white;border:none;padding:6px 14px;border-radius:7px;font-size:.8rem;font-weight:700;cursor:pointer">
     💾 今すぐシートに保存（28件→スマホへ）
   </button>
+  <button id="debug-btn" onclick="showDebugInfo()"
+    style="background:#805ad5;color:white;border:none;padding:6px 14px;border-radius:7px;font-size:.8rem;font-weight:700;cursor:pointer">
+    🔍 診断
+  </button>
   <span id="sync-sheet-status" style="font-size:.78rem;color:#718096;margin-left:4px"></span>
 </div>
 
@@ -1273,6 +1277,27 @@ function setSyncBar(msg, loggedIn){
   var lb2=document.getElementById('gcal-btn'), db2=document.getElementById('gcal-disconnect');
   if(lb2) lb2.style.display = loggedIn ? 'none' : '';
   if(db2) db2.style.display = loggedIn ? '' : 'none';
+}
+
+function showDebugInfo(){
+  var sheetId = localStorage.getItem('schedule_sheetId') || '（なし→デフォルト使用）';
+  var fixedId = '1VQH-Yaa4-L9XJUn8hZGlBZl6rHuzFNQI4UCXRPLlcDc';
+  var usingId = localStorage.getItem('schedule_sheetId') || fixedId;
+  var token = gcalToken ? '✅ あり' : '❌ なし';
+  var msg = '=== 診断情報 ===
+'
+    + 'Googleトークン: ' + token + '
+'
+    + '案件数: ' + cases.length + '件
+'
+    + 'SheetID(保存): ' + sheetId + '
+'
+    + 'SheetID(使用中): ' + usingId + '
+'
+    + 'デフォルトID: ' + fixedId + '
+'
+    + '一致: ' + (usingId === fixedId ? '✅ 同じ' : '❌ 違う！');
+  alert(msg);
 }
 
 // PCから強制的にシートへ保存する
