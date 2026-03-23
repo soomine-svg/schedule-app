@@ -1280,23 +1280,18 @@ function setSyncBar(msg, loggedIn){
 }
 
 function showDebugInfo(){
-  var sheetId = localStorage.getItem('schedule_sheetId') || '（なし→デフォルト使用）';
+  var sheetId = localStorage.getItem('schedule_sheetId') || '(なし→デフォルト使用)';
   var fixedId = '1VQH-Yaa4-L9XJUn8hZGlBZl6rHuzFNQI4UCXRPLlcDc';
   var usingId = localStorage.getItem('schedule_sheetId') || fixedId;
-  var token = gcalToken ? '✅ あり' : '❌ なし';
-  var msg = '=== 診断情報 ===
-'
-    + 'Googleトークン: ' + token + '
-'
-    + '案件数: ' + cases.length + '件
-'
-    + 'SheetID(保存): ' + sheetId + '
-'
-    + 'SheetID(使用中): ' + usingId + '
-'
-    + 'デフォルトID: ' + fixedId + '
-'
-    + '一致: ' + (usingId === fixedId ? '✅ 同じ' : '❌ 違う！');
+  var token = gcalToken ? 'あり' : 'なし';
+  var match = (usingId === fixedId) ? '同じ' : '違う！';
+  var msg = '診断情報' + String.fromCharCode(10)
+    + 'Googleトークン: ' + token + String.fromCharCode(10)
+    + '案件数: ' + cases.length + '件' + String.fromCharCode(10)
+    + 'SheetID保存: ' + sheetId + String.fromCharCode(10)
+    + 'SheetID使用中: ' + usingId + String.fromCharCode(10)
+    + 'デフォルトID: ' + fixedId + String.fromCharCode(10)
+    + '一致: ' + match;
   alert(msg);
 }
 
