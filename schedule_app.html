@@ -1181,31 +1181,57 @@ function loadCases(){
   } catch(e){}
 }
 
-// Sheetsに保存
+// Sheetsに保存（シートがなければ自動作成）
 function saveCasesToSheet(){
   if(!gcalToken) return;
-  var sid = FIXED_SHEET_ID; // 常にデフォルトIDを使用（localStorage汚染対策）
-  var data = JSON.stringify({cases:cases, done:done, visitLog:visitLog, seq:seq, updatedAt: Date.now()});
   var el = document.getElementById('sync-sheet-status');
+  var sid = localStorage.getItem(SHEET_ID_KEY);
+  if(!sid){ createAndSaveSheet(); return; }
+  writeToSheet(sid, el);
+}
+
+function writeToSheet(sid, el){
+  if(!el) el = document.getElementById('sync-sheet-status');
+  var data = JSON.stringify({cases:cases, done:done, visitLog:visitLog, seq:seq, updatedAt: Date.now()});
   if(el) el.textContent = '☁️ シートに同期中...';
   fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sid+'/values/A1?valueInputOption=RAW',{
     method:'PUT',
     headers:{'Authorization':'Bearer '+gcalToken,'Content-Type':'application/json'},
     body: JSON.stringify({values:[[data]]})
   }).then(function(r){
+    if(r.status===404){ createAndSaveSheet(); return; }
     if(!r.ok) throw new Error(r.status);
     var now = new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
     if(el) el.textContent = '✅ シート同期済み '+now+'（'+cases.length+'件）';
   }).catch(function(e){
     console.log('Sheet save error:',e);
-    if(el) el.textContent = '⚠️ シート保存失敗（ローカルには保存済み）';
+    if(el) el.textContent = '⚠️ シート保存失敗: '+e.message;
+  });
+}
+
+function createAndSaveSheet(){
+  var el = document.getElementById('sync-sheet-status');
+  if(el) el.textContent = '☁️ シートを新規作成中...';
+  fetch('https://sheets.googleapis.com/v4/spreadsheets',{
+    method:'POST',
+    headers:{'Authorization':'Bearer '+gcalToken,'Content-Type':'application/json'},
+    body: JSON.stringify({properties:{title:'HP_Canvas_Data'}})
+  }).then(function(r){ return r.json(); })
+  .then(function(d){
+    if(!d.spreadsheetId) throw new Error('作成失敗');
+    var newId = d.spreadsheetId;
+    localStorage.setItem(SHEET_ID_KEY, newId);
+    if(el) el.textContent = '✅ 新しいシートを作成しました　保存中...';
+    writeToSheet(newId, el);
+  }).catch(function(e){
+    if(el) el.textContent = '❌ シート作成失敗: '+e.message;
   });
 }
 
 // Sheetsから読み込んでローカルとマージ（新しい方を採用）
 function loadCasesFromSheet(callback){
   if(!gcalToken){ if(callback) callback(); return; }
-  var sid = FIXED_SHEET_ID; // 常にデフォルトIDを使用（localStorage汚染対策）
+  var sid = localStorage.getItem(SHEET_ID_KEY) || FIXED_SHEET_ID;
   var el = document.getElementById('sync-sheet-status');
   if(el) el.textContent = '☁️ シートからデータ取得中...';
   fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sid+'/values/A1',{
@@ -1300,7 +1326,8 @@ function forceSyncToSheet(){
   if(!gcalToken){ alert('先にGoogleログインしてください'); return; }
   var el = document.getElementById('sync-sheet-status');
   if(el) el.textContent = '☁️ シートに保存中...';
-  var sid = FIXED_SHEET_ID; // 常にデフォルトIDを使用
+  var sid = localStorage.getItem(SHEET_ID_KEY);
+  if(!sid){ createAndSaveSheet(); return; }
   var data = JSON.stringify({cases:cases, done:done, visitLog:visitLog, seq:seq, updatedAt: Date.now()});
   fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sid+'/values/A1?valueInputOption=RAW',{
     method:'PUT',
