@@ -948,6 +948,11 @@ function setMode(m){
   // 「今からモード」選択時：常に現在地（GPS）に切り替えてGPS取得を（再）起動
   // ※条件ガードなし：GPS失敗後の再試行・ドロップダウン手動変更後もGPSを必ず再取得する
   if(m === "now"){
+    // 現在地が変わっている可能性があるためGPS距離キャッシュを自動クリア
+    Object.keys(_dmCache).forEach(function(k){
+      if(k.indexOf('現在地(GPS)') >= 0) delete _dmCache[k];
+    });
+    _dmCacheSave();
     var slocEl = document.getElementById("sloc-type");
     if(slocEl){
       slocEl.value = "current";
