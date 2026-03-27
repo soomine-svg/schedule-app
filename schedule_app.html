@@ -2412,10 +2412,26 @@ function prefetchDistanceMatrix(allAddrs, callback){
     if(a && !seen[a]){ seen[a]=true; uniq.push(a); }
   });
   if(uniq.length < 2){ callback(); return; }
-  fetchDistanceMatrix(uniq, uniq, function(err){
-    if(err) console.warn('Distance Matrix partial/error:', err);
-    callback();
-  });
+  // GPS含む場合は現在地DM取得を先に行い、その後通常アドレス同士を取得
+  var gpsIdx = uniq.indexOf('現在地(GPS)');
+  if(gpsIdx >= 0 && window._gpsLat && window._gpsLng){
+    var nonGps = uniq.filter(function(a){ return a !== '現在地(GPS)'; });
+    prefetchGpsDistanceMatrix(function(){
+      if(nonGps.length >= 2){
+        fetchDistanceMatrix(nonGps, nonGps, function(err){
+          if(err) console.warn('Distance Matrix partial/error:', err);
+          callback();
+        });
+      } else {
+        callback();
+      }
+    });
+  } else {
+    fetchDistanceMatrix(uniq, uniq, function(err){
+      if(err) console.warn('Distance Matrix partial/error:', err);
+      callback();
+    });
+  }
 }
 
 // カレンダー会場↔自宅の往復を最優先で取得（effectiveDayEnd/StartMin計算に必須）
@@ -3376,6 +3392,10 @@ function buildAll(){
     if(slocType === "custom"){
       var customAdr = (document.getElementById("sloc") ? document.getElementById("sloc").value.trim() : "");
       if(customAdr) addrs.push(customAdr);
+    }
+    // GPS使用時は「現在地(GPS)」キーをリストに含める（DMキャッシュキーと一致させる）
+    if(slocType === "current" && window._gpsLat && window._gpsLng){
+      addrs.push('現在地(GPS)');
     }
     // カレンダー会場住所も追加（DMキャッシュに含めるため）
     gcalEvents.forEach(function(ev){
