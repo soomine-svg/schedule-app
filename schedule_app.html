@@ -70,11 +70,6 @@ header h1{font-size:1.1rem;font-weight:700}
 .smode{padding:8px 16px;border:2px solid #e2e8f0;border-radius:8px;cursor:pointer;font-size:.85rem;font-weight:600;background:white;color:#4a5568}
 .smode.on{border-color:#2b6cb0;background:#ebf4ff;color:#2b6cb0}
 
-/* PC専用ボタン：タッチデバイスでは非表示 */
-@media (pointer: coarse) {
-  .pc-only { display: none !important; }
-}
-
 /* ===== タッチ長押しドラッグ ===== */
 /* タッチデバイスでは▲▼ボタン・☰ハンドルを非表示 */
 @media (pointer: coarse) {
@@ -129,15 +124,6 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
   <button onclick="location.reload()" title="最新データに更新"
     style="background:#e2e8f0;color:#4a5568;border:none;padding:6px 10px;border-radius:7px;font-size:.85rem;cursor:pointer;margin-left:2px">
     🔄
-  </button>
-  <button id="force-sync-btn" onclick="forceSyncToSheet()"
-    style="display:none;background:#38a169;color:white;border:none;padding:6px 14px;border-radius:7px;font-size:.8rem;font-weight:700;cursor:pointer;"
-    class="pc-only">
-    💾 今すぐシートに保存
-  </button>
-  <button id="debug-btn" onclick="showDebugInfo()"
-    style="background:#805ad5;color:white;border:none;padding:6px 14px;border-radius:7px;font-size:.8rem;font-weight:700;cursor:pointer">
-    🔍 診断
   </button>
   <span id="sync-sheet-status" style="font-size:.78rem;color:#718096;margin-left:4px"></span>
 </div>
@@ -948,11 +934,6 @@ function setMode(m){
   // 「今からモード」選択時：常に現在地（GPS）に切り替えてGPS取得を（再）起動
   // ※条件ガードなし：GPS失敗後の再試行・ドロップダウン手動変更後もGPSを必ず再取得する
   if(m === "now"){
-    // 現在地が変わっている可能性があるためGPS距離キャッシュを自動クリア
-    Object.keys(_dmCache).forEach(function(k){
-      if(k.indexOf('現在地(GPS)') >= 0) delete _dmCache[k];
-    });
-    _dmCacheSave();
     var slocEl = document.getElementById("sloc-type");
     if(slocEl){
       slocEl.value = "current";
@@ -1192,63 +1173,24 @@ function loadCases(){
   } catch(e){}
 }
 
-// Sheetsに保存（シートがなければ自動作成）
+// Sheetsに保存
 function saveCasesToSheet(){
   if(!gcalToken) return;
-  var el = document.getElementById('sync-sheet-status');
-  var sid = localStorage.getItem(SHEET_ID_KEY);
-  if(!sid){ createAndSaveSheet(); return; }
-  writeToSheet(sid, el);
-}
-
-function writeToSheet(sid, el){
-  if(!el) el = document.getElementById('sync-sheet-status');
+  var sid = localStorage.getItem(SHEET_ID_KEY) || FIXED_SHEET_ID;
   var data = JSON.stringify({cases:cases, done:done, visitLog:visitLog, seq:seq, updatedAt: Date.now()});
+  var el = document.getElementById('sync-sheet-status');
   if(el) el.textContent = '☁️ シートに同期中...';
   fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sid+'/values/A1?valueInputOption=RAW',{
     method:'PUT',
     headers:{'Authorization':'Bearer '+gcalToken,'Content-Type':'application/json'},
     body: JSON.stringify({values:[[data]]})
   }).then(function(r){
-    if(r.status===404){ createAndSaveSheet(); return; }
     if(!r.ok) throw new Error(r.status);
     var now = new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
     if(el) el.textContent = '✅ シート同期済み '+now+'（'+cases.length+'件）';
   }).catch(function(e){
     console.log('Sheet save error:',e);
-    if(el) el.textContent = '⚠️ シート保存失敗: '+e.message;
-  });
-}
-
-function findSheetByName(callback){
-  fetch("https://www.googleapis.com/drive/v3/files?q=name%3D'HP_Canvas_Data'+and+mimeType%3D'application%2Fvnd.google-apps.spreadsheet'&fields=files(id,name)",{
-    headers:{'Authorization':'Bearer '+gcalToken}
-  }).then(function(r){ return r.json(); })
-  .then(function(d){
-    if(d.files && d.files.length > 0){
-      callback(d.files[0].id);
-    } else {
-      callback(null);
-    }
-  }).catch(function(){ callback(null); });
-}
-
-function createAndSaveSheet(){
-  var el = document.getElementById('sync-sheet-status');
-  if(el) el.textContent = '☁️ シートを新規作成中...';
-  fetch('https://sheets.googleapis.com/v4/spreadsheets',{
-    method:'POST',
-    headers:{'Authorization':'Bearer '+gcalToken,'Content-Type':'application/json'},
-    body: JSON.stringify({properties:{title:'HP_Canvas_Data'}})
-  }).then(function(r){ return r.json(); })
-  .then(function(d){
-    if(!d.spreadsheetId) throw new Error('作成失敗');
-    var newId = d.spreadsheetId;
-    localStorage.setItem(SHEET_ID_KEY, newId);
-    if(el) el.textContent = '✅ 新しいシートを作成しました　保存中...';
-    writeToSheet(newId, el);
-  }).catch(function(e){
-    if(el) el.textContent = '❌ シート作成失敗: '+e.message;
+    if(el) el.textContent = '⚠️ シート保存失敗（ローカルには保存済み）';
   });
 }
 
@@ -1260,23 +1202,8 @@ function loadCasesFromSheet(callback){
   if(el) el.textContent = '☁️ シートからデータ取得中...';
   fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sid+'/values/A1',{
     headers:{'Authorization':'Bearer '+gcalToken}
-  }).then(function(r){
-    if(r.status===404){
-      // シートが見つからない→Drive APIで名前検索
-      return findSheetByName(function(foundId){
-        if(foundId){
-          localStorage.setItem(SHEET_ID_KEY, foundId);
-          loadCasesFromSheet(callback);
-        } else {
-          if(el) el.textContent = '✅ シート接続済み（新規）';
-          if(callback) callback();
-        }
-      });
-    }
-    return r.json();
-  })
+  }).then(function(r){ return r.json(); })
   .then(function(d){
-    if(!d) return;
     if(d.values && d.values[0] && d.values[0][0]){
       try{
         var remote = JSON.parse(d.values[0][0]);
@@ -1335,51 +1262,11 @@ function setSyncBar(msg, loggedIn){
   var lb=document.getElementById('sync-login-btn'), db=document.getElementById('sync-logout-btn');
   if(lb) lb.style.display = loggedIn ? 'none' : '';
   if(db) db.style.display = loggedIn ? '' : 'none';
-  var fb=document.getElementById('force-sync-btn');
-  if(fb) fb.style.display = loggedIn ? '' : 'none';
   var st=document.getElementById('gcal-status');
   if(st) st.textContent = loggedIn ? msg : '未接続　スケジュール作成時にカレンダーの予定を自動反映します';
   var lb2=document.getElementById('gcal-btn'), db2=document.getElementById('gcal-disconnect');
   if(lb2) lb2.style.display = loggedIn ? 'none' : '';
   if(db2) db2.style.display = loggedIn ? '' : 'none';
-}
-
-function showDebugInfo(){
-  var sheetId = localStorage.getItem('schedule_sheetId') || '(なし→デフォルト使用)';
-  var fixedId = '1VQH-Yaa4-L9XJUn8hZGlBZl6rHuzFNQI4UCXRPLlcDc';
-  var usingId = localStorage.getItem('schedule_sheetId') || fixedId;
-  var token = gcalToken ? 'あり' : 'なし';
-  var match = (usingId === fixedId) ? '同じ' : '違う！';
-  var msg = '診断情報' + String.fromCharCode(10)
-    + 'Googleトークン: ' + token + String.fromCharCode(10)
-    + '案件数: ' + cases.length + '件' + String.fromCharCode(10)
-    + 'SheetID保存: ' + sheetId + String.fromCharCode(10)
-    + 'SheetID使用中: ' + usingId + String.fromCharCode(10)
-    + 'デフォルトID: ' + fixedId + String.fromCharCode(10)
-    + '一致: ' + match;
-  alert(msg);
-}
-
-// PCから強制的にシートへ保存する
-function forceSyncToSheet(){
-  if(!gcalToken){ alert('先にGoogleログインしてください'); return; }
-  var el = document.getElementById('sync-sheet-status');
-  if(el) el.textContent = '☁️ シートに保存中...';
-  var sid = localStorage.getItem(SHEET_ID_KEY);
-  if(!sid){ createAndSaveSheet(); return; }
-  var data = JSON.stringify({cases:cases, done:done, visitLog:visitLog, seq:seq, updatedAt: Date.now()});
-  fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sid+'/values/A1?valueInputOption=RAW',{
-    method:'PUT',
-    headers:{'Authorization':'Bearer '+gcalToken,'Content-Type':'application/json'},
-    body: JSON.stringify({values:[[data]]})
-  }).then(function(r){
-    if(!r.ok) return r.json().then(function(e){ throw new Error((e.error&&e.error.message)||r.status); });
-    var now = new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-    if(el) el.textContent = '✅ '+cases.length+'件をシートに保存（'+now+'）　スマホでログインして確認を';
-  }).catch(function(e){
-    if(el) el.textContent = '❌ 保存失敗: '+e.message;
-    console.error('forceSyncToSheet error:', e);
-  });
 }
 
 function renderCases(){
@@ -2417,26 +2304,10 @@ function prefetchDistanceMatrix(allAddrs, callback){
     if(a && !seen[a]){ seen[a]=true; uniq.push(a); }
   });
   if(uniq.length < 2){ callback(); return; }
-  // GPS含む場合は現在地DM取得を先に行い、その後通常アドレス同士を取得
-  var gpsIdx = uniq.indexOf('現在地(GPS)');
-  if(gpsIdx >= 0 && window._gpsLat && window._gpsLng){
-    var nonGps = uniq.filter(function(a){ return a !== '現在地(GPS)'; });
-    prefetchGpsDistanceMatrix(function(){
-      if(nonGps.length >= 2){
-        fetchDistanceMatrix(nonGps, nonGps, function(err){
-          if(err) console.warn('Distance Matrix partial/error:', err);
-          callback();
-        });
-      } else {
-        callback();
-      }
-    });
-  } else {
-    fetchDistanceMatrix(uniq, uniq, function(err){
-      if(err) console.warn('Distance Matrix partial/error:', err);
-      callback();
-    });
-  }
+  fetchDistanceMatrix(uniq, uniq, function(err){
+    if(err) console.warn('Distance Matrix partial/error:', err);
+    callback();
+  });
 }
 
 // カレンダー会場↔自宅の往復を最優先で取得（effectiveDayEnd/StartMin計算に必須）
@@ -2558,17 +2429,17 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
   });
 
   // 時間指定あり案件のソート順：
-  // ①早朝窓(wEnd≤9:00)を絶対最優先 → fillFreeでcurが進む前に処理する
-  // ②ピン案件（時刻順）
-  // ③早朝優先チェックあり（ely）
+  // ①ピン案件（絶対時刻優先 - 早朝窓より先に処理しないと時刻を逃す）
+  // ②早朝窓(wEnd≤9:00) - fillFreeでcurが進む前に処理
+  // ③早朝優先(ely)
   // ④時刻順 → 納期順
   timedAvail.sort(function(a,b){
+    if(a.pin!=null && b.pin==null) return -1;
+    if(a.pin==null && b.pin!=null) return 1;
     var aIsEarly = !a.pin && a.tm && TM_RANGE[a.tm] && TM_RANGE[a.tm][1] <= 9*60;
     var bIsEarly = !b.pin && b.tm && TM_RANGE[b.tm] && TM_RANGE[b.tm][1] <= 9*60;
     if(aIsEarly && !bIsEarly) return -1;
     if(!aIsEarly && bIsEarly) return 1;
-    if(a.pin!=null && b.pin==null) return -1;
-    if(a.pin==null && b.pin!=null) return 1;
     if(a.ely && !b.ely) return -1;
     if(!a.ely && b.ely) return 1;
     var aT = a.pin!=null ? a.pin : (TM_RANGE[a.tm] ? TM_RANGE[a.tm][0] : 9999);
@@ -2818,24 +2689,21 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     var wLatestArrival = wEnd - Math.min(15, tc.dur);
 
     // ── 区分①早朝（wEnd <= 9:00）──
-    // ルール：「出発地からwStartに移動するのに必要な出発時刻（earlyDepart）が0以上」なら配置可
-    // curはadjustedStartから始まるので、早朝出発が可能かどうかは earlyDepart >= 0 で判定
     if(wEnd <= 9*60){
       var trvToTc_e = trv(prev, prevC, tc.adr, tc);
-      var earlyDepart = wStart - trvToTc_e; // 必要出発時刻
-      if(earlyDepart < 0) return; // 深夜出発が必要→不可・翌日繰越
+      var earlyDepart = wStart - trvToTc_e;
+      if(earlyDepart < 0) return;
 
-      // curから向かった場合の到着
       var arriveE = cur + trvToTc_e;
       if(arriveE <= wLatestArrival){
-        // curから自然に移動して窓内に到着できる
         var stE = Math.max(wStart, arriveE);
-        if(stE + tc.dur <= wEnd){ place(tc, stE); return; }
+        var eBlocked = calBlocks.some(function(b){ return stE < b.end && (stE + tc.dur) > b.start; });
+        if(!eBlocked && stE + tc.dur <= wEnd){ place(tc, stE); return; }
       } else if(earlyDepart >= cur){
-        // curよりも前に出れる → wStart着で配置
-        if(wStart + tc.dur <= wEnd){ place(tc, wStart); return; }
+        var stE2 = wStart;
+        var eBlocked2 = calBlocks.some(function(b){ return stE2 < b.end && (stE2 + tc.dur) > b.start; });
+        if(!eBlocked2 && stE2 + tc.dur <= wEnd){ place(tc, stE2); return; }
       }
-      // いずれも不可 → 翌日繰越（return のみ）
       return;
     }
 
@@ -3398,10 +3266,6 @@ function buildAll(){
       var customAdr = (document.getElementById("sloc") ? document.getElementById("sloc").value.trim() : "");
       if(customAdr) addrs.push(customAdr);
     }
-    // GPS使用時は「現在地(GPS)」キーをリストに含める（DMキャッシュキーと一致させる）
-    if(slocType === "current" && window._gpsLat && window._gpsLng){
-      addrs.push('現在地(GPS)');
-    }
     // カレンダー会場住所も追加（DMキャッシュに含めるため）
     gcalEvents.forEach(function(ev){
       if(ev.location) addrs.push(ev.location);
@@ -3795,7 +3659,39 @@ function buildAllCore(){
       });
     }
 
-    console.log('Day'+(d+1)+' '+dStr+' pool:['+todayPool.map(function(c){return c.id;}).join(',')+'] blocks:'+calBlocks.length+' dayEnd:'+(effectiveDayEnd?Math.floor(effectiveDayEnd/60)+':'+(('0'+(effectiveDayEnd%60)).slice(-2)):'none')+' startMin:'+Math.floor(effectiveStartMin/60)+':'+(('0'+(effectiveStartMin%60)).slice(-2)));
+    // ── カレンダー予定への移動時間をブロックとして追加 ──
+    // 例：06:30に佐土原へのカレンダー予定があり移動99分なら、04:36〜06:30を移動ブロックに
+    // これにより移動中の時間帯に案件が配置されなくなる
+    var calBlocksExt = calBlocks.slice();
+    var _fromAdrTrv = effectiveStartAdr === '__GPS__' ? '現在地(GPS)' : (effectiveStartAdr || HOME_ADR);
+    calBlocks.forEach(function(b){
+      if(b.isCarryOver || b.isTravel) return;
+      var _trvToB = 0;
+      if(b.location){
+        var _cached = dmGet(_fromAdrTrv, b.location);
+        if(_cached != null){ _trvToB = _cached; }
+        else if(b.lat && b.lng){
+          var _fromP = (effectiveStartAdr === '__GPS__' && window._gpsLat)
+            ? {lat:window._gpsLat, lng:window._gpsLng}
+            : getPos(effectiveStartAdr || HOME_ADR, null);
+          if(_fromP && _fromP.lat) _trvToB = Math.max(0, Math.round(km(_fromP, {lat:b.lat,lng:b.lng}) / spd * 60));
+        }
+      }
+      if(_trvToB > 0){
+        var _travelStart = b.start - _trvToB;
+        // adjustedStartより後かつブロック開始より前の場合のみ追加
+        if(_travelStart > adjustedStart && _travelStart < b.start){
+          calBlocksExt.push({
+            start: _travelStart, end: b.start,
+            title: (b.title||'予定')+'への移動中', isTravel: true,
+            location: null, lat: null, lng: null, isCarryOver: false
+          });
+        }
+      }
+    });
+    calBlocksExt.sort(function(a,b){ return a.start - b.start; });
+
+    console.log('Day'+(d+1)+' '+dStr+' pool:['+todayPool.map(function(c){return c.id;}).join(',')+'] blocks:'+calBlocks.length+' travelBlocks:'+(calBlocksExt.length-calBlocks.length)+' dayEnd:'+(effectiveDayEnd?Math.floor(effectiveDayEnd/60)+':'+(('0'+(effectiveDayEnd%60)).slice(-2)):'none')+' startMin:'+Math.floor(effectiveStartMin/60)+':'+(('0'+(effectiveStartMin%60)).slice(-2)));
 
     // 実働時間がなければ全件翌日へ繰り越し
     if(effectiveDayEnd <= effectiveStartMin + 15){
@@ -3804,14 +3700,14 @@ function buildAllCore(){
         '<div class="al al-y">📅 カレンダー予定の移動時間を考慮すると実働時間がありません。全件翌日以降に繰越します。</div></div>';
       html += html_card;
       window._dayScheds = window._dayScheds || [];
-      window._dayScheds[d] = { sched:[], skip:todayPool.concat(carriedOver), spd:spd, startMin:effectiveStartMin, startAdr:effectiveStartAdr, dStr:dStr, dayNum:d+1, isNow:isNow&&d===0, calBlocks:calBlocks };
+      window._dayScheds[d] = { sched:[], skip:todayPool.concat(carriedOver), spd:spd, startMin:effectiveStartMin, startAdr:effectiveStartAdr, dStr:dStr, dayNum:d+1, isNow:isNow&&d===0, calBlocks:calBlocksExt };
       remaining = todayPool.concat(carriedOver).concat(remaining.filter(function(c){ return todayPool.indexOf(c)<0 && carriedOver.indexOf(c)<0; }));
       // 重複排除
       var rm2={}; remaining=remaining.filter(function(c){ return rm2[c.id]?false:(rm2[c.id]=true); });
       continue;
     }
 
-    var result = scheduleDay(todayPool, effectiveStartMin, effectiveStartAdr, spd, date, calBlocks, effectiveDayEnd, !isNow && d===0);
+    var result = scheduleDay(todayPool, effectiveStartMin, effectiveStartAdr, spd, date, calBlocksExt, effectiveDayEnd, !isNow && d===0);
     var todaySch = result.sched;
     var consumed = result.consumedIds;
     var notAvail = result.notAvailTimed||[];
@@ -3845,10 +3741,10 @@ function buildAllCore(){
       dStr: dStr,
       dayNum: d+1,
       isNow: isNow&&d===0,
-      calBlocks: calBlocks
+      calBlocks: calBlocksExt
     };
 
-    html += renderDay(d+1, dStr, todaySch, notDone.concat(extraNA), spd, effectiveStartMin, isNow&&d===0, calBlocks, d, effectiveStartAdr);
+    html += renderDay(d+1, dStr, todaySch, notDone.concat(extraNA), spd, effectiveStartMin, isNow&&d===0, calBlocksExt, d, effectiveStartAdr);
   }
 
   if(remaining.length){
@@ -3930,8 +3826,7 @@ function gcalInit(){
       setSyncBar('✅ Google接続済み　データ同期中...', true);
       // シートからデータ読み込み → その後カレンダー取得
       loadCasesFromSheet(function(){
-        var caseCount = cases.length;
-        setSyncBar('✅ Google接続済み　案件数: '+caseCount+'件', true);
+        setSyncBar('✅ Google接続済み', true);
         gcalFetchEvents();
       });
     }
@@ -3947,18 +3842,16 @@ function gcalInit(){
 
 function gcalConnect(){
   if(!gcalTokenClient){
+    // GISがまだ読み込まれていない場合
     document.getElementById('gcal-status').textContent = '⏳ Google認証を初期化中...';
-    setSyncBar('⏳ Google認証を初期化中...', false);
     setTimeout(function(){
       gcalInit();
-      setTimeout(function(){
-        if(gcalTokenClient) gcalTokenClient.requestAccessToken({prompt:'select_account'});
-        else document.getElementById('gcal-status').textContent = '❌ Google認証の読み込みに失敗しました。ページを再読み込みしてください。';
-      }, 800);
-    }, 500);
+      if(gcalTokenClient) gcalTokenClient.requestAccessToken({prompt:'consent'});
+      else document.getElementById('gcal-status').textContent = '❌ Google認証の読み込みに失敗しました。ページを再読み込みしてください。';
+    }, 1000);
     return;
   }
-  gcalTokenClient.requestAccessToken({prompt:'select_account'});
+  gcalTokenClient.requestAccessToken({prompt:''});
 }
 
 function gcalDisconnect(){
@@ -4141,8 +4034,6 @@ function gcalHasMorningEvent(dateStr){
 
 // window.onload でGIS初期化
 window.addEventListener('load', function(){
-  // LocalStorageの汚染されたSheetIDを削除
-  localStorage.removeItem(SHEET_ID_KEY);
   loadCases();
   // 座標未取得の案件をキーワードテーブルで補完
   cases.forEach(function(c){
