@@ -2381,12 +2381,16 @@ function fmt(m){
 // 返値: { sched, consumedIds, notAvailTimed }
 function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effectiveDayEnd, isNextDay){
   calBlocks = calBlocks || [];
-  var DAY_END      = 22*60+15; // 22:15 時間指定案件の最終終了
-  var FREE_DAY_END = effectiveDayEnd
-    ? Math.min(20*60+15, effectiveDayEnd)
-    : 20*60+15; // 20:15 or カレンダー制約
-  var DAY_START    = 8*60+30;  // 08:30 通常訪問開始
+  var DAY_END      = 22*60+15;
+  var FREE_DAY_END = effectiveDayEnd ? Math.min(20*60+15, effectiveDayEnd) : 20*60+15;
+  var DAY_START    = 8*60+30;
   var FREE_START   = Math.max(startMin, DAY_START);
+
+  // 今日納期判定（曜日OK前提で窓を緩めてASAP配置するため）
+  var _dStr = targetDate
+    ? (targetDate.getFullYear()+'-'+('0'+(targetDate.getMonth()+1)).slice(-2)+'-'+('0'+targetDate.getDate()).slice(-2))
+    : null;
+  function isDeadlineToday(c){ return c.d2 && _dStr && c.d2 <= _dStr; }
 
   // ── 休日判定でtimedPoolを分類 ──
   var timedAvail = [];   // 今日訪問できる時間指定案件
@@ -2692,8 +2696,10 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     if(wEnd <= 9*60){
       var trvToTc_e = trv(prev, prevC, tc.adr, tc);
       var earlyDepart = wStart - trvToTc_e;
-      if(earlyDepart < 0) return;
-
+      if(earlyDepart < 0){
+        if(isDeadlineToday(tc)) _placeASAP(tc);
+        return;
+      }
       var arriveE = cur + trvToTc_e;
       if(arriveE <= wLatestArrival){
         var stE = Math.max(wStart, arriveE);
@@ -2704,15 +2710,17 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
         var eBlocked2 = calBlocks.some(function(b){ return stE2 < b.end && (stE2 + tc.dur) > b.start; });
         if(!eBlocked2 && stE2 + tc.dur <= wEnd){ place(tc, stE2); return; }
       }
+      if(isDeadlineToday(tc)) _placeASAP(tc);
       return;
     }
 
     // ── 区分②通常（9:00〜20:00）──
     var trvToTc = trv(prev, prevC, tc.adr, tc);
     var arriveAt = cur + trvToTc;
-    if(arriveAt > wLatestArrival) return; // 間に合わない → 翌日繰越
-
-    // 窓開始より前に着く場合：窓前の時間に自由案件を詰める
+    if(arriveAt > wLatestArrival){
+      if(isDeadlineToday(tc)) _placeASAP(tc);
+      return;
+    }
     if(arriveAt < wStart){
       var latestDepart = wStart - trvToTc;
       if(latestDepart > Math.max(cur, FREE_START)){
@@ -2721,17 +2729,49 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
         arriveAt = cur + trvToTc;
       }
     }
-    if(arriveAt > wLatestArrival) return;
-
+    if(arriveAt > wLatestArrival){
+      if(isDeadlineToday(tc)) _placeASAP(tc);
+      return;
+    }
     var st = Math.max(wStart, arriveAt);
     var tcBlocked = calBlocks.some(function(b){ return st < b.end && (st + tc.dur) > b.start; });
     var tcDeadline = (effectiveDayEnd && effectiveDayEnd < wEnd) ? effectiveDayEnd : wEnd;
-    if(!tcBlocked && st <= wLatestArrival && st + tc.dur <= tcDeadline) place(tc, st);
+    if(!tcBlocked && st <= wLatestArrival && st + tc.dur <= tcDeadline){
+      place(tc, st);
+    } else if(isDeadlineToday(tc)){
+      _placeASAP(tc);
+    }
   });
+
+  // ── 今日納期ASAP配置ヘルパー（時間窓を妥協してでも当日配置） ──
+  // 曜日チェックは timedAvail 振り分け時点で保証済みなのでここでは省略
+  function _placeASAP(tc){
+    if(placed[tc.id] || placed[baseId(tc.id)]) return;
+    var _t = trv(prev, prevC, tc.adr, tc);
+    var _st = Math.max(cur + _t, FREE_START);
+    // calBlocksを回避
+    var _g = 0;
+    while(_g++ < calBlocks.length * 2 + 2){
+      var _hit = null;
+      for(var _bi = 0; _bi < calBlocks.length; _bi++){
+        if(_st < calBlocks[_bi].end && (_st + tc.dur) > calBlocks[_bi].start){ _hit = calBlocks[_bi]; break; }
+      }
+      if(!_hit) break;
+      _st = _hit.end + 15;
+    }
+    if(_st + tc.dur <= DAY_END) place(tc, _st);
+  }
 
   // 残りの自由案件を最後まで詰める
   if(cur < FREE_START) cur = FREE_START;
   fillFree(FREE_DAY_END);
+
+  // ── 今日納期・未配置のfreePool案件を強制配置（順序不自然でも当日配置を優先）──
+  freePool.filter(function(c){
+    return !placed[c.id] && !placed[baseId(c.id)] && isDeadlineToday(c);
+  }).forEach(function(c){
+    _placeASAP(c);
+  });
 
   // ── 区分③夜間（wStart >= 20:00）fillFree後に処理 ──
   timedAvail.filter(function(tc){
