@@ -323,7 +323,7 @@ async function genSum(bid){
     const hl=b.highlights.map((h,i)=>`${i+1}. ${h.text}${h.note?`（メモ: ${h.note}）`:''}`).join('\n');
     const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
       headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:800,
+      body:JSON.stringify({model:'claude-haiku-4-5',max_tokens:800,
         messages:[{role:'user',content:`書籍「${b.title}」（著者: ${b.author}）のハイライトをもとに、核心メッセージと実生活・ビジネスへの示唆を200〜300字でまとめてください。箇条書きでなく流れのある文章で。\n\nハイライト:\n${hl}`}]})});
     const d=await res.json();if(d.error)throw new Error(d.error.message);
     b.summary=d.content?.find(c=>c.type==='text')?.text||'';S.selected=b;saveBooks();toast('要約を生成しました');
