@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="本棚">
+<meta name="theme-color" content="#1e3560">
+<title>MY BOOKSHELF — 読書の記録</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@300;400;600;700&family=Noto+Sans+JP:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bg:#f5f2ec;--surface:#fff;--surface2:#faf8f4;
+  --navy:#1e3560;--navy2:#2d4a7a;--navy3:#3a5a8a;
+  --amber:#c8963c;--amber2:#e8b04a;
+  --text:#1a1a2a;--text2:#555566;--text3:#999aaa;
+  --border:#e0d8cc;--border2:#ccc4b4;
+  --red:#c06060;--green:#4a7a5a;
+  --safe-top:env(safe-area-inset-top,0px);
+  --safe-bottom:env(safe-area-inset-bottom,0px);
+  --radius:8px;--radius2:12px;
+}
+body{background:var(--bg);color:var(--text);font-family:'Noto Sans JP','Hiragino Kaku Gothic ProN','Yu Gothic',Meiryo,sans-serif;min-height:100vh;padding-bottom:var(--safe-bottom);}
+#header{background:var(--navy);color:#fff;padding:calc(0.9rem + var(--safe-top)) 1.5rem 0.9rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;position:sticky;top:0;z-index:100;box-shadow:0 2px 16px rgba(30,53,96,0.35);}
+.hdr-brand{cursor:pointer;}
+.hdr-title{font-family:'Noto Serif JP',serif;font-size:1.1rem;font-weight:700;letter-spacing:0.1em;}
+.hdr-sub{font-size:0.6rem;opacity:.6;letter-spacing:0.18em;margin-top:2px;}
+.hdr-nav{display:flex;gap:5px;align-items:center;flex-wrap:wrap;}
+.hdr-btn{background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.22);color:#fff;padding:5px 11px;border-radius:5px;cursor:pointer;font-size:0.78rem;font-family:inherit;}
+.hdr-btn:hover,.hdr-btn.active{background:rgba(255,255,255,0.22);}
+.hdr-add{background:var(--amber);border:none;color:#fff;padding:5px 13px;border-radius:5px;cursor:pointer;font-size:0.8rem;font-weight:600;font-family:inherit;}
+.hdr-add:hover{background:var(--amber2);}
+#main{max-width:900px;margin:0 auto;padding:1.5rem 1rem 4rem;}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius2);padding:1.25rem;margin-bottom:1rem;}
+.card-sm{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1rem;margin-bottom:0.75rem;}
+.btn{background:var(--surface);border:1px solid var(--border2);color:var(--text2);padding:6px 13px;border-radius:var(--radius);cursor:pointer;font-size:0.8rem;font-family:inherit;transition:background 0.12s;}
+.btn:hover{background:var(--surface2);}
+.btn-navy{background:var(--navy2);color:#fff;border:none;}
+.btn-navy:hover{background:var(--navy3);}
+.btn-amber{background:var(--amber);color:#fff;border:none;}
+.btn-amber:hover{background:var(--amber2);}
+.btn-red{border-color:#e0a0a0;color:var(--red);}
+.btn-red:hover{background:#fff5f5;}
+.btn-sm{font-size:0.72rem;padding:3px 9px;}
+.field-label{display:block;font-size:0.72rem;font-weight:500;color:var(--text2);margin-bottom:4px;letter-spacing:0.04em;}
+input[type=text],input[type=password],input[type=date],textarea,select{width:100%;padding:8px 10px;border:1px solid var(--border2);border-radius:var(--radius);background:var(--surface2);font-family:inherit;font-size:0.85rem;color:var(--text);outline:none;margin-bottom:0.85rem;transition:border-color 0.12s;}
+input[type=text]:focus,input[type=password]:focus,input[type=date]:focus,textarea:focus,select:focus{border-color:var(--navy2);box-shadow:0 0 0 3px rgba(45,74,122,0.1);}
+input[type=color]{padding:2px 4px;height:34px;cursor:pointer;border:1px solid var(--border2);border-radius:var(--radius);background:var(--surface2);width:60px;margin-bottom:0;}
+textarea{resize:vertical;min-height:80px;}
+.stars span{font-size:14px;color:#ddd;cursor:default;user-select:none;}
+.stars span.lit{color:var(--amber);}
+.stars.clickable span{cursor:pointer;}
+/* Status */
+.st-badge{display:inline-flex;align-items:center;gap:3px;font-size:9px;padding:2px 7px;border-radius:10px;font-weight:500;}
+.st-unread{background:#fff3e0;color:#b56a00;}
+.st-reading{background:#e8f5e9;color:#2e7d32;}
+.st-done{background:#e8edf5;color:#1e3560;}
+/* Filter */
+.filter-row{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:0.7rem;}
+.f-btn{padding:4px 11px;border-radius:20px;border:1px solid var(--border2);background:transparent;cursor:pointer;font-size:0.73rem;font-family:inherit;color:var(--text2);}
+.f-btn:hover{border-color:var(--navy2);color:var(--navy2);}
+.f-btn.on{background:var(--navy2);color:#fff;border-color:transparent;}
+.yr-tabs{display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-bottom:0.6rem;}
+.yr-btn{padding:3px 10px;border-radius:20px;border:1px solid var(--border2);background:transparent;cursor:pointer;font-size:0.73rem;font-family:inherit;color:var(--text2);}
+.yr-btn:hover{border-color:var(--navy2);}
+.yr-btn.on{background:var(--navy2);color:#fff;border-color:transparent;}
+/* Book grid */
+.book-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(142px,1fr));gap:1rem;}
+.book-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius2);overflow:hidden;cursor:pointer;transition:transform 0.15s,box-shadow 0.15s;}
+.book-card:hover{transform:translateY(-4px);box-shadow:0 12px 32px rgba(30,53,96,0.14);}
+.book-cover{height:100px;display:flex;flex-direction:column;justify-content:space-between;padding:7px;}
+.g-badge{font-size:9px;padding:2px 6px;border-radius:3px;background:rgba(0,0,0,0.22);color:rgba(255,255,255,0.92);align-self:flex-start;}
+.cover-icons{font-size:9px;color:rgba(255,255,255,0.82);display:flex;gap:4px;}
+.book-info{padding:7px 9px 9px;}
+.book-title{font-size:0.78rem;font-weight:500;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-bottom:2px;color:var(--text);}
+.book-author{font-size:0.68rem;color:var(--text3);overflow:hidden;white-space:nowrap;text-overflow:ellipsis;margin-bottom:3px;}
+/* Detail */
+.tab-bar{display:flex;border-bottom:1px solid var(--border);margin-bottom:1rem;}
+.tab-btn{padding:7px 13px;border:none;background:none;cursor:pointer;font-size:0.78rem;font-family:inherit;color:var(--text3);border-bottom:2px solid transparent;margin-bottom:-1px;}
+.tab-btn:hover{color:var(--text2);}
+.tab-btn.on{color:var(--navy2);border-bottom-color:var(--navy2);font-weight:500;}
+.hl-card{border-left:3px solid var(--amber);border-radius:0 var(--radius) var(--radius) 0;}
+.act-check{width:20px;height:20px;min-width:20px;border-radius:50%;border:1.5px solid var(--border2);background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;margin-top:1px;flex-shrink:0;transition:all 0.12s;}
+.act-check.done{background:var(--text3);border-color:var(--text3);}
+.act-check.done::after{content:'✓';color:#fff;font-size:10px;font-weight:600;}
+/* KPI */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(105px,1fr));gap:9px;margin-bottom:1rem;}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:0.85rem;}
+.kpi-label{font-size:0.68rem;color:var(--text3);margin-bottom:3px;}
+.kpi-value{font-size:1.4rem;font-weight:600;}
+#toast{position:fixed;bottom:calc(1.5rem + var(--safe-bottom));left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;padding:8px 20px;border-radius:24px;font-size:0.8rem;pointer-events:none;opacity:0;transition:opacity 0.2s;white-space:nowrap;z-index:999;}
+#toast.show{opacity:1;}
+.empty{text-align:center;padding:3.5rem 0;color:var(--text3);}
+.confirm-box{background:#fff8f8;border:1px solid #f0c0c0;border-radius:var(--radius);padding:1rem;margin-bottom:0.75rem;display:none;}
+.bar-chart{display:flex;gap:4px;align-items:flex-end;height:90px;}
+.bar-wrap{flex:1;display:flex;flex-direction:column;align-items:center;height:100%;justify-content:flex-end;gap:2px;}
+.bar{width:100%;border-radius:2px 2px 0 0;background:var(--border);}
+.bar.filled{background:var(--navy2);}
+.bar-lbl{font-size:8px;color:var(--text3);}
+.gb-wrap{margin-bottom:8px;}
+.gb-hdr{display:flex;justify-content:space-between;font-size:0.78rem;margin-bottom:3px;}
+.gb-bg{height:5px;background:var(--border);border-radius:3px;}
+.gb-fill{height:5px;border-radius:3px;}
+.sum-text{font-size:0.88rem;line-height:2;color:var(--text);white-space:pre-wrap;min-height:60px;}
+.sum-empty{color:var(--text3);font-style:italic;font-size:0.85rem;}
+.apikey-dot{width:7px;height:7px;border-radius:50%;background:var(--green);display:inline-block;}
+/* Genre color grid */
+.gc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:7px;}
+.gc-item{display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface2);}
+.gc-swatch{width:22px;height:22px;border-radius:4px;flex-shrink:0;}
+.gc-name{font-size:0.75rem;flex:1;color:var(--text);}
+/* Status options in form */
+.status-opts{display:flex;gap:6px;margin-bottom:0.85rem;flex-wrap:wrap;}
+.st-opt{padding:5px 12px;border-radius:20px;border:1px solid var(--border2);cursor:pointer;font-size:0.75rem;font-family:inherit;background:transparent;color:var(--text2);}
+.st-opt.sel-unread{background:#fff3e0;color:#b56a00;border-color:#f0c87a;}
+.st-opt.sel-reading{background:#e8f5e9;color:#2e7d32;border-color:#90c896;}
+.st-opt.sel-done{background:#e8edf5;color:#1e3560;border-color:#8da8d0;}
+::-webkit-scrollbar{width:4px;}
+::-webkit-scrollbar-track{background:var(--bg);}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
+@media(max-width:480px){
+  #main{padding:1rem 0.75rem 5rem;}
+  .book-grid{grid-template-columns:repeat(auto-fill,minmax(126px,1fr));}
+  .kpi-grid{grid-template-columns:repeat(2,1fr);}
+}
+</style>
+</head>
+<body>
+<div id="header">
+  <div class="hdr-brand" onclick="nav('shelf')">
+    <div class="hdr-title">MY BOOKSHELF</div>
+    <div class="hdr-sub">読書の記録</div>
+  </div>
+  <div class="hdr-nav">
+    <button class="hdr-btn" id="nav-shelf" onclick="nav('shelf')">本棚</button>
+    <button class="hdr-btn" id="nav-stats" onclick="nav('stats')">統計</button>
+    <button class="hdr-btn" id="nav-settings" onclick="nav('settings')">設定</button>
+    <button class="hdr-add" onclick="startAdd()">＋ 追加</button>
+  </div>
+</div>
+<div id="main"></div>
+<div id="toast"></div>
+<script>
+const GENRES=['ビジネス','自己啓発','小説','歴史','サイエンス','デザイン','マーケティング','テクノロジー','その他'];
+const DEF_COLORS={'ビジネス':'#1e3560','自己啓発':'#3a6b5a','小説':'#5a3e7a','歴史':'#7a4a3a','サイエンス':'#2a5a6a','デザイン':'#6a3a5a','マーケティング':'#4a6a3a','テクノロジー':'#3a4a6a','その他':'#5a4a2a'};
+const ST={unread:{l:'積読',i:'📚',cl:'st-unread'},reading:{l:'読書中',i:'📖',cl:'st-reading'},done:{l:'読了',i:'✅',cl:'st-done'}};
+
+let S={books:[],view:'shelf',selected:null,editing:null,yearFilter:new Date().getFullYear(),sfilt:'all',aiLoading:false,dtab:'hl',fRating:0,fStatus:'done',fColor:'#1e3560',showDel:false};
+
+const genId=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+
+function toast(msg,ms=2500){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),ms);}
+
+function loadBooks(){try{const d=localStorage.getItem('mybooks_v2');if(d)S.books=JSON.parse(d);}catch{}}
+function saveBooks(){try{localStorage.setItem('mybooks_v2',JSON.stringify(S.books));}catch{toast('保存に失敗しました');}}
+function getApiKey(){return localStorage.getItem('anthropic_api_key')||'';}
+function saveApiKey(k){localStorage.setItem('anthropic_api_key',k);}
+function getGC(){try{const d=localStorage.getItem('genre_colors');return d?JSON.parse(d):{};}catch{return {};}}
+function saveGC(c){localStorage.setItem('genre_colors',JSON.stringify(c));}
+function colForGenre(g){const c=getGC();return c[g]||DEF_COLORS[g]||'#2d4a7a';}
+
+function nav(v){S.view=v;S.showDel=false;['shelf','stats','settings'].forEach(n=>{const el=document.getElementById('nav-'+n);if(el)el.className='hdr-btn'+(v===n?' active':'');});render();}
+function startAdd(){S.editing=null;S.fRating=0;S.fStatus='done';S.fColor=colForGenre('ビジネス');S.view='add';render();}
+function startEdit(){S.editing=S.selected;S.fRating=S.selected?.rating||0;S.fStatus=S.selected?.status||'done';S.fColor=S.selected?.coverColor||'#1e3560';S.view='add';render();}
+function openBook(id){S.selected=S.books.find(b=>b.id===id);S.dtab='hl';S.showDel=false;S.view='detail';render();}
+
+function render(){
+  const el=document.getElementById('main');
+  if(S.view==='shelf')el.innerHTML=vShelf();
+  else if(S.view==='detail')el.innerHTML=vDetail();
+  else if(S.view==='add')el.innerHTML=vForm();
+  else if(S.view==='stats')el.innerHTML=vStats();
+  else if(S.view==='settings')el.innerHTML=vSettings();
+}
+
+function starsHtml(n,click=false){
+  return`<div class="stars${click?' clickable':''}">${[1,2,3,4,5].map(i=>`<span class="${i<=n?'lit':''}" ${click?`onclick="setRating(${i})"`:''} style="font-size:${click?16:12}px;">★</span>`).join('')}</div>`;
+}
+function stBadge(s){const st=ST[s]||ST.done;return`<span class="st-badge ${st.cl}">${st.l}</span>`;}
+
+// SHELF
+function vShelf(){
+  const years=[...new Set(S.books.map(b=>new Date(b.endDate||b.createdAt).getFullYear()))].sort((a,b)=>b-a);
+  if(!years.includes(S.yearFilter))years.unshift(S.yearFilter);
+  const yb=S.books.filter(b=>new Date(b.endDate||b.createdAt).getFullYear()===S.yearFilter);
+  const cnt=k=>k==='all'?yb.length:yb.filter(b=>(b.status||'done')===k).length;
+  let filtered=S.sfilt==='all'?yb:yb.filter(b=>(b.status||'done')===S.sfilt);
+
+  const yrs=years.map(y=>`<button class="yr-btn ${y===S.yearFilter?'on':''}" onclick="setYear(${y})">${y}年</button>`).join('');
+  const ftabs=[{k:'all',l:`すべて（${cnt('all')}）`},{k:'reading',l:`📖 読書中（${cnt('reading')}）`},{k:'unread',l:`📚 積読（${cnt('unread')}）`},{k:'done',l:`✅ 読了（${cnt('done')}）`}];
+  const fhtml=ftabs.map(f=>`<button class="f-btn ${f.k===S.sfilt?'on':''}" onclick="setSF('${f.k}')">${f.l}</button>`).join('');
+
+  if(!filtered.length)return`<div class="yr-tabs">${yrs}</div><div class="filter-row">${fhtml}</div><div class="empty"><div style="font-size:2.2rem;margin-bottom:0.75rem;">📚</div><div style="font-size:0.88rem;margin-bottom:1rem;">${S.sfilt==='all'?'まだ本が登録されていません':'該当する本がありません'}</div>${S.sfilt==='all'?`<button class="btn btn-navy" onclick="startAdd()">最初の1冊を登録する</button>`:''}</div>`;
+
+  return`<div class="yr-tabs">${yrs}<span style="font-size:0.72rem;color:var(--text3);margin-left:4px;">${filtered.length}冊</span></div>
+  <div class="filter-row">${fhtml}</div>
+  <div class="book-grid">${filtered.map(b=>`<div class="book-card" onclick="openBook('${b.id}')">
+    <div class="book-cover" style="background:${b.coverColor||colForGenre(b.genre)}">
+      <span class="g-badge">${esc(b.genre)}</span>
+      <div class="cover-icons">${b.highlights?.length?`💬${b.highlights.length} `:''}${b.actions?.some(a=>!a.done)?`⚡${b.actions.filter(a=>!a.done).length} `:''}${b.summary?'📝':''}</div>
+    </div>
+    <div class="book-info">
+      <div style="margin-bottom:3px;">${stBadge(b.status||'done')}</div>
+      <div class="book-title">${esc(b.title)}</div>
+      <div class="book-author">${esc(b.author||'')}</div>
+      ${starsHtml(b.rating||0)}
+    </div>
+  </div>`).join('')}</div>`;
+}
+function setYear(y){S.yearFilter=y;render();}
+function setSF(f){S.sfilt=f;render();}
+
+// DETAIL
+function vDetail(){
+  const b=S.books.find(x=>x.id===S.selected?.id)||S.selected;if(!b)return'';S.selected=b;
+  const tabs=[{k:'hl',l:`ハイライト（${b.highlights?.length||0}）`},{k:'act',l:`アクション（${b.actions?.length||0}）`},{k:'sum',l:'要約'}];
+  const qStatus=Object.entries(ST).map(([k,v])=>`<button onclick="quickSt('${b.id}','${k}')" style="padding:4px 10px;border-radius:20px;border:1px solid ${(b.status||'done')===k?'transparent':'var(--border2)'};background:${(b.status||'done')===k?'var(--navy2)':'transparent'};color:${(b.status||'done')===k?'#fff':'var(--text2)'};cursor:pointer;font-size:0.72rem;font-family:inherit;">${v.i} ${v.l}</button>`).join('');
+  let tc=S.dtab==='hl'?vHL(b):S.dtab==='act'?vAct(b):vSum(b);
+  return`<div style="margin-bottom:10px;"><button class="btn btn-sm" onclick="nav('shelf')">← 本棚へ戻る</button></div>
+  <div class="card" style="display:flex;gap:1.25rem;align-items:flex-start;flex-wrap:wrap;">
+    <div style="width:62px;min-width:62px;height:88px;background:${b.coverColor||colForGenre(b.genre)};border-radius:5px;box-shadow:3px 3px 12px rgba(0,0,0,0.18);flex-shrink:0;"></div>
+    <div style="flex:1;min-width:170px;">
+      <div style="font-family:'Noto Serif JP',serif;font-size:1.1rem;font-weight:600;margin-bottom:4px;line-height:1.4;">${esc(b.title)}</div>
+      <div style="font-size:0.82rem;color:var(--text2);margin-bottom:6px;">${esc(b.author||'')}</div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:5px;">
+        <span style="background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:2px 8px;font-size:0.68rem;color:var(--text2);">${esc(b.genre)}</span>
+        ${b.endDate?`<span style="font-size:0.7rem;color:var(--text3);">${b.endDate}</span>`:''}
+      </div>
+      ${starsHtml(b.rating||0)}
+      ${b.memo?`<div style="font-size:0.75rem;color:var(--text2);margin-top:6px;line-height:1.7;font-style:italic;">${esc(b.memo)}</div>`:''}
+      <div style="display:flex;gap:5px;margin-top:10px;flex-wrap:wrap;">${qStatus}</div>
+    </div>
+    <div style="display:flex;gap:5px;flex-shrink:0;">
+      <button class="btn btn-sm" onclick="startEdit()">編集</button>
+      <button class="btn btn-sm btn-red" onclick="S.showDel=true;render()">削除</button>
+    </div>
+  </div>
+  <div class="confirm-box" style="${S.showDel?'display:block':''}">
+    <div style="font-size:0.82rem;color:var(--text2);margin-bottom:8px;">「${esc(b.title)}」を削除しますか？取り消せません。</div>
+    <div style="display:flex;gap:6px;">
+      <button class="btn btn-sm btn-red" onclick="deleteBook('${b.id}')">削除する</button>
+      <button class="btn btn-sm" onclick="S.showDel=false;render()">キャンセル</button>
+    </div>
+  </div>
+  <div class="tab-bar">${tabs.map(t=>`<button class="tab-btn ${t.k===S.dtab?'on':''}" onclick="swTab('${t.k}')">${t.l}</button>`).join('')}</div>
+  <div id="tab-content">${tc}</div>`;
+}
+function swTab(t){S.dtab=t;render();}
+function deleteBook(id){S.books=S.books.filter(b=>b.id!==id);saveBooks();toast('削除しました');S.view='shelf';S.showDel=false;render();}
+function quickSt(bid,st){const b=S.books.find(x=>x.id===bid);if(!b)return;b.status=st;S.selected=b;saveBooks();render();toast(`${ST[st].l}に変更しました`);}
+
+// HL
+function vHL(b){
+  return`<div class="card-sm">
+    <div class="field-label" style="margin-bottom:6px;">ハイライトを追加</div>
+    <textarea id="hl-text" placeholder="心に響いた文章・気になった箇所…" style="min-height:76px;"></textarea>
+    <input type="text" id="hl-note" placeholder="メモ・感想（任意）"/>
+    <button class="btn btn-navy" onclick="addHL('${b.id}')">追加する</button>
+  </div>
+  ${!b.highlights?.length?'<div class="empty" style="padding:1.5rem 0;font-size:0.85rem;">ハイライトがありません</div>':''}
+  ${(b.highlights||[]).map(h=>`<div class="card-sm hl-card">
+    <div style="font-size:0.86rem;line-height:1.85;${h.note?'margin-bottom:5px;':''}color:var(--text);">${esc(h.text)}</div>
+    ${h.note?`<div style="font-size:0.72rem;color:var(--text3);font-style:italic;">📝 ${esc(h.note)}</div>`:''}
+    <div style="text-align:right;margin-top:5px;"><button class="btn btn-sm" style="color:var(--text3);" onclick="delHL('${b.id}','${h.id}')">削除</button></div>
+  </div>`).join('')}`;
+}
+function addHL(bid){const text=document.getElementById('hl-text')?.value.trim();if(!text)return;const note=document.getElementById('hl-note')?.value.trim();const b=S.books.find(x=>x.id===bid);if(!b)return;b.highlights=[...(b.highlights||[]),{id:genId(),text,note,at:new Date().toISOString()}];S.selected=b;saveBooks();S.dtab='hl';render();}
+function delHL(bid,hid){const b=S.books.find(x=>x.id===bid);if(!b)return;b.highlights=b.highlights.filter(h=>h.id!==hid);S.selected=b;saveBooks();render();}
+
+// Actions
+function vAct(b){
+  return`<div class="card-sm">
+    <div class="field-label" style="margin-bottom:6px;">アクションを追加</div>
+    <input type="text" id="act-text" placeholder="この本から実践すること…"/>
+    <label class="field-label">期限（任意）</label>
+    <input type="date" id="act-due"/>
+    <button class="btn btn-navy" onclick="addAct('${b.id}')">追加する</button>
+  </div>
+  ${!b.actions?.length?'<div class="empty" style="padding:1.5rem 0;font-size:0.85rem;">アクションアイテムがありません</div>':''}
+  ${(b.actions||[]).map(a=>`<div class="card-sm" style="display:flex;gap:10px;align-items:flex-start;border-left:3px solid ${a.done?'var(--border)':'var(--navy2)'};border-radius:0 var(--radius) var(--radius) 0;padding-left:12px;opacity:${a.done?0.62:1};">
+    <button class="act-check ${a.done?'done':''}" onclick="toggleAct('${b.id}','${a.id}')"></button>
+    <div style="flex:1;">
+      <div style="font-size:0.84rem;line-height:1.6;text-decoration:${a.done?'line-through':'none'};color:${a.done?'var(--text3)':'var(--text)'};">${esc(a.text)}</div>
+      ${a.due?`<div style="font-size:0.7rem;color:var(--text3);margin-top:2px;">📅 ${a.due}</div>`:''}
+    </div>
+    <button class="btn btn-sm" style="color:var(--text3);flex-shrink:0;" onclick="delAct('${b.id}','${a.id}')">削除</button>
+  </div>`).join('')}`;
+}
+function addAct(bid){const text=document.getElementById('act-text')?.value.trim();if(!text)return;const due=document.getElementById('act-due')?.value;const b=S.books.find(x=>x.id===bid);if(!b)return;b.actions=[...(b.actions||[]),{id:genId(),text,due,done:false,at:new Date().toISOString()}];S.selected=b;saveBooks();S.dtab='act';render();}
+function toggleAct(bid,aid){const b=S.books.find(x=>x.id===bid);if(!b)return;b.actions=b.actions.map(a=>a.id===aid?{...a,done:!a.done}:a);S.selected=b;saveBooks();render();}
+function delAct(bid,aid){const b=S.books.find(x=>x.id===bid);if(!b)return;b.actions=b.actions.filter(a=>a.id!==aid);S.selected=b;saveBooks();render();}
+
+// Summary
+function vSum(b){
+  const hasKey=!!getApiKey(),canGen=hasKey&&(b.highlights?.length||0)>0;
+  return`<div class="card-sm">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:6px;flex-wrap:wrap;">
+      <div class="field-label" style="margin:0;">この本のまとめ・示唆</div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap;">
+        ${canGen?`<button class="btn btn-amber btn-sm" onclick="genSum('${b.id}')" ${S.aiLoading?'disabled':''}>${S.aiLoading?'⏳ 生成中…':'✨ AIで生成'}</button>`:''}
+        ${!hasKey&&(b.highlights?.length||0)>0?`<span style="font-size:0.7rem;color:var(--text3);">設定でAPIキーを登録するとAI生成できます</span>`:''}
+        <button class="btn btn-sm" onclick="editSum()">手動編集</button>
+      </div>
+    </div>
+    <div id="sum-disp">${b.summary?`<div class="sum-text">${esc(b.summary)}</div>`:`<div class="sum-empty">まだ要約がありません。ハイライトを追加してAIで自動生成するか、手動で入力してください。</div>`}</div>
+    <div id="sum-edit" style="display:none;">
+      <textarea id="sum-text" style="min-height:160px;margin-top:6px;">${esc(b.summary||'')}</textarea>
+      <div style="display:flex;gap:6px;"><button class="btn btn-navy btn-sm" onclick="saveSum('${b.id}')">保存</button><button class="btn btn-sm" onclick="closeEditSum()">キャンセル</button></div>
+    </div>
+  </div>`;
+}
+function editSum(){document.getElementById('sum-disp').style.display='none';document.getElementById('sum-edit').style.display='block';}
+function closeEditSum(){document.getElementById('sum-disp').style.display='block';document.getElementById('sum-edit').style.display='none';}
+function saveSum(bid){const b=S.books.find(x=>x.id===bid);if(!b)return;b.summary=document.getElementById('sum-text')?.value||'';S.selected=b;saveBooks();toast('保存しました');S.dtab='sum';render();}
+async function genSum(bid){
+  const key=getApiKey();if(!key){toast('設定でAPIキーを登録してください');return;}
+  const b=S.books.find(x=>x.id===bid);if(!b||!b.highlights?.length){toast('ハイライトがありません');return;}
+  S.aiLoading=true;S.dtab='sum';render();
+  try{
+    const hl=b.highlights.map((h,i)=>`${i+1}. ${h.text}${h.note?`（メモ: ${h.note}）`:''}`).join('\n');
+    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:800,
+        messages:[{role:'user',content:`書籍「${b.title}」（著者: ${b.author}）のハイライトをもとに、核心メッセージと実生活・ビジネスへの示唆を200〜300字でまとめてください。箇条書きでなく流れのある文章で。\n\nハイライト:\n${hl}`}]})});
+    const d=await res.json();if(d.error)throw new Error(d.error.message);
+    b.summary=d.content?.find(c=>c.type==='text')?.text||'';S.selected=b;saveBooks();toast('要約を生成しました');
+  }catch(err){toast('生成に失敗：'+(err.message||'不明なエラー'));}
+  S.aiLoading=false;render();
+}
+
+// FORM
+function vForm(){
+  const b=S.editing;
+  const stOpts=Object.entries(ST).map(([k,v])=>`<button type="button" class="st-opt ${S.fStatus===k?`sel-${k}`:''}" onclick="setFS('${k}')">${v.i} ${v.l}</button>`).join('');
+  return`<div class="card" style="max-width:560px;">
+    <div style="font-family:'Noto Serif JP',serif;font-size:1rem;font-weight:600;margin-bottom:1rem;">${b?'本を編集':'本を追加'}</div>
+    <label class="field-label">タイトル *</label>
+    <input type="text" id="f-title" value="${esc(b?.title||'')}" placeholder="書籍タイトル"/>
+    <label class="field-label">著者</label>
+    <input type="text" id="f-author" value="${esc(b?.author||'')}" placeholder="著者名"/>
+    <label class="field-label">ジャンル</label>
+    <select id="f-genre" onchange="onGC()">${GENRES.map(g=>`<option value="${g}" ${(b?.genre||'ビジネス')===g?'selected':''}>${g}</option>`).join('')}</select>
+    <label class="field-label">ステータス</label>
+    <div class="status-opts">${stOpts}</div>
+    <label class="field-label">読了日</label>
+    <input type="date" id="f-date" value="${b?.endDate||new Date().toISOString().slice(0,10)}"/>
+    <label class="field-label">評価</label>
+    <div id="star-area" style="margin-bottom:0.85rem;">${starsHtml(S.fRating,true)}</div>
+    <label class="field-label">表紙カラー</label>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:0.85rem;">
+      <div id="cover-prev" style="width:44px;height:62px;border-radius:5px;box-shadow:2px 2px 8px rgba(0,0,0,0.18);background:${S.fColor};flex-shrink:0;"></div>
+      <div>
+        <input type="color" id="f-color" value="${S.fColor}" onchange="onCC(this.value)"/>
+        <div style="font-size:0.68rem;color:var(--text3);margin-top:4px;">ジャンル変更で自動切替</div>
+      </div>
+    </div>
+    <label class="field-label">ひとことメモ（任意）</label>
+    <textarea id="f-memo" placeholder="読んだきっかけ、全体的な印象など…" style="min-height:58px;">${esc(b?.memo||'')}</textarea>
+    <div style="display:flex;gap:8px;margin-top:4px;">
+      <button class="btn btn-navy" onclick="saveForm()">${b?'更新する':'登録する'}</button>
+      <button class="btn" onclick="cancelForm()">キャンセル</button>
+    </div>
+  </div>`;
+}
+function setRating(n){S.fRating=n;const el=document.getElementById('star-area');if(el)el.innerHTML=starsHtml(n,true);}
+function setFS(s){S.fStatus=s;render();}
+function onGC(){const g=document.getElementById('f-genre')?.value;if(!g)return;const c=colForGenre(g);S.fColor=c;const p=document.getElementById('cover-prev');if(p)p.style.background=c;const cp=document.getElementById('f-color');if(cp)cp.value=c;}
+function onCC(c){S.fColor=c;const p=document.getElementById('cover-prev');if(p)p.style.background=c;}
+function saveForm(){
+  const title=document.getElementById('f-title')?.value.trim();if(!title){toast('タイトルを入力してください');return;}
+  const color=document.getElementById('f-color')?.value||S.fColor;
+  const data={title,author:document.getElementById('f-author')?.value.trim()||'',genre:document.getElementById('f-genre')?.value||'ビジネス',status:S.fStatus,endDate:document.getElementById('f-date')?.value||'',rating:S.fRating,coverColor:color,memo:document.getElementById('f-memo')?.value.trim()||''};
+  if(S.editing){const idx=S.books.findIndex(b=>b.id===S.editing.id);S.books[idx]={...S.books[idx],...data};S.selected=S.books[idx];saveBooks();toast('更新しました');S.view='detail';}
+  else{S.books.unshift({id:genId(),highlights:[],actions:[],summary:'',...data,createdAt:new Date().toISOString()});saveBooks();toast('登録しました');S.view='shelf';}
+  render();
+}
+function cancelForm(){S.view=S.editing?'detail':'shelf';render();}
+
+// STATS
+function vStats(){
+  const cy=new Date().getFullYear();
+  const yb=S.books.filter(b=>new Date(b.endDate||b.createdAt).getFullYear()===cy);
+  const hlCount=yb.reduce((s,b)=>s+(b.highlights?.length||0),0);
+  const pending=S.books.reduce((s,b)=>s+(b.actions?.filter(a=>!a.done).length||0),0);
+  const rated=yb.filter(b=>b.rating);
+  const avgR=rated.length?(rated.reduce((s,b)=>s+b.rating,0)/rated.length).toFixed(1):'—';
+  const monthly=Array(12).fill(0);yb.forEach(b=>{monthly[new Date(b.endDate||b.createdAt).getMonth()]++;});
+  const maxM=Math.max(...monthly,1);
+  const gm={};yb.forEach(b=>{gm[b.genre]=(gm[b.genre]||0)+1;});
+  const ge=Object.entries(gm).sort((a,b)=>b[1]-a[1]);
+  const sc={reading:0,unread:0,done:0};yb.forEach(b=>{sc[b.status||'done']=(sc[b.status||'done']||0)+1;});
+  return`<div style="font-family:'Noto Serif JP',serif;font-size:1.05rem;font-weight:600;margin-bottom:1rem;">${cy}年の読書サマリー</div>
+  <div class="kpi-grid">
+    <div class="kpi"><div class="kpi-label">読了</div><div class="kpi-value" style="color:var(--navy2);">${sc.done}<span style="font-size:0.8rem;font-weight:400;">冊</span></div></div>
+    <div class="kpi"><div class="kpi-label">読書中</div><div class="kpi-value" style="color:var(--green);">${sc.reading}<span style="font-size:0.8rem;font-weight:400;">冊</span></div></div>
+    <div class="kpi"><div class="kpi-label">積読</div><div class="kpi-value" style="color:var(--amber);">${sc.unread}<span style="font-size:0.8rem;font-weight:400;">冊</span></div></div>
+    <div class="kpi"><div class="kpi-label">ハイライト</div><div class="kpi-value" style="color:var(--amber);">${hlCount}<span style="font-size:0.8rem;font-weight:400;">件</span></div></div>
+    <div class="kpi"><div class="kpi-label">未完了アクション</div><div class="kpi-value" style="color:${pending>0?'var(--red)':'var(--green)'};">${pending}<span style="font-size:0.8rem;font-weight:400;">件</span></div></div>
+    <div class="kpi"><div class="kpi-label">平均評価</div><div class="kpi-value">${avgR}${avgR!=='—'?'<span style="font-size:0.8rem;font-weight:400;">★</span>':''}</div></div>
+  </div>
+  <div class="card">
+    <div style="font-size:0.78rem;font-weight:500;color:var(--text2);margin-bottom:8px;">月別登録数</div>
+    <div class="bar-chart">${monthly.map((cnt,i)=>`<div class="bar-wrap"><div class="bar ${cnt>0?'filled':''}" style="height:${cnt>0?Math.max((cnt/maxM)*78,5):2}px;"></div><div class="bar-lbl">${i+1}</div></div>`).join('')}</div>
+  </div>
+  ${ge.length?`<div class="card"><div style="font-size:0.78rem;font-weight:500;color:var(--text2);margin-bottom:8px;">ジャンル内訳</div>${ge.map(([g,n])=>`<div class="gb-wrap"><div class="gb-hdr"><span>${g}</span><span style="color:var(--text3);">${n}冊</span></div><div class="gb-bg"><div class="gb-fill" style="width:${Math.round((n/yb.length)*100)}%;background:${colForGenre(g)};"></div></div></div>`).join('')}</div>`:''}
+  <div class="card" style="text-align:center;"><div class="kpi-label">累計登録冊数</div><div class="kpi-value" style="color:var(--navy2);font-size:1.8rem;">${S.books.length}<span style="font-size:0.9rem;font-weight:400;">冊</span></div></div>`;
+}
+
+// SETTINGS
+function vSettings(){
+  const hasKey=!!getApiKey();const gc=getGC();
+  return`<div style="max-width:560px;">
+    <div style="font-family:'Noto Serif JP',serif;font-size:1.05rem;font-weight:600;margin-bottom:1.25rem;">設定</div>
+    <div class="card">
+      <div style="font-size:0.88rem;font-weight:500;margin-bottom:6px;">Anthropic APIキー</div>
+      <div style="font-size:0.75rem;color:var(--text2);line-height:1.7;margin-bottom:1rem;">AI要約機能を使うために必要です。<br>取得先：<a href="https://console.anthropic.com/settings/keys" target="_blank" style="color:var(--navy2);">console.anthropic.com</a>（従量課金、要約1回≈0.3〜1円）<br><span style="font-size:0.7rem;color:var(--text3);">キーはこのブラウザのみに保存されます。</span></div>
+      ${hasKey?`<div style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:var(--text2);"><span class="apikey-dot"></span>登録済み：sk-ant-••••••••••••••••</div><div style="margin-top:8px;"><button class="btn btn-sm btn-red" onclick="localStorage.removeItem('anthropic_api_key');toast('削除しました');render()">キーを削除</button></div>`:`<label class="field-label">APIキーを入力</label><input type="password" id="api-key-input" placeholder="sk-ant-api03-..." style="font-family:monospace;"/><button class="btn btn-navy btn-sm" onclick="saveKey()">保存する</button>`}
+    </div>
+    <div class="card">
+      <div style="font-size:0.88rem;font-weight:500;margin-bottom:6px;">ジャンルカラー</div>
+      <div style="font-size:0.75rem;color:var(--text2);margin-bottom:10px;">各ジャンルの表紙カラー。本を追加するとき自動反映されます。</div>
+      <div class="gc-grid">${GENRES.map(g=>{const c=gc[g]||DEF_COLORS[g]||'#2d4a7a';return`<div class="gc-item"><div class="gc-swatch" style="background:${c};"></div><span class="gc-name">${g}</span><input type="color" value="${c}" onchange="updGC('${g}',this.value)" style="width:30px;height:22px;padding:1px 2px;margin:0;border-radius:4px;cursor:pointer;border:1px solid var(--border2);"/></div>`;}).join('')}</div>
+      <div style="margin-top:10px;"><button class="btn btn-sm" onclick="localStorage.removeItem('genre_colors');toast('デフォルトに戻しました');render()">デフォルトに戻す</button></div>
+    </div>
+    <div class="card">
+      <div style="font-size:0.88rem;font-weight:500;margin-bottom:6px;">データ管理</div>
+      <div style="font-size:0.75rem;color:var(--text2);margin-bottom:10px;">ブラウザのローカルストレージに保存。定期的にエクスポートしてください。</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-navy btn-sm" onclick="exportData()">📥 エクスポート</button>
+        <label class="btn btn-sm" style="cursor:pointer;">📤 インポート<input type="file" accept=".json" style="display:none;width:auto;margin:0;" onchange="importData(event)"/></label>
+      </div>
+      <div style="margin-top:8px;font-size:0.7rem;color:var(--text3);">登録冊数：${S.books.length}冊</div>
+    </div>
+    <div class="card" style="background:var(--navy);color:#fff;border:none;">
+      <div style="font-size:0.88rem;font-weight:500;margin-bottom:8px;">📱 iPhoneのホーム画面に追加する方法</div>
+      <div style="font-size:0.78rem;line-height:1.9;opacity:0.9;">
+        <div>① このページを <strong>Safari</strong> で開く</div>
+        <div>② 画面下の <strong>共有ボタン（□↑）</strong> をタップ</div>
+        <div>③ <strong>「ホーム画面に追加」</strong> を選択</div>
+        <div>④ 名前を確認して「追加」をタップ</div>
+        <div style="margin-top:8px;font-size:0.7rem;opacity:0.7;">※ HTTPS URL（GitHub Pagesなど）の場合はアプリのようにフルスクリーンで起動します。ローカルファイルでも問題なく動作します。</div>
+      </div>
+    </div>
+    <div class="card" style="background:var(--surface2);">
+      <div style="font-size:0.72rem;color:var(--text2);line-height:1.8;"><div style="font-weight:500;margin-bottom:3px;">MY BOOKSHELF v2</div>スタンドアロンHTMLアプリ。ブラウザで直接開くだけで動作します。AI要約のみAnthropicのAPIに接続します。</div>
+    </div>
+  </div>`;
+}
+function saveKey(){const k=document.getElementById('api-key-input')?.value.trim();if(!k.startsWith('sk-ant')){toast('正しいAPIキーを入力してください');return;}saveApiKey(k);toast('APIキーを保存しました');render();}
+function updGC(g,c){const gc=getGC();gc[g]=c;saveGC(gc);}
+
+function exportData(){
+  const data={books:S.books,exportedAt:new Date().toISOString(),version:2};
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;
+  a.download=`bookshelf_${new Date().toISOString().slice(0,10)}.json`;a.click();URL.revokeObjectURL(url);toast('エクスポートしました');
+}
+function importData(event){
+  const file=event.target.files?.[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=e=>{try{const data=JSON.parse(e.target.result);const imported=data.books||data;if(!Array.isArray(imported))throw new Error();const exist=new Set(S.books.map(b=>b.id));const nb=imported.filter(b=>!exist.has(b.id));S.books=[...nb,...S.books];saveBooks();toast(`${nb.length}冊をインポートしました`);render();}catch{toast('ファイルの形式が正しくありません');}};
+  reader.readAsText(file);
+}
+
+loadBooks();render();
+</script>
+</body>
+</html>
