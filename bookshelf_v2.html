@@ -54,6 +54,7 @@ textarea{resize:vertical;min-height:80px;}
 .stars.clickable span{cursor:pointer;}
 /* Status */
 .st-badge{display:inline-flex;align-items:center;gap:3px;font-size:9px;padding:2px 7px;border-radius:10px;font-weight:500;}
+.st-want{background:#f0e8ff;color:#6a3a9a;}
 .st-unread{background:#fff3e0;color:#b56a00;}
 .st-reading{background:#e8f5e9;color:#2e7d32;}
 .st-done{background:#e8edf5;color:#1e3560;}
@@ -114,6 +115,7 @@ textarea{resize:vertical;min-height:80px;}
 /* Status options in form */
 .status-opts{display:flex;gap:6px;margin-bottom:0.85rem;flex-wrap:wrap;}
 .st-opt{padding:5px 12px;border-radius:20px;border:1px solid var(--border2);cursor:pointer;font-size:0.75rem;font-family:inherit;background:transparent;color:var(--text2);}
+.st-opt.sel-want{background:#f0e8ff;color:#6a3a9a;border-color:#c9a0f0;}
 .st-opt.sel-unread{background:#fff3e0;color:#b56a00;border-color:#f0c87a;}
 .st-opt.sel-reading{background:#e8f5e9;color:#2e7d32;border-color:#90c896;}
 .st-opt.sel-done{background:#e8edf5;color:#1e3560;border-color:#8da8d0;}
@@ -145,7 +147,7 @@ textarea{resize:vertical;min-height:80px;}
 <script>
 const GENRES=['ビジネス','自己啓発','小説','歴史','サイエンス','デザイン','マーケティング','テクノロジー','その他'];
 const DEF_COLORS={'ビジネス':'#1e3560','自己啓発':'#3a6b5a','小説':'#5a3e7a','歴史':'#7a4a3a','サイエンス':'#2a5a6a','デザイン':'#6a3a5a','マーケティング':'#4a6a3a','テクノロジー':'#3a4a6a','その他':'#5a4a2a'};
-const ST={unread:{l:'積読',i:'📚',cl:'st-unread'},reading:{l:'読書中',i:'📖',cl:'st-reading'},done:{l:'読了',i:'✅',cl:'st-done'}};
+const ST={want:{l:'読みたい',i:'📋',cl:'st-want'},unread:{l:'積読',i:'📚',cl:'st-unread'},reading:{l:'読書中',i:'📖',cl:'st-reading'},done:{l:'読了',i:'✅',cl:'st-done'}};
 
 let S={books:[],view:'shelf',selected:null,editing:null,yearFilter:new Date().getFullYear(),sfilt:'all',aiLoading:false,dtab:'hl',fRating:0,fStatus:'done',fColor:'#1e3560',showDel:false};
 
