@@ -708,6 +708,80 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
   justify-content: center;
 }
 
+/* ========== 在庫認識結果 ========== */
+.recognition-heading {
+  font-family: 'Shippori Mincho', serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sumi);
+  margin: 16px 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+  letter-spacing: 0.1em;
+}
+.recognition-heading::before {
+  content: '';
+  display: inline-block;
+  width: 3px;
+  height: 12px;
+  background: var(--shu);
+  margin-right: 8px;
+  vertical-align: -1px;
+}
+.recognition-item {
+  background: white;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  box-shadow: var(--shadow-soft);
+}
+.recognition-item.unchecked {
+  opacity: 0.5;
+  background: var(--washi-dark);
+}
+.recognition-item-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.recognition-item-checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  flex-shrink: 0;
+  accent-color: var(--shu);
+}
+.recognition-item-category {
+  padding: 4px 8px;
+  font-size: 11px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--washi);
+  font-family: inherit;
+  color: var(--sumi-light);
+}
+.recognition-item-remove {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  color: var(--sumi-soft);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 2px 6px;
+}
+.recognition-item-fields {
+  display: grid;
+  grid-template-columns: 1fr 70px 60px;
+  gap: 6px;
+}
+.recognition-item-fields .form-input,
+.recognition-item-fields .form-select {
+  padding: 6px 8px;
+  font-size: 13px;
+}
+
 /* ========== ★評価 ========== */
 .rating-display {
   display: inline-flex;
@@ -995,7 +1069,7 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
     </div>
 
     <div class="card">
-      <p class="text-sm text-muted text-center">献立帖 v1.1 · Phase 1</p>
+      <p class="text-sm text-muted text-center">献立帖 v1.2 · Phase 1</p>
     </div>
   </div>
 
@@ -1105,35 +1179,90 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
       <div class="modal-title">食材を追加</div>
       <button class="modal-close" onclick="closeModal('modal-add-stock')">×</button>
     </div>
-    <div class="form-group">
-      <label class="form-label">カテゴリ</label>
-      <select class="form-select" id="stock-category-input">
-        <option value="野菜">野菜</option>
-        <option value="肉・魚">肉・魚</option>
-        <option value="卵・乳製品">卵・乳製品</option>
-        <option value="調味料">調味料</option>
-        <option value="乾物・麺">乾物・麺</option>
-        <option value="その他">その他</option>
-      </select>
+
+    <div class="tabs" style="margin-bottom: 16px;">
+      <button class="tab active" data-stock-mode="manual" onclick="switchStockMode('manual')">手入力</button>
+      <button class="tab" data-stock-mode="camera" onclick="switchStockMode('camera')">撮影</button>
+      <button class="tab" data-stock-mode="photo" onclick="switchStockMode('photo')">写真から</button>
     </div>
-    <div class="form-group">
-      <label class="form-label">食材名 <span class="required">*</span></label>
-      <input type="text" class="form-input" id="stock-name-input" list="stock-name-list" placeholder="例：鶏もも肉">
-      <datalist id="stock-name-list"></datalist>
-    </div>
-    <div class="form-group" style="display:grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-      <div>
-        <label class="form-label">数量</label>
-        <input type="number" class="form-input" id="stock-qty-input" value="1" step="0.1" min="0">
+
+    <!-- 撮影モード -->
+    <div id="stock-mode-camera" style="display:none;">
+      <div class="form-group">
+        <label class="form-label">ラベルを撮影</label>
+        <div class="image-upload-area">
+          <input type="file" id="stock-camera-input" accept="image/*" capture="environment" style="display:none" onchange="handleStockImage(event)">
+          <button class="btn btn-accent btn-full" onclick="document.getElementById('stock-camera-input').click()">
+            カメラを起動
+          </button>
+          <p class="text-sm text-muted text-center mt-3">
+            スーパーのラベルや商品パッケージを撮影<br>
+            複数商品を並べて1枚で撮影もOK
+          </p>
+        </div>
       </div>
-      <div>
-        <label class="form-label">単位</label>
-        <select class="form-select" id="stock-unit-input">
-          <option>個</option><option>g</option><option>kg</option><option>ml</option><option>L</option><option>本</option><option>枚</option><option>束</option><option>パック</option><option>缶</option>
+      <div id="stock-image-preview-camera" class="image-preview-list"></div>
+      <button class="btn btn-accent btn-full" id="stock-analyze-btn-camera" onclick="analyzeStockImage('camera')" style="display:none;">
+        <span id="stock-analyze-text-camera">読み取る</span>
+      </button>
+    </div>
+
+    <!-- 写真選択モード -->
+    <div id="stock-mode-photo" style="display:none;">
+      <div class="form-group">
+        <label class="form-label">写真を選ぶ</label>
+        <div class="image-upload-area">
+          <input type="file" id="stock-photo-input" accept="image/*" multiple style="display:none" onchange="handleStockImage(event)">
+          <button class="btn btn-ghost btn-full" onclick="document.getElementById('stock-photo-input').click()">
+            アルバムから選ぶ
+          </button>
+          <p class="text-sm text-muted text-center mt-3">
+            帰宅後にまとめて読み込む時に便利<br>
+            複数枚選択できます
+          </p>
+        </div>
+      </div>
+      <div id="stock-image-preview-photo" class="image-preview-list"></div>
+      <button class="btn btn-accent btn-full" id="stock-analyze-btn-photo" onclick="analyzeStockImage('photo')" style="display:none;">
+        <span id="stock-analyze-text-photo">読み取る</span>
+      </button>
+    </div>
+
+    <!-- 認識結果（共通） -->
+    <div id="stock-recognition-result" style="display:none;"></div>
+
+    <!-- 手入力 -->
+    <div id="stock-mode-manual">
+      <div class="form-group">
+        <label class="form-label">カテゴリ</label>
+        <select class="form-select" id="stock-category-input">
+          <option value="野菜">野菜</option>
+          <option value="肉・魚">肉・魚</option>
+          <option value="卵・乳製品">卵・乳製品</option>
+          <option value="調味料">調味料</option>
+          <option value="乾物・麺">乾物・麺</option>
+          <option value="その他">その他</option>
         </select>
       </div>
+      <div class="form-group">
+        <label class="form-label">食材名 <span class="required">*</span></label>
+        <input type="text" class="form-input" id="stock-name-input" list="stock-name-list" placeholder="例：鶏もも肉">
+        <datalist id="stock-name-list"></datalist>
+      </div>
+      <div class="form-group" style="display:grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+        <div>
+          <label class="form-label">数量</label>
+          <input type="number" class="form-input" id="stock-qty-input" value="1" step="0.1" min="0">
+        </div>
+        <div>
+          <label class="form-label">単位</label>
+          <select class="form-select" id="stock-unit-input">
+            <option>個</option><option>g</option><option>kg</option><option>ml</option><option>L</option><option>本</option><option>枚</option><option>束</option><option>パック</option><option>缶</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn btn-accent btn-full btn-lg" onclick="saveStock()">保存</button>
     </div>
-    <button class="btn btn-accent btn-full btn-lg" onclick="saveStock()">保存</button>
   </div>
 </div>
 
@@ -2042,7 +2171,281 @@ function openAddStockModal() {
   state.stock.forEach(s => allNames.add(s.name));
   dl.innerHTML = Array.from(allNames).map(n => `<option value="${escapeHtml(n)}">`).join('');
 
+  // 画像認識状態リセット
+  stockImages = [];
+  stockRecognized = [];
+  renderStockImagePreview();
+  document.getElementById('stock-recognition-result').style.display = 'none';
+  switchStockMode('manual');
+
   openModal('modal-add-stock');
+}
+
+function switchStockMode(mode) {
+  document.querySelectorAll('[data-stock-mode]').forEach(t => t.classList.toggle('active', t.dataset.stockMode === mode));
+  document.getElementById('stock-mode-manual').style.display = mode === 'manual' ? 'block' : 'none';
+  document.getElementById('stock-mode-camera').style.display = mode === 'camera' ? 'block' : 'none';
+  document.getElementById('stock-mode-photo').style.display = mode === 'photo' ? 'block' : 'none';
+}
+
+// ========== 在庫画像認識 ==========
+let stockImages = []; // {dataUrl, base64, mediaType, mode}
+let stockRecognized = []; // {checked, name, qty, unit, category}
+let stockCurrentMode = 'camera'; // 'camera' or 'photo'
+
+async function handleStockImage(event) {
+  const files = Array.from(event.target.files);
+  if (files.length === 0) return;
+
+  // モード判定（どのinputから来たか）
+  const isCamera = event.target.id === 'stock-camera-input';
+  stockCurrentMode = isCamera ? 'camera' : 'photo';
+
+  const MAX_IMAGES = 5;
+  const MAX_SIZE_MB = 5;
+  const remaining = MAX_IMAGES - stockImages.length;
+  if (remaining <= 0) {
+    showToast(`画像は最大${MAX_IMAGES}枚までです`);
+    return;
+  }
+
+  const toProcess = files.slice(0, remaining);
+  for (const file of toProcess) {
+    if (!file.type.startsWith('image/')) {
+      showToast('画像ファイルを選んでください');
+      continue;
+    }
+    if (file.size > MAX_SIZE_MB * 1024 * 1024) {
+      showToast(`${file.name} は${MAX_SIZE_MB}MBを超えています`);
+      continue;
+    }
+    try {
+      const resized = await resizeImage(file, 1568);
+      stockImages.push({
+        dataUrl: resized.dataUrl,
+        base64: resized.base64,
+        mediaType: resized.mediaType,
+      });
+    } catch (e) {
+      console.error(e);
+      showToast('画像の処理に失敗しました');
+    }
+  }
+  renderStockImagePreview();
+  event.target.value = '';
+}
+
+function renderStockImagePreview() {
+  // camera と photo の両方の表示先を更新
+  ['camera', 'photo'].forEach(mode => {
+    const listEl = document.getElementById(`stock-image-preview-${mode}`);
+    const btnEl = document.getElementById(`stock-analyze-btn-${mode}`);
+    if (!listEl || !btnEl) return;
+    if (stockImages.length === 0) {
+      listEl.innerHTML = '';
+      btnEl.style.display = 'none';
+      return;
+    }
+    listEl.innerHTML = stockImages.map((img, idx) => `
+      <div class="image-preview-item">
+        <img src="${img.dataUrl}" alt="">
+        <div class="image-preview-order">${idx + 1}</div>
+        <button class="image-preview-remove" onclick="removeStockImage(${idx})">×</button>
+      </div>
+    `).join('');
+    btnEl.style.display = 'block';
+  });
+}
+
+function removeStockImage(idx) {
+  stockImages.splice(idx, 1);
+  renderStockImagePreview();
+}
+
+async function analyzeStockImage(mode) {
+  if (stockImages.length === 0) { showToast('画像を選んでください'); return; }
+  if (!apiKey) { showToast('設定からAPIキーを登録してください'); return; }
+
+  const btn = document.getElementById(`stock-analyze-text-${mode}`);
+  btn.innerHTML = '<span class="loading"></span>読み取り中...';
+
+  try {
+    const prompt = `これらは食品のラベル・パッケージの画像です。1枚に複数の商品が写っている場合もあります。全ての商品を読み取って、JSON配列で返してください。
+
+読み取る情報:
+- 商品名（シンプルに：「鶏もも肉」「豚バラ切り落とし」「ほうれん草」「絹ごし豆腐」など。メーカー名や修飾語は除く）
+- 数量と単位（「200g」なら amount:200, unit:"g" ／「1袋」なら amount:1, unit:"袋" ／「2個入」なら amount:2, unit:"個"）
+- カテゴリ（以下のいずれかに分類）:
+  - 野菜
+  - 肉・魚
+  - 卵・乳製品
+  - 調味料
+  - 乾物・麺
+  - その他
+
+以下の形式で返してください（JSONのみ、マークダウン不要）:
+{
+  "items": [
+    {"name": "鶏もも肉", "amount": 250, "unit": "g", "category": "肉・魚"},
+    {"name": "ほうれん草", "amount": 1, "unit": "袋", "category": "野菜"}
+  ]
+}
+
+注意:
+- 商品名は標準的な食材名で（「国産若鶏もも肉」→「鶏もも肉」）
+- 読み取れない場合は {"items": []} を返す
+- 明らかに食品以外のもの（レシート、雑貨）は無視`;
+
+    const content = [];
+    stockImages.forEach(img => {
+      content.push({
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: img.mediaType,
+          data: img.base64,
+        },
+      });
+    });
+    content.push({ type: 'text', text: prompt });
+
+    const response = await callClaudeAPI({
+      model: 'claude-haiku-4-5-20251001',
+      messages: [{ role: 'user', content }],
+      max_tokens: 2000,
+    });
+
+    const text = extractText(response);
+    const data = parseJSON(text);
+
+    if (!data.items || data.items.length === 0) {
+      showToast('食材を読み取れませんでした。手入力をお試しください');
+      btn.textContent = '読み取る';
+      return;
+    }
+
+    // 結果を保存、全てチェック状態で初期化
+    stockRecognized = data.items.map(item => ({
+      checked: true,
+      name: item.name || '',
+      amount: item.amount || 1,
+      unit: item.unit || '個',
+      category: item.category || 'その他',
+    }));
+
+    renderStockRecognitionResult();
+    showToast(`${stockRecognized.length}品を読み取りました`);
+  } catch (e) {
+    console.error(e);
+    showToast('エラー: ' + e.message);
+  } finally {
+    btn.textContent = '読み取る';
+  }
+}
+
+function renderStockRecognitionResult() {
+  const resultEl = document.getElementById('stock-recognition-result');
+  if (stockRecognized.length === 0) {
+    resultEl.style.display = 'none';
+    return;
+  }
+
+  const categories = ['野菜', '肉・魚', '卵・乳製品', '調味料', '乾物・麺', 'その他'];
+  const units = ['g', 'kg', 'ml', 'L', '個', '本', '枚', '束', 'パック', '缶', '袋'];
+
+  resultEl.style.display = 'block';
+  resultEl.innerHTML = `
+    <div class="recognition-heading">認識結果（${stockRecognized.length}品）</div>
+    <p class="text-sm text-muted mb-3">内容を確認・修正してから登録してください</p>
+    ${stockRecognized.map((item, idx) => `
+      <div class="recognition-item ${item.checked ? '' : 'unchecked'}" id="recog-item-${idx}">
+        <div class="recognition-item-header">
+          <input type="checkbox" class="recognition-item-checkbox" ${item.checked ? 'checked' : ''} onchange="toggleRecognitionItem(${idx})">
+          <select class="recognition-item-category" onchange="updateRecognitionItem(${idx}, 'category', this.value)">
+            ${categories.map(c => `<option value="${c}" ${item.category === c ? 'selected' : ''}>${c}</option>`).join('')}
+          </select>
+          <button class="recognition-item-remove" onclick="removeRecognitionItem(${idx})">×</button>
+        </div>
+        <div class="recognition-item-fields">
+          <input type="text" class="form-input" value="${escapeHtml(item.name)}" placeholder="食材名" onchange="updateRecognitionItem(${idx}, 'name', this.value)">
+          <input type="number" class="form-input" value="${item.amount}" step="0.1" min="0" onchange="updateRecognitionItem(${idx}, 'amount', parseFloat(this.value) || 0)">
+          <select class="form-select" onchange="updateRecognitionItem(${idx}, 'unit', this.value)">
+            ${units.map(u => `<option value="${u}" ${item.unit === u ? 'selected' : ''}>${u}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+    `).join('')}
+    <button class="btn btn-accent btn-full btn-lg mt-3" onclick="saveRecognizedStock()">選択した品を登録</button>
+  `;
+}
+
+function toggleRecognitionItem(idx) {
+  stockRecognized[idx].checked = !stockRecognized[idx].checked;
+  const el = document.getElementById(`recog-item-${idx}`);
+  if (el) el.classList.toggle('unchecked', !stockRecognized[idx].checked);
+}
+
+function updateRecognitionItem(idx, field, value) {
+  if (stockRecognized[idx]) {
+    stockRecognized[idx][field] = value;
+  }
+}
+
+function removeRecognitionItem(idx) {
+  stockRecognized.splice(idx, 1);
+  renderStockRecognitionResult();
+}
+
+function saveRecognizedStock() {
+  const toAdd = stockRecognized.filter(item => item.checked && item.name.trim());
+  if (toAdd.length === 0) {
+    showToast('登録する食材がありません');
+    return;
+  }
+
+  let addedCount = 0;
+  let mergedCount = 0;
+
+  toAdd.forEach(item => {
+    const existing = state.stock.find(s => normalizeIngredientName(s.name) === normalizeIngredientName(item.name));
+    if (existing) {
+      if (existing.unit === item.unit) {
+        existing.qty += item.amount;
+        mergedCount++;
+      } else {
+        existing.qty = item.amount;
+        existing.unit = item.unit;
+        existing.category = item.category;
+        mergedCount++;
+      }
+    } else {
+      state.stock.push({
+        id: uuid(),
+        name: item.name.trim(),
+        category: item.category,
+        qty: item.amount,
+        unit: item.unit,
+        addedAt: new Date().toISOString(),
+      });
+      addedCount++;
+    }
+  });
+
+  saveState();
+
+  // 状態リセット
+  stockImages = [];
+  stockRecognized = [];
+  renderStockImagePreview();
+  document.getElementById('stock-recognition-result').style.display = 'none';
+
+  closeModal('modal-add-stock');
+  renderStock();
+
+  let msg = '';
+  if (addedCount > 0) msg += `${addedCount}品を追加`;
+  if (mergedCount > 0) msg += (msg ? '、' : '') + `${mergedCount}品を更新`;
+  showToast(msg);
 }
 
 function saveStock() {
