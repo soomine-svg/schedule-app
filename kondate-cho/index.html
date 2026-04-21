@@ -976,11 +976,22 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
     </div>
 
     <div class="card">
-      <div class="form-label">期間</div>
-      <div class="flex gap-2 mb-3">
-        <button class="btn btn-ghost btn-sm plan-period-btn active" data-days="3">3日</button>
-        <button class="btn btn-ghost btn-sm plan-period-btn" data-days="7">1週間</button>
+      <div class="form-label">種類</div>
+      <div class="flex gap-2 mb-3" style="flex-wrap: wrap;">
+        <button class="btn btn-ghost btn-sm plan-period-btn active" data-plan-type="dinner-3">3日（夕食）</button>
+        <button class="btn btn-ghost btn-sm plan-period-btn" data-plan-type="dinner-7">1週間（夕食）</button>
+        <button class="btn btn-ghost btn-sm plan-period-btn" data-plan-type="dinner-1">1日（夕食）</button>
+        <button class="btn btn-ghost btn-sm plan-period-btn" data-plan-type="bento">お弁当</button>
       </div>
+
+      <div id="bento-options" style="display:none; margin-bottom: 12px;">
+        <div class="form-label">お弁当のスタイル</div>
+        <div class="flex gap-2">
+          <button class="btn btn-ghost btn-sm bento-style-btn active" data-bento-style="morning">朝に作る（時短）</button>
+          <button class="btn btn-ghost btn-sm bento-style-btn" data-bento-style="prep">作り置き活用</button>
+        </div>
+      </div>
+
       <button class="btn btn-accent btn-full btn-lg" onclick="generateMealPlan()">献立を提案してもらう</button>
       <div class="text-sm text-muted mt-3 text-center">※ AI提案にはClaude APIキーが必要です</div>
     </div>
@@ -1069,7 +1080,7 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
     </div>
 
     <div class="card">
-      <p class="text-sm text-muted text-center">献立帖 v1.2 · Phase 1</p>
+      <p class="text-sm text-muted text-center">献立帖 v1.4 · Phase 1</p>
     </div>
   </div>
 
@@ -1358,15 +1369,17 @@ let state = {
   avoidIngredients: [],
   preferences: [],
   mealPlan: null,
+  recentAISuggestions: [], // 直近のAI提案（重複回避用、最大5件）
 };
 
 let apiKey = '';
 let currentAddMode = 'manual';
 let currentRecipeTag = 'all';
 let currentStockCategory = 'all';
+let tagsExpanded = false;
 let confirmCallback = null;
 let pendingAIRecipe = null;
-let planDays = 3;
+let planDays = 3; // (legacy, no longer used)
 
 // -------- 永続化 --------
 function saveState() {
@@ -1757,13 +1770,30 @@ function renderRecipes() {
   const tagFilterEl = document.getElementById('recipe-tag-filter');
   const query = document.getElementById('recipe-search').value.trim().toLowerCase();
 
-  // タグフィルタ生成
-  const allTags = new Set();
-  state.recipes.forEach(r => r.tags.forEach(t => allTags.add(t)));
-  const tagList = ['all', ...Array.from(allTags)];
-  tagFilterEl.innerHTML = tagList.map(t =>
-    `<button class="cat-tab ${currentRecipeTag === t ? 'active' : ''}" onclick="filterRecipesByTag('${escapeHtml(t)}')">${t === 'all' ? 'すべて' : escapeHtml(t)}</button>`
+  // タグの使用回数を集計
+  const tagCount = {};
+  state.recipes.forEach(r => r.tags.forEach(t => {
+    tagCount[t] = (tagCount[t] || 0) + 1;
+  }));
+  const sortedTags = Object.keys(tagCount).sort((a, b) => tagCount[b] - tagCount[a]);
+  const TOP_N = 5;
+  const topTags = sortedTags.slice(0, TOP_N);
+  const restTags = sortedTags.slice(TOP_N);
+
+  // 「もっと見る」が展開されているか、または現在選択中のタグがrest内にあれば全表示
+  const needsExpand = tagsExpanded || (restTags.includes(currentRecipeTag));
+  const visibleTags = needsExpand ? sortedTags : topTags;
+
+  let tagsHtml = `<button class="cat-tab ${currentRecipeTag === 'all' ? 'active' : ''}" onclick="filterRecipesByTag('all')">すべて</button>`;
+  tagsHtml += visibleTags.map(t =>
+    `<button class="cat-tab ${currentRecipeTag === t ? 'active' : ''}" onclick="filterRecipesByTag('${escapeHtml(t)}')">${escapeHtml(t)}</button>`
   ).join('');
+  if (restTags.length > 0) {
+    tagsHtml += needsExpand
+      ? `<button class="cat-tab" onclick="toggleTagsExpand()">少なく表示</button>`
+      : `<button class="cat-tab" onclick="toggleTagsExpand()">他${restTags.length}件 ＋</button>`;
+  }
+  tagFilterEl.innerHTML = tagsHtml;
 
   let recipes = state.recipes;
   if (currentRecipeTag !== 'all') recipes = recipes.filter(r => r.tags.includes(currentRecipeTag));
@@ -1828,6 +1858,11 @@ function renderStars(avg) {
 
 function filterRecipesByTag(tag) {
   currentRecipeTag = tag;
+  renderRecipes();
+}
+
+function toggleTagsExpand() {
+  tagsExpanded = !tagsExpanded;
   renderRecipes();
 }
 
@@ -2722,6 +2757,38 @@ function openAIRecipeModal() {
   openModal('modal-ai-recipe');
 }
 
+// 多様性のためのジャンルプール（好みジャンル＋新規ジャンル）
+const GENRE_POOL_NEW = [
+  'イタリアン', 'フレンチ', 'スペイン料理', 'ギリシャ料理',
+  'タイ料理', 'ベトナム料理', 'インド料理', 'ネパール料理',
+  '中華（四川）', '中華（広東）', '台湾料理',
+  '韓国料理', 'メキシコ料理', 'モロッコ料理', 'トルコ料理',
+  '北欧料理', '地中海料理',
+];
+
+// 味の方向性プール（ランダムで1つ付与）
+const FLAVOR_DIRECTIONS = [
+  'スパイスを効かせた', 'ハーブを使った', 'トマトベースの',
+  'クリーミーな', '酸味のある', 'さっぱりとした',
+  'ピリ辛の', 'ガーリック風味の', 'バター・オイルを活かした',
+  '発酵食品を使った', 'ナッツやシードを使った', 'レモン・柑橘を効かせた',
+];
+
+function pickRandomGenre() {
+  // 好みジャンル70% + 新規ジャンル30% でランダム選択
+  const userPrefs = state.preferences || [];
+  const rnd = Math.random();
+  if (userPrefs.length > 0 && rnd < 0.7) {
+    return userPrefs[Math.floor(Math.random() * userPrefs.length)];
+  } else {
+    return GENRE_POOL_NEW[Math.floor(Math.random() * GENRE_POOL_NEW.length)];
+  }
+}
+
+function pickRandomFlavor() {
+  return FLAVOR_DIRECTIONS[Math.floor(Math.random() * FLAVOR_DIRECTIONS.length)];
+}
+
 async function generateAIRecipe() {
   const prompt = document.getElementById('ai-recipe-prompt').value.trim();
   if (!prompt) { showToast('条件を入力してください'); return; }
@@ -2739,14 +2806,25 @@ async function generateAIRecipe() {
       ? `\n避けたい食材: ${state.avoidIngredients.join(', ')}`
       : '';
 
-    const prefInfo = state.preferences.length > 0
-      ? `\n好みのジャンル: ${state.preferences.join(', ')}`
+    // 多様性要素：ランダムなジャンルと味の方向性
+    const selectedGenre = pickRandomGenre();
+    const selectedFlavor = pickRandomFlavor();
+
+    // 直近の提案を除外（重複回避）
+    const recent = state.recentAISuggestions || [];
+    const exclusionInfo = recent.length > 0
+      ? `\n直近に提案した以下のレシピとは明確に異なるものを提案してください（同じ料理・類似の味付けは避ける）:\n${recent.map(r => `- ${r}`).join('\n')}`
       : '';
 
     const fullPrompt = `あなたは料理レシピの専門家です。以下の条件でレシピを1つ提案してください。
 
-条件: ${prompt}
-${stockInfo}${avoidInfo}${prefInfo}
+ユーザーの希望: ${prompt}
+${stockInfo}${avoidInfo}
+
+【重要】今回は「${selectedGenre}」の方向性で、「${selectedFlavor}」味付けのレシピを提案してください。ただし、ユーザーの希望が明確にこれと矛盾する場合（例：「和食」と明示されているのに「タイ料理」にする）は、ユーザーの希望を優先してください。
+${exclusionInfo}
+
+多様性を意識して、ありきたりな醤油ベースの甘辛系レシピではなく、上記のジャンル・味の方向性を活かした提案をしてください。
 
 JSON形式で返してください（マークダウン不要、JSONのみ）:
 {
@@ -2768,6 +2846,12 @@ JSON形式で返してください（マークダウン不要、JSONのみ）:
     const text = extractText(response);
     const data = parseJSON(text);
     pendingAIRecipe = data;
+
+    // 直近提案履歴に追加（最大5件保持）
+    if (data.name) {
+      state.recentAISuggestions = [data.name, ...(state.recentAISuggestions || [])].slice(0, 5);
+      saveState();
+    }
 
     // プレビュー表示
     document.getElementById('ai-recipe-result').innerHTML = `
@@ -2896,11 +2980,24 @@ JSON形式で返してください（マークダウン不要、JSONのみ）:
 // 献立プラン
 // ============================================================
 
+let currentPlanType = 'dinner-3'; // dinner-3, dinner-7, dinner-1, bento
+let currentBentoStyle = 'morning'; // morning, prep
+
 document.querySelectorAll('.plan-period-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.plan-period-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    planDays = parseInt(btn.dataset.days);
+    currentPlanType = btn.dataset.planType;
+    // お弁当選択時のみオプションを表示
+    document.getElementById('bento-options').style.display = currentPlanType === 'bento' ? 'block' : 'none';
+  });
+});
+
+document.querySelectorAll('.bento-style-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.bento-style-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentBentoStyle = btn.dataset.bentoStyle;
   });
 });
 
@@ -2917,7 +3014,7 @@ async function generateMealPlan() {
   try {
     const stockInfo = state.stock.filter(s => s.qty > 0).map(s => `${s.name} ${formatQty(s.qty)}${s.unit}`).join(', ');
     const recipeInfo = state.recipes.slice(0, 30).map(r =>
-      `- ${r.name}（${r.ingredients.map(i => i.name).join('・')}）`
+      `- ${r.name}（${r.ingredients.map(i => i.name).join('・')}）${r.tags && r.tags.length > 0 ? ` [${r.tags.join('/')}]` : ''}`
     ).join('\n');
 
     const avoidInfo = state.avoidIngredients.length > 0
@@ -2925,16 +3022,117 @@ async function generateMealPlan() {
     const prefInfo = state.preferences.length > 0
       ? `\n好みのジャンル: ${state.preferences.join(', ')}` : '';
 
-    const prompt = `${planDays}日分の夕食の献立を考えてください。既存のレシピを優先しつつ、足りなければ新規レシピも提案してOKです。
+    // 献立提案にも多様性指示を追加
+    const recent = state.recentAISuggestions || [];
+    const exclusionInfo = recent.length > 0
+      ? `\n直近に提案した以下のレシピとは重複しないようにしてください:\n${recent.map(r => `- ${r}`).join('\n')}` : '';
+    const diversityHint = '\n【多様性】醤油ベースの甘辛系に偏らず、さまざまなジャンル・味付けを組み合わせて提案してください。日によって違う国・違う味の方向性にすると飽きがきません。';
+
+    let prompt = '';
+
+    if (currentPlanType === 'bento') {
+      // お弁当プラン
+      const styleNote = currentBentoStyle === 'morning'
+        ? '朝に短時間で作れるレシピを優先（30分以内）。冷めても美味しい料理を選ぶこと。'
+        : '前日に下準備や作り置きができるレシピを中心に。当日朝は詰めるだけ・温めるだけで完成するように。';
+
+      prompt = `お弁当の献立を考えてください。主菜1品＋副菜2品の構成で。
+
+スタイル: ${styleNote}
 
 現在の在庫: ${stockInfo || 'なし'}
-${avoidInfo}${prefInfo}
+${avoidInfo}${prefInfo}${diversityHint}${exclusionInfo}
 
 登録済みレシピ（優先使用）:
 ${recipeInfo || 'なし'}
 
+注意:
+- 主菜は肉・魚・卵などタンパク質中心
+- 副菜は野菜中心、彩り（赤・黄・緑）を意識
+- お弁当に適した（冷めても美味しい・汁気が少ない）料理を選ぶ
+- 既存レシピを優先しつつ、足りなければ新規提案OK
+- 主菜と副菜の味付けがかぶらないようにすること（全部醤油系にしない等）
+
 JSON形式で返してください（マークダウン不要、JSONのみ）:
 {
+  "planType": "bento",
+  "title": "お弁当の献立",
+  "dishes": [
+    {
+      "category": "主菜",
+      "name": "メニュー名",
+      "isExisting": true/false,
+      "ingredients": [{"name": "食材", "amount": 数値, "unit": "単位"}],
+      "proteinPerServing": タンパク質g（推定）,
+      "note": "ポイント（任意）"
+    },
+    {
+      "category": "副菜",
+      "name": "メニュー名",
+      "isExisting": true/false,
+      "ingredients": [{"name": "食材", "amount": 数値, "unit": "単位"}],
+      "proteinPerServing": タンパク質g（推定）,
+      "note": "ポイント（任意）"
+    }
+  ],
+  "shoppingList": [
+    {"name": "食材", "amount": 数値, "unit": "単位"}
+  ],
+  "totalProtein": 全体のタンパク質g
+}`;
+    } else if (currentPlanType === 'dinner-1') {
+      // 1日分（夕食、主菜＋副菜）
+      prompt = `1日分の夕食の献立を考えてください。主菜1品＋副菜1〜2品の構成で。
+
+現在の在庫: ${stockInfo || 'なし'}
+${avoidInfo}${prefInfo}${diversityHint}${exclusionInfo}
+
+登録済みレシピ（優先使用）:
+${recipeInfo || 'なし'}
+
+注意:
+- 主菜は肉・魚・豆腐などタンパク質中心、ボリュームのあるもの
+- 副菜は野菜中心、汁物または和え物などの軽いもの
+- 主菜と副菜の味付けが被らないようにバランスを取る（全部醤油系にしない）
+- 既存レシピを優先しつつ、足りなければ新規提案OK
+
+JSON形式で返してください（マークダウン不要、JSONのみ）:
+{
+  "planType": "dinner-1",
+  "title": "今夜の献立",
+  "dishes": [
+    {
+      "category": "主菜",
+      "name": "メニュー名",
+      "isExisting": true/false,
+      "ingredients": [{"name": "食材", "amount": 数値, "unit": "単位"}],
+      "proteinPerServing": タンパク質g（推定）,
+      "note": "ポイント（任意）"
+    }
+  ],
+  "shoppingList": [
+    {"name": "食材", "amount": 数値, "unit": "単位"}
+  ],
+  "totalProtein": 全体のタンパク質g
+}`;
+    } else {
+      // 3日 or 1週間（複数日分の夕食）
+      const days = currentPlanType === 'dinner-7' ? 7 : 3;
+      prompt = `${days}日分の夕食の献立を考えてください。既存のレシピを優先しつつ、足りなければ新規レシピも提案してOKです。
+
+現在の在庫: ${stockInfo || 'なし'}
+${avoidInfo}${prefInfo}${diversityHint}${exclusionInfo}
+
+登録済みレシピ（優先使用）:
+${recipeInfo || 'なし'}
+
+注意:
+- 連日同じ味付けにならないよう、ジャンルを分散させる（例：1日目和食、2日目洋食、3日目中華）
+- 主要食材（肉・魚など）も連日同じにしないこと
+
+JSON形式で返してください（マークダウン不要、JSONのみ）:
+{
+  "planType": "dinner-multi",
   "days": [
     {
       "day": 1,
@@ -2952,6 +3150,7 @@ JSON形式で返してください（マークダウン不要、JSONのみ）:
   ],
   "totalProteinAvg": 1日あたりの平均タンパク質g
 }`;
+    }
 
     const response = await callClaudeAPI({
       model: 'claude-sonnet-4-5',
@@ -2962,6 +3161,15 @@ JSON形式で返してください（マークダウン不要、JSONのみ）:
     const text = extractText(response);
     const data = parseJSON(text);
     state.mealPlan = data;
+
+    // 直近提案履歴に料理名を追加
+    const names = [];
+    if (data.dishes) data.dishes.forEach(d => { if (d.name) names.push(d.name); });
+    if (data.days) data.days.forEach(d => { if (d.dinner && d.dinner.name) names.push(d.dinner.name); });
+    if (names.length > 0) {
+      state.recentAISuggestions = [...names, ...(state.recentAISuggestions || [])].slice(0, 10);
+    }
+
     saveState();
     renderMealPlan(data);
   } catch (e) {
@@ -2972,22 +3180,53 @@ JSON形式で返してください（マークダウン不要、JSONのみ）:
 
 function renderMealPlan(data) {
   const resultEl = document.getElementById('meal-plan-result');
-  if (!data || !data.days) { resultEl.innerHTML = ''; return; }
+  if (!data) { resultEl.innerHTML = ''; return; }
 
-  const daysHtml = data.days.map(d => `
-    <div class="card">
-      <div class="flex flex-between mb-2">
-        <div class="form-label">${d.day}日目</div>
-        ${d.dinner.isExisting ? '<span class="tag tag-matcha">既存</span>' : '<span class="tag tag-ai">新規</span>'}
+  let mainHtml = '';
+
+  // 単発プラン（お弁当 or 1日）
+  if (data.dishes && Array.isArray(data.dishes)) {
+    const titleHtml = data.title ? `<div class="recipe-detail-heading">${escapeHtml(data.title)}</div>` : '';
+    const dishesHtml = data.dishes.map((d, idx) => {
+      const categoryTag = d.category === '主菜'
+        ? '<span class="tag tag-shu">主菜</span>'
+        : d.category === '副菜'
+          ? '<span class="tag tag-matcha">副菜</span>'
+          : '<span class="tag">' + escapeHtml(d.category || '') + '</span>';
+      return `
+        <div class="card">
+          <div class="flex flex-between mb-2">
+            ${categoryTag}
+            ${d.isExisting ? '<span class="tag tag-matcha">既存</span>' : '<span class="tag tag-ai">新規</span>'}
+          </div>
+          <h3 style="font-family: 'Shippori Mincho', serif; font-size: 16px; margin-bottom: 8px;">${escapeHtml(d.name)}</h3>
+          <div class="text-sm text-muted mb-2">材料: ${(d.ingredients || []).map(i => escapeHtml(i.name)).join('、')}</div>
+          ${d.proteinPerServing ? `<div class="text-sm">タンパク質: 約${Math.round(d.proteinPerServing)}g/人</div>` : ''}
+          ${d.note ? `<div class="text-sm text-muted mt-3">${escapeHtml(d.note)}</div>` : ''}
+          ${!d.isExisting ? `<button class="btn btn-ghost btn-sm mt-3" onclick="savePlanDish(${idx})">このレシピを保存</button>` : ''}
+        </div>
+      `;
+    }).join('');
+    mainHtml = titleHtml + dishesHtml;
+  }
+  // 複数日プラン
+  else if (data.days && Array.isArray(data.days)) {
+    mainHtml = data.days.map(d => `
+      <div class="card">
+        <div class="flex flex-between mb-2">
+          <div class="form-label">${d.day}日目</div>
+          ${d.dinner.isExisting ? '<span class="tag tag-matcha">既存</span>' : '<span class="tag tag-ai">新規</span>'}
+        </div>
+        <h3 style="font-family: 'Shippori Mincho', serif; font-size: 16px; margin-bottom: 8px;">${escapeHtml(d.dinner.name)}</h3>
+        <div class="text-sm text-muted mb-2">材料: ${(d.dinner.ingredients || []).map(i => escapeHtml(i.name)).join('、')}</div>
+        ${d.dinner.proteinPerServing ? `<div class="text-sm">タンパク質: 約${Math.round(d.dinner.proteinPerServing)}g/人</div>` : ''}
+        ${d.dinner.note ? `<div class="text-sm text-muted mt-3">${escapeHtml(d.dinner.note)}</div>` : ''}
+        ${!d.dinner.isExisting ? `<button class="btn btn-ghost btn-sm mt-3" onclick="savePlanRecipe(${d.day - 1})">このレシピを保存</button>` : ''}
       </div>
-      <h3 style="font-family: 'Shippori Mincho', serif; font-size: 16px; margin-bottom: 8px;">${escapeHtml(d.dinner.name)}</h3>
-      <div class="text-sm text-muted mb-2">材料: ${(d.dinner.ingredients || []).map(i => escapeHtml(i.name)).join('、')}</div>
-      ${d.dinner.proteinPerServing ? `<div class="text-sm">タンパク質: 約${Math.round(d.dinner.proteinPerServing)}g/人</div>` : ''}
-      ${d.dinner.note ? `<div class="text-sm text-muted mt-3">${escapeHtml(d.dinner.note)}</div>` : ''}
-      ${!d.dinner.isExisting ? `<button class="btn btn-ghost btn-sm mt-3" onclick="savePlanRecipe(${d.day - 1})">このレシピを保存</button>` : ''}
-    </div>
-  `).join('');
+    `).join('');
+  }
 
+  // 買い物リスト
   const shoppingHtml = (data.shoppingList || []).length > 0 ? `
     <div class="card">
       <div class="recipe-detail-heading">買い物リスト</div>
@@ -3001,21 +3240,24 @@ function renderMealPlan(data) {
     </div>
   ` : '';
 
-  const summaryHtml = data.totalProteinAvg ? `
+  // タンパク質サマリー
+  const proteinValue = data.totalProteinAvg || data.totalProtein;
+  const proteinLabel = data.totalProteinAvg ? '1日平均' : '合計';
+  const summaryHtml = proteinValue ? `
     <div class="nutrition-box">
       <div>
-        <div class="nutrition-item-label">1日平均</div>
-        <div class="nutrition-item-value">${Math.round(data.totalProteinAvg)}<span class="nutrition-item-unit">g</span></div>
+        <div class="nutrition-item-label">${proteinLabel}</div>
+        <div class="nutrition-item-value">${Math.round(proteinValue)}<span class="nutrition-item-unit">g</span></div>
         <div class="text-sm text-muted" style="font-size:9px;">タンパク質</div>
       </div>
     </div>
   ` : '';
 
-  resultEl.innerHTML = summaryHtml + daysHtml + shoppingHtml;
+  resultEl.innerHTML = summaryHtml + mainHtml + shoppingHtml;
 }
 
 function savePlanRecipe(dayIdx) {
-  if (!state.mealPlan || !state.mealPlan.days[dayIdx]) return;
+  if (!state.mealPlan || !state.mealPlan.days || !state.mealPlan.days[dayIdx]) return;
   const d = state.mealPlan.days[dayIdx].dinner;
   const recipe = {
     id: uuid(),
@@ -3023,6 +3265,32 @@ function savePlanRecipe(dayIdx) {
     servings: 2,
     cookTime: null,
     tags: ['献立提案'],
+    ingredients: d.ingredients || [],
+    steps: d.note ? [d.note] : ['手順は後で追加してください'],
+    notes: '献立提案から保存',
+    createdAt: new Date().toISOString(),
+    proteinPerServing: d.proteinPerServing || null,
+  };
+  state.recipes.unshift(recipe);
+  saveState();
+  showToast('レシピを保存しました');
+  renderRecipes();
+}
+
+function savePlanDish(dishIdx) {
+  if (!state.mealPlan || !state.mealPlan.dishes || !state.mealPlan.dishes[dishIdx]) return;
+  const d = state.mealPlan.dishes[dishIdx];
+  const tags = ['献立提案'];
+  if (d.category === '主菜') tags.push('主菜');
+  else if (d.category === '副菜') tags.push('副菜');
+  if (state.mealPlan.planType === 'bento') tags.push('お弁当');
+
+  const recipe = {
+    id: uuid(),
+    name: d.name,
+    servings: 2,
+    cookTime: null,
+    tags: tags,
     ingredients: d.ingredients || [],
     steps: d.note ? [d.note] : ['手順は後で追加してください'],
     notes: '献立提案から保存',
