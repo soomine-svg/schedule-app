@@ -782,6 +782,53 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
   font-size: 13px;
 }
 
+/* ========== 消費期限 ========== */
+.expiry-quick-btns {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.expiry-btn {
+  padding: 6px 12px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--sumi-light);
+  transition: all 0.15s;
+}
+.expiry-btn:hover { background: var(--washi-dark); }
+.expiry-btn.active {
+  background: var(--shu);
+  color: white;
+  border-color: var(--shu);
+}
+.expiry-btn-clear {
+  color: var(--sumi-soft);
+}
+
+/* 消費期限バッジ */
+.expiry-badge {
+  display: inline-block;
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  font-weight: 600;
+  margin-left: 6px;
+}
+.expiry-today { background: rgba(193, 69, 69, 0.15); color: var(--shu); }
+.expiry-soon  { background: rgba(212, 165, 58, 0.18); color: #9a7a20; }
+.expiry-week  { background: rgba(90, 107, 66, 0.12); color: var(--matcha); }
+
+/* 在庫リストの消費期限フラグ */
+.stock-item-expiry {
+  font-size: 10px;
+  color: var(--sumi-soft);
+  margin-top: 2px;
+}
+
 /* ========== 常備調味料 ========== */
 .pantry-grid {
   display: grid;
@@ -1067,13 +1114,17 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
     <div class="card">
       <h3 style="font-size: 14px; margin-bottom: 4px;">家族構成</h3>
       <p class="text-sm text-muted mb-3">AI提案時に人数分の分量・年齢への配慮が反映されます（未入力なら従来通り）</p>
-      <div class="form-group" style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+      <div class="form-group" style="display:grid; grid-template-columns: 1fr 1fr; gap: 10px;">
         <div>
           <label class="form-label">大人</label>
           <input type="number" class="form-input" id="family-adults" value="0" min="0" max="20" onchange="saveFamily()">
         </div>
         <div>
-          <label class="form-label">小学生以上</label>
+          <label class="form-label">中高生（食べ盛り）</label>
+          <input type="number" class="form-input" id="family-teen" value="0" min="0" max="20" onchange="saveFamily()">
+        </div>
+        <div>
+          <label class="form-label">小学生</label>
           <input type="number" class="form-input" id="family-school" value="0" min="0" max="20" onchange="saveFamily()">
         </div>
         <div>
@@ -1151,7 +1202,7 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
     </div>
 
     <div class="card">
-      <p class="text-sm text-muted text-center">献立帖 v1.7 · Phase 1</p>
+      <p class="text-sm text-muted text-center">献立帖 v1.9 · Phase 1</p>
     </div>
   </div>
 
@@ -1343,6 +1394,17 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
           </select>
         </div>
       </div>
+      <div class="form-group">
+        <label class="form-label">消費期限（任意）</label>
+        <div class="expiry-quick-btns">
+          <button type="button" class="expiry-btn" onclick="setExpiryDays(0)">今日</button>
+          <button type="button" class="expiry-btn" onclick="setExpiryDays(1)">明日</button>
+          <button type="button" class="expiry-btn" onclick="setExpiryDays(3)">3日以内</button>
+          <button type="button" class="expiry-btn" onclick="setExpiryDays(7)">今週中</button>
+          <button type="button" class="expiry-btn expiry-btn-clear" onclick="setExpiryDays(null)">なし</button>
+        </div>
+        <input type="date" class="form-input" id="stock-expiry-input" style="margin-top: 6px;">
+      </div>
       <button class="btn btn-accent btn-full btn-lg" onclick="saveStock()">保存</button>
     </div>
   </div>
@@ -1442,7 +1504,7 @@ let state = {
   mealPlan: null,
   recentAISuggestions: [], // 直近のAI提案（重複回避用、最大5件）
   pantry: [], // 常備調味料リスト（AI提案時の参考）
-  family: { adults: 0, schoolKids: 0, preschoolers: 0, note: '' }, // 家族構成
+  family: { adults: 0, teens: 0, schoolKids: 0, preschoolers: 0, note: '' }, // 家族構成
 };
 
 let apiKey = '';
@@ -2575,6 +2637,50 @@ function saveRecognizedStock() {
   showToast(msg);
 }
 
+// 消費期限クイック設定
+function setExpiryDays(days) {
+  const input = document.getElementById('stock-expiry-input');
+  const btns = document.querySelectorAll('.expiry-btn');
+  btns.forEach(b => b.classList.remove('active'));
+
+  if (days === null) {
+    input.value = '';
+    document.querySelector('.expiry-btn-clear').classList.add('active');
+    return;
+  }
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  input.value = d.toISOString().split('T')[0];
+  // 対応するボタンをactiveに
+  const dayMap = { 0: '今日', 1: '明日', 3: '3日以内', 7: '今週中' };
+  btns.forEach(b => {
+    if (b.textContent === dayMap[days]) b.classList.add('active');
+  });
+}
+
+// 消費期限の残り日数を計算
+function getExpiryDaysLeft(expiryDate) {
+  if (!expiryDate) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const exp = new Date(expiryDate);
+  exp.setHours(0, 0, 0, 0);
+  return Math.floor((exp - today) / (1000 * 60 * 60 * 24));
+}
+
+// 消費期限バッジのHTMLを生成
+function getExpiryBadgeHtml(expiryDate) {
+  if (!expiryDate) return '';
+  const days = getExpiryDaysLeft(expiryDate);
+  if (days === null) return '';
+  if (days < 0) return `<span class="expiry-badge expiry-today">期限切れ</span>`;
+  if (days === 0) return `<span class="expiry-badge expiry-today">今日まで</span>`;
+  if (days === 1) return `<span class="expiry-badge expiry-today">明日まで</span>`;
+  if (days <= 3) return `<span class="expiry-badge expiry-soon">${days}日以内</span>`;
+  if (days <= 7) return `<span class="expiry-badge expiry-week">今週中</span>`;
+  return '';
+}
+
 function saveStock() {
   const name = document.getElementById('stock-name-input').value.trim();
   if (!name) { showToast('食材名を入力してください'); return; }
@@ -2582,17 +2688,20 @@ function saveStock() {
   const category = document.getElementById('stock-category-input').value;
   const qty = parseFloat(document.getElementById('stock-qty-input').value) || 0;
   const unit = document.getElementById('stock-unit-input').value;
+  const expiry = document.getElementById('stock-expiry-input').value || null;
 
   // 既存の同名食材があれば数量追加
   const existing = state.stock.find(s => normalizeIngredientName(s.name) === normalizeIngredientName(name));
   if (existing) {
     if (existing.unit === unit) {
       existing.qty += qty;
+      if (expiry) existing.expiry = expiry;
       showToast(`${name} を追加: ${existing.qty}${existing.unit}`);
     } else {
       existing.qty = qty;
       existing.unit = unit;
       existing.category = category;
+      if (expiry) existing.expiry = expiry;
       showToast(`${name} を更新しました`);
     }
   } else {
@@ -2602,6 +2711,7 @@ function saveStock() {
       category,
       qty,
       unit,
+      expiry,
       addedAt: new Date().toISOString(),
     });
     showToast('追加しました');
@@ -2624,6 +2734,14 @@ function renderStock() {
   let items = state.stock.filter(s => s.qty > 0);
   if (currentStockCategory !== 'all') items = items.filter(s => s.category === currentStockCategory);
 
+  // 消費期限が近い順（期限あり→なし の順）にソート
+  items.sort((a, b) => {
+    if (a.expiry && b.expiry) return new Date(a.expiry) - new Date(b.expiry);
+    if (a.expiry) return -1;
+    if (b.expiry) return 1;
+    return 0;
+  });
+
   if (items.length === 0) {
     listEl.innerHTML = `
       <div class="empty-state" style="grid-column: 1 / -1;">
@@ -2634,12 +2752,18 @@ function renderStock() {
     return;
   }
 
-  listEl.innerHTML = items.map(s => `
-    <div class="stock-item ${s.qty < 1 ? 'stock-item-low' : ''}" onclick="openEditStock('${s.id}')">
-      <span class="stock-item-name">${escapeHtml(s.name)}</span>
+  listEl.innerHTML = items.map(s => {
+    const badge = getExpiryBadgeHtml(s.expiry);
+    const daysLeft = getExpiryDaysLeft(s.expiry);
+    const urgentClass = daysLeft !== null && daysLeft <= 3 ? 'stock-item-low' : '';
+    return `
+    <div class="stock-item ${urgentClass}" onclick="openEditStock('${s.id}')">
+      <div style="flex:1; min-width:0;">
+        <div class="stock-item-name">${escapeHtml(s.name)}${badge}</div>
+      </div>
       <span class="stock-item-qty">${formatQty(s.qty)}${s.unit}</span>
     </div>
-  `).join('');
+  `}).join('');
 }
 
 function formatQty(q) {
@@ -2655,10 +2779,11 @@ function filterStockByCategory(cat) {
 function openEditStock(id) {
   const item = state.stock.find(s => s.id === id);
   if (!item) return;
+  const badge = getExpiryBadgeHtml(item.expiry);
 
   document.getElementById('edit-stock-content').innerHTML = `
     <div class="modal-header">
-      <div class="modal-title">${escapeHtml(item.name)}</div>
+      <div class="modal-title">${escapeHtml(item.name)}${badge}</div>
       <button class="modal-close" onclick="closeModal('modal-edit-stock')">×</button>
     </div>
     <div class="form-group">
@@ -2679,6 +2804,17 @@ function openEditStock(id) {
         </select>
       </div>
     </div>
+    <div class="form-group">
+      <label class="form-label">消費期限</label>
+      <div class="expiry-quick-btns" style="margin-bottom: 6px;">
+        <button type="button" class="expiry-btn" onclick="setEditExpiry(0)">今日</button>
+        <button type="button" class="expiry-btn" onclick="setEditExpiry(1)">明日</button>
+        <button type="button" class="expiry-btn" onclick="setEditExpiry(3)">3日以内</button>
+        <button type="button" class="expiry-btn" onclick="setEditExpiry(7)">今週中</button>
+        <button type="button" class="expiry-btn expiry-btn-clear" onclick="setEditExpiry(null)">なし</button>
+      </div>
+      <input type="date" class="form-input" id="edit-stock-expiry" value="${item.expiry || ''}">
+    </div>
     <div class="flex gap-2">
       <button class="btn btn-accent btn-full" onclick="updateStock('${item.id}')">更新</button>
       <button class="btn btn-danger btn-sm" onclick="deleteStock('${item.id}')">削除</button>
@@ -2687,12 +2823,22 @@ function openEditStock(id) {
   openModal('modal-edit-stock');
 }
 
+function setEditExpiry(days) {
+  const input = document.getElementById('edit-stock-expiry');
+  if (!input) return;
+  if (days === null) { input.value = ''; return; }
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  input.value = d.toISOString().split('T')[0];
+}
+
 function updateStock(id) {
   const item = state.stock.find(s => s.id === id);
   if (!item) return;
   item.category = document.getElementById('edit-stock-category').value;
   item.qty = parseFloat(document.getElementById('edit-stock-qty').value) || 0;
   item.unit = document.getElementById('edit-stock-unit').value;
+  item.expiry = document.getElementById('edit-stock-expiry').value || null;
   saveState();
   closeModal('modal-edit-stock');
   renderStock();
@@ -2894,6 +3040,16 @@ async function generateAIRecipe() {
       ? `\n現在の在庫:\n${state.stock.filter(s => s.qty > 0).map(s => `- ${s.name} ${formatQty(s.qty)}${s.unit}`).join('\n')}`
       : '';
 
+    // 消費期限間近の食材を抽出
+    const urgentStock = state.stock.filter(s => {
+      if (!s.expiry || s.qty <= 0) return false;
+      const days = getExpiryDaysLeft(s.expiry);
+      return days !== null && days <= 3;
+    });
+    const urgentInfo = urgentStock.length > 0
+      ? `\n【最優先】以下の食材は消費期限が迫っているため、必ずレシピに使ってください: ${urgentStock.map(s => `${s.name}（あと${Math.max(0, getExpiryDaysLeft(s.expiry))}日）`).join('、')}`
+      : '';
+
     const avoidInfo = state.avoidIngredients.length > 0
       ? `\n避けたい食材: ${state.avoidIngredients.join(', ')}`
       : '';
@@ -2917,23 +3073,21 @@ async function generateAIRecipe() {
     const fullPrompt = `あなたは料理レシピの専門家です。以下の条件でレシピを1つ提案してください。
 
 ユーザーの希望: ${prompt}
-${stockInfo}${avoidInfo}${pantryInfo}${familyInfo}
+${stockInfo}${urgentInfo}${avoidInfo}${pantryInfo}${familyInfo}
 
 【重要】今回は「${selectedGenre}」の方向性で、「${selectedFlavor}」味付けのレシピを提案してください。ただし、ユーザーの希望が明確にこれと矛盾する場合（例：「和食」と明示されているのに「タイ料理」にする）は、ユーザーの希望を優先してください。
 ${exclusionInfo}
 
 多様性を意識して、ありきたりな醤油ベースの甘辛系レシピではなく、上記のジャンル・味の方向性を活かした提案をしてください。
 
-【厳守】純粋なJSONのみを返してください。マークダウン記法・コードブロック（三連バッククォート）・コメント・前置きは一切不要。文字列内では改行コードを使わず、必要なら\\nで表現してください。出力形式:
-{
-  "name": "レシピ名",
-  "servings": 2,
-  "cookTime": 調理時間（分）,
-  "tags": ["タグ"],
-  "ingredients": [{"name": "食材", "amount": 数値, "unit": "単位"}],
-  "steps": ["手順1", "手順2"],
-  "notes": "ポイント"
-}`;
+【厳守事項】
+1. 純粋なJSONのみ返す。マークダウン・コードブロック・コメント・前置き禁止
+2. すべての値は実際の値（数値は数値、文字列はダブルクォート囲み）
+3. 文字列内では改行を使わない
+4. 末尾カンマ禁止
+
+出力例（この通りの構造で実際の値を入れて返すこと）:
+{"name":"鶏むね肉のレモンハーブ焼き","servings":2,"cookTime":20,"tags":["洋風","鶏肉","時短"],"ingredients":[{"name":"鶏むね肉","amount":300,"unit":"g"},{"name":"レモン","amount":1,"unit":"個"},{"name":"オリーブオイル","amount":2,"unit":"大さじ"}],"steps":["鶏むね肉に塩こしょうを振る","オリーブオイルで両面を焼く","レモン汁を絞ってハーブを散らす"],"notes":"レモンの酸味でさっぱり"}`;
 
     const response = await callClaudeAPI({
       model: 'claude-sonnet-4-5',
@@ -3111,6 +3265,17 @@ async function generateMealPlan() {
 
   try {
     const stockInfo = state.stock.filter(s => s.qty > 0).map(s => `${s.name} ${formatQty(s.qty)}${s.unit}`).join(', ');
+
+    // 消費期限間近の食材
+    const urgentStock = state.stock.filter(s => {
+      if (!s.expiry || s.qty <= 0) return false;
+      const days = getExpiryDaysLeft(s.expiry);
+      return days !== null && days <= 3;
+    });
+    const urgentInfo = urgentStock.length > 0
+      ? `\n【最優先】以下の食材は消費期限が迫っているため、献立に必ず組み込んでください: ${urgentStock.map(s => `${s.name}（あと${Math.max(0, getExpiryDaysLeft(s.expiry))}日）`).join('、')}`
+      : '';
+
     const recipeInfo = state.recipes.slice(0, 30).map(r =>
       `- ${r.name}（${r.ingredients.map(i => i.name).join('・')}）${r.tags && r.tags.length > 0 ? ` [${r.tags.join('/')}]` : ''}`
     ).join('\n');
@@ -3137,12 +3302,12 @@ async function generateMealPlan() {
         ? '朝に短時間で作れるレシピを優先（30分以内）。冷めても美味しい料理を選ぶこと。'
         : '前日に下準備や作り置きができるレシピを中心に。当日朝は詰めるだけ・温めるだけで完成するように。';
 
-      prompt = `お弁当の献立を考えてください。主菜1品＋副菜2品の構成で。
+      prompt = `お弁当の献立を考えてください。主菜1品＋副菜2品（合計3品）の構成で。
 
 スタイル: ${styleNote}
 
 現在の在庫: ${stockInfo || 'なし'}
-${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${diversityHint}${exclusionInfo}
+${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${diversityHint}${exclusionInfo}
 
 登録済みレシピ（優先使用）:
 ${recipeInfo || 'なし'}
@@ -3153,40 +3318,22 @@ ${recipeInfo || 'なし'}
 - お弁当に適した（冷めても美味しい・汁気が少ない）料理を選ぶ
 - 既存レシピを優先しつつ、足りなければ新規提案OK
 - 主菜と副菜の味付けがかぶらないようにすること（全部醤油系にしない等）
+- dishes配列には必ず3つの要素（主菜1＋副菜2）を含めること
 
-【厳守】純粋なJSONのみを返してください。マークダウン記法・コードブロック（三連バッククォート）・コメント・前置きは一切不要。文字列内では改行コードを使わず、必要なら\\nで表現してください。出力形式:
-{
-  "planType": "bento",
-  "title": "お弁当の献立",
-  "dishes": [
-    {
-      "category": "主菜",
-      "name": "メニュー名",
-      "isExisting": true/false,
-      "ingredients": [{"name": "食材", "amount": 数値, "unit": "単位"}],
-      "proteinPerServing": タンパク質g（推定）,
-      "note": "ポイント（任意）"
-    },
-    {
-      "category": "副菜",
-      "name": "メニュー名",
-      "isExisting": true/false,
-      "ingredients": [{"name": "食材", "amount": 数値, "unit": "単位"}],
-      "proteinPerServing": タンパク質g（推定）,
-      "note": "ポイント（任意）"
-    }
-  ],
-  "shoppingList": [
-    {"name": "食材", "amount": 数値, "unit": "単位"}
-  ],
-  "totalProtein": 全体のタンパク質g
-}`;
+【厳守事項】
+1. 純粋なJSONのみ返す。マークダウン・コードブロック・コメント・前置き禁止
+2. すべての値は実際の値（数値は数値、true/falseはtrue/false、文字列はダブルクォート囲み）
+3. 文字列内では改行を使わない
+4. 末尾カンマ禁止
+
+出力例（この通りの構造で実際の値を入れて返すこと）:
+{"planType":"bento","title":"今日のお弁当","dishes":[{"category":"主菜","name":"鶏むね肉のハーブソテー","isExisting":false,"ingredients":[{"name":"鶏むね肉","amount":200,"unit":"g"},{"name":"塩","amount":1,"unit":"小さじ"}],"proteinPerServing":25,"note":"前日から下味をつけておくと味が染みる"},{"category":"副菜","name":"ブロッコリーのペペロンチーノ","isExisting":false,"ingredients":[{"name":"ブロッコリー","amount":100,"unit":"g"},{"name":"にんにく","amount":1,"unit":"片"}],"proteinPerServing":3,"note":""},{"category":"副菜","name":"人参のラペ","isExisting":false,"ingredients":[{"name":"人参","amount":1,"unit":"本"},{"name":"オリーブオイル","amount":1,"unit":"大さじ"}],"proteinPerServing":1,"note":""}],"shoppingList":[{"name":"鶏むね肉","amount":200,"unit":"g"}],"totalProtein":29}`;
     } else if (currentPlanType === 'dinner-1') {
       // 1日分（夕食、主菜＋副菜）
       prompt = `1日分の夕食の献立を考えてください。主菜1品＋副菜1〜2品の構成で。
 
 現在の在庫: ${stockInfo || 'なし'}
-${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${diversityHint}${exclusionInfo}
+${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${diversityHint}${exclusionInfo}
 
 登録済みレシピ（優先使用）:
 ${recipeInfo || 'なし'}
@@ -3197,32 +3344,21 @@ ${recipeInfo || 'なし'}
 - 主菜と副菜の味付けが被らないようにバランスを取る（全部醤油系にしない）
 - 既存レシピを優先しつつ、足りなければ新規提案OK
 
-【厳守】純粋なJSONのみを返してください。マークダウン記法・コードブロック（三連バッククォート）・コメント・前置きは一切不要。文字列内では改行コードを使わず、必要なら\\nで表現してください。出力形式:
-{
-  "planType": "dinner-1",
-  "title": "今夜の献立",
-  "dishes": [
-    {
-      "category": "主菜",
-      "name": "メニュー名",
-      "isExisting": true/false,
-      "ingredients": [{"name": "食材", "amount": 数値, "unit": "単位"}],
-      "proteinPerServing": タンパク質g（推定）,
-      "note": "ポイント（任意）"
-    }
-  ],
-  "shoppingList": [
-    {"name": "食材", "amount": 数値, "unit": "単位"}
-  ],
-  "totalProtein": 全体のタンパク質g
-}`;
+【厳守事項】
+1. 純粋なJSONのみ返す。マークダウン・コードブロック・コメント・前置き禁止
+2. すべての値は実際の値（数値は数値、true/falseはtrue/false、文字列はダブルクォート囲み）
+3. 文字列内では改行を使わない
+4. 末尾カンマ禁止
+
+出力例（この通りの構造で実際の値を入れて返すこと）:
+{"planType":"dinner-1","title":"今夜の献立","dishes":[{"category":"主菜","name":"鮭のムニエル","isExisting":false,"ingredients":[{"name":"鮭","amount":2,"unit":"切れ"},{"name":"バター","amount":1,"unit":"大さじ"}],"proteinPerServing":22,"note":"皮はカリッと焼く"},{"category":"副菜","name":"きのこのバター醤油炒め","isExisting":false,"ingredients":[{"name":"しめじ","amount":1,"unit":"パック"},{"name":"バター","amount":1,"unit":"大さじ"}],"proteinPerServing":3,"note":""}],"shoppingList":[{"name":"鮭","amount":2,"unit":"切れ"}],"totalProtein":25}`;
     } else {
       // 3日 or 1週間（複数日分の夕食）
       const days = currentPlanType === 'dinner-7' ? 7 : 3;
       prompt = `${days}日分の夕食の献立を考えてください。既存のレシピを優先しつつ、足りなければ新規レシピも提案してOKです。
 
 現在の在庫: ${stockInfo || 'なし'}
-${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${diversityHint}${exclusionInfo}
+${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${diversityHint}${exclusionInfo}
 
 登録済みレシピ（優先使用）:
 ${recipeInfo || 'なし'}
@@ -3230,27 +3366,16 @@ ${recipeInfo || 'なし'}
 注意:
 - 連日同じ味付けにならないよう、ジャンルを分散させる（例：1日目和食、2日目洋食、3日目中華）
 - 主要食材（肉・魚など）も連日同じにしないこと
+- days配列には必ず${days}個の要素を含めること
 
-【厳守】純粋なJSONのみを返してください。マークダウン記法・コードブロック（三連バッククォート）・コメント・前置きは一切不要。文字列内では改行コードを使わず、必要なら\\nで表現してください。出力形式:
-{
-  "planType": "dinner-multi",
-  "days": [
-    {
-      "day": 1,
-      "dinner": {
-        "name": "メニュー名",
-        "isExisting": true/false,
-        "ingredients": [{"name": "食材", "amount": 数値, "unit": "単位"}],
-        "proteinPerServing": タンパク質g（推定）,
-        "note": "ポイント（任意）"
-      }
-    }
-  ],
-  "shoppingList": [
-    {"name": "食材", "amount": 数値, "unit": "単位", "forDay": 1}
-  ],
-  "totalProteinAvg": 1日あたりの平均タンパク質g
-}`;
+【厳守事項】
+1. 純粋なJSONのみ返す。マークダウン・コードブロック・コメント・前置き禁止
+2. すべての値は実際の値（数値は数値、true/falseはtrue/false、文字列はダブルクォート囲み）
+3. 文字列内では改行を使わない
+4. 末尾カンマ禁止
+
+出力例（この通りの構造で実際の値を入れて返すこと）:
+{"planType":"dinner-multi","days":[{"day":1,"dinner":{"name":"鶏むね肉のレモンクリームパスタ","isExisting":false,"ingredients":[{"name":"パスタ","amount":200,"unit":"g"},{"name":"鶏むね肉","amount":150,"unit":"g"}],"proteinPerServing":28,"note":"レモンを最後に絞る"}},{"day":2,"dinner":{"name":"豚肉と大根の中華煮","isExisting":false,"ingredients":[{"name":"豚バラ","amount":200,"unit":"g"},{"name":"大根","amount":300,"unit":"g"}],"proteinPerServing":24,"note":"五香粉で香りづけ"}}],"shoppingList":[{"name":"パスタ","amount":200,"unit":"g","forDay":1},{"name":"豚バラ","amount":200,"unit":"g","forDay":2}],"totalProteinAvg":26}`;
     }
 
     const response = await callClaudeAPI({
@@ -3446,24 +3571,36 @@ function renderSettings() {
 
 // ========== 家族構成 ==========
 function renderFamily() {
-  const f = state.family || { adults: 0, schoolKids: 0, preschoolers: 0, note: '' };
+  const f = state.family || { adults: 0, teens: 0, schoolKids: 0, preschoolers: 0, note: '' };
   const adultsEl = document.getElementById('family-adults');
+  const teenEl = document.getElementById('family-teen');
   const schoolEl = document.getElementById('family-school');
   const preEl = document.getElementById('family-pre');
   const noteEl = document.getElementById('family-note');
   const sumEl = document.getElementById('family-summary');
   if (!adultsEl) return;
   adultsEl.value = f.adults || 0;
+  if (teenEl) teenEl.value = f.teens || 0;
   schoolEl.value = f.schoolKids || 0;
   preEl.value = f.preschoolers || 0;
   noteEl.value = f.note || '';
-  const total = (f.adults || 0) + (f.schoolKids || 0) + (f.preschoolers || 0);
-  sumEl.textContent = total > 0 ? `合計 ${total}人` : '未設定（従来通り 2人前で提案）';
+  const total = (f.adults || 0) + (f.teens || 0) + (f.schoolKids || 0) + (f.preschoolers || 0);
+  const equiv = (f.adults || 0) * 1.0
+    + (f.teens || 0) * 1.5
+    + (f.schoolKids || 0) * 0.8
+    + (f.preschoolers || 0) * 0.5;
+  if (total > 0) {
+    sumEl.textContent = `合計 ${total}人（食べる量の目安：大人 ${equiv.toFixed(1)} 人前相当）`;
+  } else {
+    sumEl.textContent = '未設定（従来通り 2人前で提案）';
+  }
 }
 
 function saveFamily() {
+  const teenEl = document.getElementById('family-teen');
   state.family = {
     adults: parseInt(document.getElementById('family-adults').value) || 0,
+    teens: teenEl ? (parseInt(teenEl.value) || 0) : 0,
     schoolKids: parseInt(document.getElementById('family-school').value) || 0,
     preschoolers: parseInt(document.getElementById('family-pre').value) || 0,
     note: document.getElementById('family-note').value.trim(),
@@ -3476,17 +3613,27 @@ function saveFamily() {
 function buildFamilyPromptInfo() {
   const f = state.family;
   if (!f) return '';
-  const total = (f.adults || 0) + (f.schoolKids || 0) + (f.preschoolers || 0);
-  if (total === 0) return ''; // 未設定なら何も追加しない
+  const total = (f.adults || 0) + (f.teens || 0) + (f.schoolKids || 0) + (f.preschoolers || 0);
+  if (total === 0) return '';
+
+  const equiv = (f.adults || 0) * 1.0
+    + (f.teens || 0) * 1.5
+    + (f.schoolKids || 0) * 0.8
+    + (f.preschoolers || 0) * 0.5;
 
   const parts = [];
   if (f.adults > 0) parts.push(`大人${f.adults}名`);
-  if (f.schoolKids > 0) parts.push(`小学生以上の子供${f.schoolKids}名`);
-  if (f.preschoolers > 0) parts.push(`未就学児${f.preschoolers}名`);
-  let info = `\n家族構成: ${parts.join('、')}（合計${total}人分）`;
-  info += `\n- レシピは${total}人分の分量で提案すること`;
+  if (f.teens > 0) parts.push(`中高生${f.teens}名（食べ盛り、1人あたり1.5人前相当）`);
+  if (f.schoolKids > 0) parts.push(`小学生${f.schoolKids}名（1人あたり0.8人前相当）`);
+  if (f.preschoolers > 0) parts.push(`未就学児${f.preschoolers}名（1人あたり0.5人前相当）`);
+
+  let info = `\n家族構成: ${parts.join('、')}（合計${total}人）`;
+  info += `\n- 分量は実質 ${equiv.toFixed(1)} 人前で提案すること（年齢別の食事量を考慮済み）`;
   if (f.preschoolers > 0) {
     info += `\n- 未就学児がいるため、強い辛味・刺激物・アルコール（煮切らないもの）は避け、誤嚥リスクのある食材（ナッツ・餅・大きく丸い食材）は使わないか配慮すること`;
+  }
+  if (f.teens > 0) {
+    info += `\n- 中高生がいるため、ボリューム感のある満足度の高いメニューを意識すること`;
   }
   if (f.schoolKids > 0 && f.preschoolers === 0) {
     info += `\n- 子供がいるため、極端な辛味は控えめに`;
