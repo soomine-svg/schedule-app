@@ -782,6 +782,40 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
   font-size: 13px;
 }
 
+/* ========== 常備調味料 ========== */
+.pantry-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(85px, 1fr));
+  gap: 6px;
+  margin-top: 6px;
+}
+.pantry-chip {
+  padding: 8px 10px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: center;
+  transition: all 0.15s;
+  color: var(--sumi-light);
+  user-select: none;
+}
+.pantry-chip:hover {
+  background: var(--washi-dark);
+}
+.pantry-chip.active {
+  background: var(--matcha);
+  color: white;
+  border-color: var(--matcha);
+  font-weight: 500;
+}
+.pantry-chip.active::before {
+  content: '✓ ';
+  font-size: 10px;
+}
+
 /* ========== ★評価 ========== */
 .rating-display {
   display: inline-flex;
@@ -1051,6 +1085,19 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
     </div>
 
     <div class="card">
+      <h3 style="font-size: 14px; margin-bottom: 4px;">常備調味料</h3>
+      <p class="text-sm text-muted mb-3">家にある調味料を選択。AI提案時に「これらを使ったレシピ」として参考にされます（在庫管理対象外）</p>
+      <div class="form-label" style="margin-top: 8px;">スタンダード（タップで選択）</div>
+      <div id="pantry-standard-list" class="pantry-grid"></div>
+      <div class="form-label" style="margin-top: 16px;">その他（手入力で追加）</div>
+      <div class="flex gap-2 mb-2">
+        <input type="text" class="form-input" id="pantry-custom-input" placeholder="例：ナンプラー、豆板醤">
+        <button class="btn btn-primary btn-sm" onclick="addCustomPantry()">追加</button>
+      </div>
+      <div class="avoid-list" id="pantry-custom-list"></div>
+    </div>
+
+    <div class="card">
       <h3 style="font-size: 14px; margin-bottom: 4px;">データ管理</h3>
       <p class="text-sm text-muted mb-3">バックアップ・復元</p>
       <div class="flex gap-2">
@@ -1080,7 +1127,7 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
     </div>
 
     <div class="card">
-      <p class="text-sm text-muted text-center">献立帖 v1.4 · Phase 1</p>
+      <p class="text-sm text-muted text-center">献立帖 v1.5 · Phase 1</p>
     </div>
   </div>
 
@@ -1370,6 +1417,7 @@ let state = {
   preferences: [],
   mealPlan: null,
   recentAISuggestions: [], // 直近のAI提案（重複回避用、最大5件）
+  pantry: [], // 常備調味料リスト（AI提案時の参考）
 };
 
 let apiKey = '';
@@ -2806,6 +2854,10 @@ async function generateAIRecipe() {
       ? `\n避けたい食材: ${state.avoidIngredients.join(', ')}`
       : '';
 
+    const pantryInfo = (state.pantry && state.pantry.length > 0)
+      ? `\n常備している調味料（これらを優先的に使い、これら以外の調味料はできるだけ使わない）: ${state.pantry.join(', ')}`
+      : '';
+
     // 多様性要素：ランダムなジャンルと味の方向性
     const selectedGenre = pickRandomGenre();
     const selectedFlavor = pickRandomFlavor();
@@ -2819,14 +2871,14 @@ async function generateAIRecipe() {
     const fullPrompt = `あなたは料理レシピの専門家です。以下の条件でレシピを1つ提案してください。
 
 ユーザーの希望: ${prompt}
-${stockInfo}${avoidInfo}
+${stockInfo}${avoidInfo}${pantryInfo}
 
 【重要】今回は「${selectedGenre}」の方向性で、「${selectedFlavor}」味付けのレシピを提案してください。ただし、ユーザーの希望が明確にこれと矛盾する場合（例：「和食」と明示されているのに「タイ料理」にする）は、ユーザーの希望を優先してください。
 ${exclusionInfo}
 
 多様性を意識して、ありきたりな醤油ベースの甘辛系レシピではなく、上記のジャンル・味の方向性を活かした提案をしてください。
 
-JSON形式で返してください（マークダウン不要、JSONのみ）:
+【厳守】純粋なJSONのみを返してください。マークダウン記法・コードブロック（三連バッククォート）・コメント・前置きは一切不要。文字列内では改行コードを使わず、必要なら\\nで表現してください。出力形式:
 {
   "name": "レシピ名",
   "servings": 2,
@@ -2924,7 +2976,7 @@ async function enrichRecipeNutrition(recipeId) {
 
 食材: ${missing.join(', ')}
 
-JSON形式で返してください（マークダウン不要、JSONのみ）:
+【厳守】純粋なJSONのみを返してください。マークダウン記法・コードブロック（三連バッククォート）・コメント・前置きは一切不要。文字列内では改行コードを使わず、必要なら\\nで表現してください。出力形式:
 {
   "食材名1": タンパク質量g,
   "食材名2": タンパク質量g
@@ -3021,6 +3073,8 @@ async function generateMealPlan() {
       ? `\n避けたい食材: ${state.avoidIngredients.join(', ')}` : '';
     const prefInfo = state.preferences.length > 0
       ? `\n好みのジャンル: ${state.preferences.join(', ')}` : '';
+    const pantryInfo = (state.pantry && state.pantry.length > 0)
+      ? `\n常備している調味料（これらを優先的に使用、これら以外の調味料は避ける）: ${state.pantry.join(', ')}` : '';
 
     // 献立提案にも多様性指示を追加
     const recent = state.recentAISuggestions || [];
@@ -3041,7 +3095,7 @@ async function generateMealPlan() {
 スタイル: ${styleNote}
 
 現在の在庫: ${stockInfo || 'なし'}
-${avoidInfo}${prefInfo}${diversityHint}${exclusionInfo}
+${avoidInfo}${prefInfo}${pantryInfo}${diversityHint}${exclusionInfo}
 
 登録済みレシピ（優先使用）:
 ${recipeInfo || 'なし'}
@@ -3053,7 +3107,7 @@ ${recipeInfo || 'なし'}
 - 既存レシピを優先しつつ、足りなければ新規提案OK
 - 主菜と副菜の味付けがかぶらないようにすること（全部醤油系にしない等）
 
-JSON形式で返してください（マークダウン不要、JSONのみ）:
+【厳守】純粋なJSONのみを返してください。マークダウン記法・コードブロック（三連バッククォート）・コメント・前置きは一切不要。文字列内では改行コードを使わず、必要なら\\nで表現してください。出力形式:
 {
   "planType": "bento",
   "title": "お弁当の献立",
@@ -3085,7 +3139,7 @@ JSON形式で返してください（マークダウン不要、JSONのみ）:
       prompt = `1日分の夕食の献立を考えてください。主菜1品＋副菜1〜2品の構成で。
 
 現在の在庫: ${stockInfo || 'なし'}
-${avoidInfo}${prefInfo}${diversityHint}${exclusionInfo}
+${avoidInfo}${prefInfo}${pantryInfo}${diversityHint}${exclusionInfo}
 
 登録済みレシピ（優先使用）:
 ${recipeInfo || 'なし'}
@@ -3096,7 +3150,7 @@ ${recipeInfo || 'なし'}
 - 主菜と副菜の味付けが被らないようにバランスを取る（全部醤油系にしない）
 - 既存レシピを優先しつつ、足りなければ新規提案OK
 
-JSON形式で返してください（マークダウン不要、JSONのみ）:
+【厳守】純粋なJSONのみを返してください。マークダウン記法・コードブロック（三連バッククォート）・コメント・前置きは一切不要。文字列内では改行コードを使わず、必要なら\\nで表現してください。出力形式:
 {
   "planType": "dinner-1",
   "title": "今夜の献立",
@@ -3121,7 +3175,7 @@ JSON形式で返してください（マークダウン不要、JSONのみ）:
       prompt = `${days}日分の夕食の献立を考えてください。既存のレシピを優先しつつ、足りなければ新規レシピも提案してOKです。
 
 現在の在庫: ${stockInfo || 'なし'}
-${avoidInfo}${prefInfo}${diversityHint}${exclusionInfo}
+${avoidInfo}${prefInfo}${pantryInfo}${diversityHint}${exclusionInfo}
 
 登録済みレシピ（優先使用）:
 ${recipeInfo || 'なし'}
@@ -3130,7 +3184,7 @@ ${recipeInfo || 'なし'}
 - 連日同じ味付けにならないよう、ジャンルを分散させる（例：1日目和食、2日目洋食、3日目中華）
 - 主要食材（肉・魚など）も連日同じにしないこと
 
-JSON形式で返してください（マークダウン不要、JSONのみ）:
+【厳守】純粋なJSONのみを返してください。マークダウン記法・コードブロック（三連バッククォート）・コメント・前置きは一切不要。文字列内では改行コードを使わず、必要なら\\nで表現してください。出力形式:
 {
   "planType": "dinner-multi",
   "days": [
@@ -3339,6 +3393,82 @@ function saveApiKey() {
 function renderSettings() {
   renderAvoidList();
   renderPrefList();
+  renderPantry();
+}
+
+// ========== 常備調味料 ==========
+const STANDARD_SEASONINGS = [
+  '醤油', '濃口醤油', '薄口醤油', '味噌', '塩', '砂糖', 'みりん', '料理酒', '酢',
+  'サラダ油', 'ごま油', 'オリーブオイル', 'バター',
+  'こしょう', '黒こしょう', '一味唐辛子', '七味', '山椒',
+  '和風だし', '鶏ガラスープの素', 'コンソメ', '中華スープの素', '昆布茶',
+  'ケチャップ', 'マヨネーズ', 'ソース', '中濃ソース', 'ウスターソース',
+  'オイスターソース', '豆板醤', 'コチュジャン', '甜麺醤', 'XO醤',
+  'ナンプラー', 'スイートチリソース',
+  'カレー粉', 'カレールー', 'ガラムマサラ', 'クミン', 'ターメリック',
+  'バジル', 'オレガノ', 'ローリエ', 'タイム', 'ローズマリー', 'パセリ',
+  'にんにくチューブ', '生姜チューブ', 'わさび', 'からし', 'ゆず胡椒',
+  'ポン酢', 'めんつゆ', '白だし', 'すりごま', 'いりごま',
+  '小麦粉', '片栗粉', 'パン粉', 'コーンスターチ',
+  '生クリーム', '牛乳', 'チーズ', '粉チーズ',
+  'トマト缶', 'トマトピューレ', 'ココナッツミルク',
+  'はちみつ', 'メープルシロップ', 'レモン汁',
+];
+
+function renderPantry() {
+  const standardEl = document.getElementById('pantry-standard-list');
+  const customEl = document.getElementById('pantry-custom-list');
+  if (!standardEl || !customEl) return;
+
+  const pantry = state.pantry || [];
+  const pantrySet = new Set(pantry);
+
+  // スタンダードリストをチップ表示
+  standardEl.innerHTML = STANDARD_SEASONINGS.map(s => `
+    <button class="pantry-chip ${pantrySet.has(s) ? 'active' : ''}" onclick="togglePantry('${escapeHtml(s)}')">${escapeHtml(s)}</button>
+  `).join('');
+
+  // カスタム（スタンダード以外）を表示
+  const customs = pantry.filter(p => !STANDARD_SEASONINGS.includes(p));
+  if (customs.length === 0) {
+    customEl.innerHTML = '<div class="text-sm text-muted">未設定</div>';
+  } else {
+    customEl.innerHTML = customs.map(c =>
+      `<span class="avoid-chip" style="background: rgba(90, 107, 66, 0.08); color: var(--matcha); border-color: rgba(90, 107, 66, 0.2);">${escapeHtml(c)}<button class="avoid-chip-remove" style="color: var(--matcha);" onclick="removeCustomPantry('${escapeHtml(c)}')">×</button></span>`
+    ).join('');
+  }
+}
+
+function togglePantry(name) {
+  if (!state.pantry) state.pantry = [];
+  const idx = state.pantry.indexOf(name);
+  if (idx >= 0) {
+    state.pantry.splice(idx, 1);
+  } else {
+    state.pantry.push(name);
+  }
+  saveState();
+  renderPantry();
+}
+
+function addCustomPantry() {
+  const input = document.getElementById('pantry-custom-input');
+  const val = input.value.trim();
+  if (!val) return;
+  if (!state.pantry) state.pantry = [];
+  if (!state.pantry.includes(val)) {
+    state.pantry.push(val);
+    saveState();
+    renderPantry();
+  }
+  input.value = '';
+}
+
+function removeCustomPantry(name) {
+  if (!state.pantry) return;
+  state.pantry = state.pantry.filter(p => p !== name);
+  saveState();
+  renderPantry();
 }
 
 function addAvoidIngredient() {
@@ -3510,15 +3640,90 @@ function extractText(response) {
 }
 
 function parseJSON(text) {
-  // コードブロックを除去
-  let clean = text.replace(/```json|```/g, '').trim();
-  // 最初の { から最後の } までを抽出
+  if (!text) throw new Error('空の応答');
+  
+  // ステップ1: コードブロックを除去
+  let clean = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+  
+  // ステップ2: 最初の { から最後の } までを抽出
   const firstBrace = clean.indexOf('{');
   const lastBrace = clean.lastIndexOf('}');
   if (firstBrace !== -1 && lastBrace !== -1) {
     clean = clean.substring(firstBrace, lastBrace + 1);
   }
-  return JSON.parse(clean);
+
+  // ステップ3: そのまま試す
+  try {
+    return JSON.parse(clean);
+  } catch (e1) {
+    // 失敗時、よくあるエラーを修正してリトライ
+    let fixed = clean;
+
+    // 修正1: 文字列内の改行を\nに置換（AIが文字列内に生改行を入れる場合）
+    fixed = fixSafeStringNewlines(fixed);
+
+    // 修正2: 末尾のカンマを削除（オブジェクトや配列の最後）
+    fixed = fixed.replace(/,(\s*[}\]])/g, '$1');
+
+    // 修正3: シングルクォートをダブルクォートに（プロパティ名/文字列値）
+    // ただし文字列値内のシングルクォートには触らない（簡易対応）
+    
+    // 修正4: 全角の引用符を半角に
+    fixed = fixed.replace(/[""]/g, '"').replace(/['']/g, "'");
+    
+    // 修正5: コメント行を削除（// で始まる行）
+    fixed = fixed.replace(/\/\/[^\n]*/g, '');
+
+    try {
+      return JSON.parse(fixed);
+    } catch (e2) {
+      // それでもダメな場合は、より積極的に修正
+      // {} で囲まれた部分だけを再抽出（複数のJSONブロックがある場合の最初を取る）
+      const match = fixed.match(/\{[\s\S]*\}/);
+      if (match) {
+        try {
+          return JSON.parse(match[0]);
+        } catch (e3) {
+          // 最終手段：エラー位置の前後を出力してデバッグしやすく
+          console.error('JSON parse failed. Original text:', text);
+          console.error('Cleaned text:', fixed);
+          throw new Error(`JSONの解析に失敗しました。AIの応答が不完全な可能性があります。再度お試しください。`);
+        }
+      }
+      throw e2;
+    }
+  }
+}
+
+// 文字列値の中の生改行を\nに置換（簡易版）
+function fixSafeStringNewlines(text) {
+  let result = '';
+  let inString = false;
+  let escape = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (escape) {
+      result += c;
+      escape = false;
+      continue;
+    }
+    if (c === '\\') {
+      result += c;
+      escape = true;
+      continue;
+    }
+    if (c === '"') {
+      inString = !inString;
+      result += c;
+      continue;
+    }
+    if (inString && (c === '\n' || c === '\r')) {
+      result += '\\n';
+      continue;
+    }
+    result += c;
+  }
+  return result;
 }
 
 // ============================================================
