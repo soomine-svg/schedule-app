@@ -1127,7 +1127,7 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
     </div>
 
     <div class="card">
-      <p class="text-sm text-muted text-center">献立帖 v1.5 · Phase 1</p>
+      <p class="text-sm text-muted text-center">献立帖 v1.6 · Phase 1</p>
     </div>
   </div>
 
@@ -1918,10 +1918,7 @@ function calcMatchScore(recipe) {
   if (recipe.ingredients.length === 0) return 0;
   let have = 0;
   recipe.ingredients.forEach(ing => {
-    const stockItem = state.stock.find(s =>
-      normalizeIngredientName(s.name) === normalizeIngredientName(ing.name) && s.qty > 0
-    );
-    if (stockItem) have++;
+    if (hasIngredient(ing.name)) have++;
   });
   return have / recipe.ingredients.length;
 }
@@ -1929,6 +1926,32 @@ function calcMatchScore(recipe) {
 function normalizeIngredientName(name) {
   if (!name) return '';
   return name.trim().toLowerCase().replace(/\s/g, '');
+}
+
+// 食材が「手元にある」か判定（在庫 OR 常備調味料）
+function hasIngredient(ingredientName) {
+  const norm = normalizeIngredientName(ingredientName);
+  if (!norm) return false;
+  // 在庫に存在し、かつ qty > 0
+  const inStock = state.stock.some(s =>
+    normalizeIngredientName(s.name) === norm && s.qty > 0
+  );
+  if (inStock) return true;
+  // 常備調味料リストに存在
+  const inPantry = (state.pantry || []).some(p =>
+    normalizeIngredientName(p) === norm
+  );
+  return inPantry;
+}
+
+// 食材名が常備調味料に部分一致するか（「醤油」が「濃口醤油」を含むなど）
+function isCommonSeasoning(ingredientName) {
+  const norm = normalizeIngredientName(ingredientName);
+  if (!norm) return false;
+  return (state.pantry || []).some(p => {
+    const pn = normalizeIngredientName(p);
+    return pn === norm || pn.includes(norm) || norm.includes(pn);
+  });
 }
 
 // -------- レシピ詳細 --------
@@ -1939,10 +1962,8 @@ function openRecipeDetail(id) {
   const totalProtein = recipe.proteinPerServing ? recipe.proteinPerServing * recipe.servings : null;
 
   const ingredientsHtml = recipe.ingredients.map(ing => {
-    const stockItem = state.stock.find(s =>
-      normalizeIngredientName(s.name) === normalizeIngredientName(ing.name) && s.qty > 0
-    );
-    const missing = !stockItem;
+    const has = hasIngredient(ing.name);
+    const missing = !has;
     return `<div class="ingredient-list-item ${missing ? 'missing' : ''}">
       <span>${escapeHtml(ing.name)}</span>
       <span>${ing.amount || ''} ${ing.unit || ''}</span>
@@ -2216,10 +2237,8 @@ function addMissingToShopping(id) {
 
   let added = 0;
   recipe.ingredients.forEach(ing => {
-    const stockItem = state.stock.find(s =>
-      normalizeIngredientName(s.name) === normalizeIngredientName(ing.name) && s.qty > 0
-    );
-    if (!stockItem) {
+    // 在庫にも常備調味料にもないものだけ買い物リストへ
+    if (!hasIngredient(ing.name)) {
       const existing = state.shoppingList.find(s => normalizeIngredientName(s.name) === normalizeIngredientName(ing.name));
       if (!existing) {
         state.shoppingList.push({
