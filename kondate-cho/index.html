@@ -1065,6 +1065,30 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
     </div>
 
     <div class="card">
+      <h3 style="font-size: 14px; margin-bottom: 4px;">家族構成</h3>
+      <p class="text-sm text-muted mb-3">AI提案時に人数分の分量・年齢への配慮が反映されます（未入力なら従来通り）</p>
+      <div class="form-group" style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+        <div>
+          <label class="form-label">大人</label>
+          <input type="number" class="form-input" id="family-adults" value="0" min="0" max="20" onchange="saveFamily()">
+        </div>
+        <div>
+          <label class="form-label">小学生以上</label>
+          <input type="number" class="form-input" id="family-school" value="0" min="0" max="20" onchange="saveFamily()">
+        </div>
+        <div>
+          <label class="form-label">未就学児</label>
+          <input type="number" class="form-input" id="family-pre" value="0" min="0" max="20" onchange="saveFamily()">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">補足（任意）</label>
+        <textarea class="form-textarea" id="family-note" rows="2" placeholder="例：2歳児がいるので刺激物・誤嚥リスクのある食材は避けて／好き嫌いが多い／離乳食完了期" onchange="saveFamily()"></textarea>
+      </div>
+      <div class="text-sm text-muted" id="family-summary"></div>
+    </div>
+
+    <div class="card">
       <h3 style="font-size: 14px; margin-bottom: 4px;">避けたい食材・アレルギー</h3>
       <p class="text-sm text-muted mb-3">AI提案時に除外されます</p>
       <div class="flex gap-2 mb-2">
@@ -1127,7 +1151,7 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
     </div>
 
     <div class="card">
-      <p class="text-sm text-muted text-center">献立帖 v1.6 · Phase 1</p>
+      <p class="text-sm text-muted text-center">献立帖 v1.7 · Phase 1</p>
     </div>
   </div>
 
@@ -1418,6 +1442,7 @@ let state = {
   mealPlan: null,
   recentAISuggestions: [], // 直近のAI提案（重複回避用、最大5件）
   pantry: [], // 常備調味料リスト（AI提案時の参考）
+  family: { adults: 0, schoolKids: 0, preschoolers: 0, note: '' }, // 家族構成
 };
 
 let apiKey = '';
@@ -2877,6 +2902,8 @@ async function generateAIRecipe() {
       ? `\n常備している調味料（これらを優先的に使い、これら以外の調味料はできるだけ使わない）: ${state.pantry.join(', ')}`
       : '';
 
+    const familyInfo = buildFamilyPromptInfo();
+
     // 多様性要素：ランダムなジャンルと味の方向性
     const selectedGenre = pickRandomGenre();
     const selectedFlavor = pickRandomFlavor();
@@ -2890,7 +2917,7 @@ async function generateAIRecipe() {
     const fullPrompt = `あなたは料理レシピの専門家です。以下の条件でレシピを1つ提案してください。
 
 ユーザーの希望: ${prompt}
-${stockInfo}${avoidInfo}${pantryInfo}
+${stockInfo}${avoidInfo}${pantryInfo}${familyInfo}
 
 【重要】今回は「${selectedGenre}」の方向性で、「${selectedFlavor}」味付けのレシピを提案してください。ただし、ユーザーの希望が明確にこれと矛盾する場合（例：「和食」と明示されているのに「タイ料理」にする）は、ユーザーの希望を優先してください。
 ${exclusionInfo}
@@ -3094,6 +3121,7 @@ async function generateMealPlan() {
       ? `\n好みのジャンル: ${state.preferences.join(', ')}` : '';
     const pantryInfo = (state.pantry && state.pantry.length > 0)
       ? `\n常備している調味料（これらを優先的に使用、これら以外の調味料は避ける）: ${state.pantry.join(', ')}` : '';
+    const familyInfo = buildFamilyPromptInfo();
 
     // 献立提案にも多様性指示を追加
     const recent = state.recentAISuggestions || [];
@@ -3114,7 +3142,7 @@ async function generateMealPlan() {
 スタイル: ${styleNote}
 
 現在の在庫: ${stockInfo || 'なし'}
-${avoidInfo}${prefInfo}${pantryInfo}${diversityHint}${exclusionInfo}
+${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${diversityHint}${exclusionInfo}
 
 登録済みレシピ（優先使用）:
 ${recipeInfo || 'なし'}
@@ -3158,7 +3186,7 @@ ${recipeInfo || 'なし'}
       prompt = `1日分の夕食の献立を考えてください。主菜1品＋副菜1〜2品の構成で。
 
 現在の在庫: ${stockInfo || 'なし'}
-${avoidInfo}${prefInfo}${pantryInfo}${diversityHint}${exclusionInfo}
+${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${diversityHint}${exclusionInfo}
 
 登録済みレシピ（優先使用）:
 ${recipeInfo || 'なし'}
@@ -3194,7 +3222,7 @@ ${recipeInfo || 'なし'}
       prompt = `${days}日分の夕食の献立を考えてください。既存のレシピを優先しつつ、足りなければ新規レシピも提案してOKです。
 
 現在の在庫: ${stockInfo || 'なし'}
-${avoidInfo}${prefInfo}${pantryInfo}${diversityHint}${exclusionInfo}
+${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${diversityHint}${exclusionInfo}
 
 登録済みレシピ（優先使用）:
 ${recipeInfo || 'なし'}
@@ -3413,6 +3441,60 @@ function renderSettings() {
   renderAvoidList();
   renderPrefList();
   renderPantry();
+  renderFamily();
+}
+
+// ========== 家族構成 ==========
+function renderFamily() {
+  const f = state.family || { adults: 0, schoolKids: 0, preschoolers: 0, note: '' };
+  const adultsEl = document.getElementById('family-adults');
+  const schoolEl = document.getElementById('family-school');
+  const preEl = document.getElementById('family-pre');
+  const noteEl = document.getElementById('family-note');
+  const sumEl = document.getElementById('family-summary');
+  if (!adultsEl) return;
+  adultsEl.value = f.adults || 0;
+  schoolEl.value = f.schoolKids || 0;
+  preEl.value = f.preschoolers || 0;
+  noteEl.value = f.note || '';
+  const total = (f.adults || 0) + (f.schoolKids || 0) + (f.preschoolers || 0);
+  sumEl.textContent = total > 0 ? `合計 ${total}人` : '未設定（従来通り 2人前で提案）';
+}
+
+function saveFamily() {
+  state.family = {
+    adults: parseInt(document.getElementById('family-adults').value) || 0,
+    schoolKids: parseInt(document.getElementById('family-school').value) || 0,
+    preschoolers: parseInt(document.getElementById('family-pre').value) || 0,
+    note: document.getElementById('family-note').value.trim(),
+  };
+  saveState();
+  renderFamily();
+}
+
+// AI提案・献立提案で使う家族構成のプロンプト断片を生成
+function buildFamilyPromptInfo() {
+  const f = state.family;
+  if (!f) return '';
+  const total = (f.adults || 0) + (f.schoolKids || 0) + (f.preschoolers || 0);
+  if (total === 0) return ''; // 未設定なら何も追加しない
+
+  const parts = [];
+  if (f.adults > 0) parts.push(`大人${f.adults}名`);
+  if (f.schoolKids > 0) parts.push(`小学生以上の子供${f.schoolKids}名`);
+  if (f.preschoolers > 0) parts.push(`未就学児${f.preschoolers}名`);
+  let info = `\n家族構成: ${parts.join('、')}（合計${total}人分）`;
+  info += `\n- レシピは${total}人分の分量で提案すること`;
+  if (f.preschoolers > 0) {
+    info += `\n- 未就学児がいるため、強い辛味・刺激物・アルコール（煮切らないもの）は避け、誤嚥リスクのある食材（ナッツ・餅・大きく丸い食材）は使わないか配慮すること`;
+  }
+  if (f.schoolKids > 0 && f.preschoolers === 0) {
+    info += `\n- 子供がいるため、極端な辛味は控えめに`;
+  }
+  if (f.note) {
+    info += `\n- 追加配慮事項: ${f.note}`;
+  }
+  return info;
 }
 
 // ========== 常備調味料 ==========
