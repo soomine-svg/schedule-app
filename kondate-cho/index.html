@@ -55,7 +55,7 @@ body {
   background: var(--washi);
   color: var(--sumi);
   line-height: 1.6;
-  padding-bottom: 80px;
+  padding-bottom: 90px;
   min-height: 100vh;
   background-image:
     radial-gradient(circle at 20% 10%, rgba(217, 121, 89, 0.025) 0%, transparent 40%),
@@ -360,50 +360,58 @@ h1, h2, h3, h4 { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-we
   border-top: 1px solid var(--line);
   display: flex;
   justify-content: space-around;
-  padding: 8px 0 max(8px, env(safe-area-inset-bottom));
+  padding: 6px 0 max(6px, env(safe-area-inset-bottom));
   z-index: 50;
 }
 .nav-btn {
   background: transparent;
   border: none;
   flex: 1;
-  padding: 6px 4px;
+  padding: 4px 2px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  justify-content: center;
+  gap: 2px;
   cursor: pointer;
   color: var(--sumi-soft);
   font-family: inherit;
   transition: all 0.2s;
   opacity: 0.55;
+  min-height: 54px;
 }
 .nav-btn.active {
   color: var(--sumi);
   opacity: 1;
 }
 .nav-btn.active .nav-icon-wrap {
-  transform: translateY(-2px);
+  transform: translateY(-1px);
 }
 .nav-btn.active .nav-label {
   color: var(--beet);
   font-weight: 500;
 }
 .nav-icon-wrap {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: transform 0.2s;
+  flex-shrink: 0;
 }
 .nav-icon-wrap img {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   object-fit: contain;
   display: block;
 }
-.nav-label { font-size: 10px; letter-spacing: 0.05em; font-family: 'Noto Sans JP', sans-serif; }
+.nav-label {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  font-family: 'Noto Sans JP', sans-serif;
+  line-height: 1.2;
+}
 
 /* ========== モーダル ========== */
 .modal-overlay {
