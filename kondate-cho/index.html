@@ -271,6 +271,10 @@ h1, h2, h3, h4 { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-we
   font-weight: 600;
   margin-bottom: 4px;
   color: var(--sumi);
+  flex: 1 1 auto;
+  min-width: 0;
+  word-break: break-word;
+  line-height: 1.35;
 }
 .recipe-card-meta {
   display: flex;
@@ -300,13 +304,22 @@ h1, h2, h3, h4 { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-we
 .tag.tag-matcha { background: rgba(90, 107, 66, 0.1); color: var(--matcha); }
 .tag.tag-ai { background: rgba(45, 74, 107, 0.1); color: var(--ai); }
 
+/* レシピカードのヘッダー行（タイトル + マッチ率） */
+.recipe-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
 .match-score {
-  position: absolute;
-  top: 14px;
-  right: 14px;
+  flex: 0 0 auto;
   font-family: 'Varela Round', 'Kosugi Maru', sans-serif;
   font-size: 11px;
   color: var(--sumi-soft);
+  white-space: nowrap;
+  line-height: 1.3;
+  padding-top: 2px;
 }
 .match-score-value {
   display: inline-block;
@@ -968,10 +981,29 @@ h1, h2, h3, h4 { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-we
   align-items: center;
   margin-bottom: 4px;
 }
+.history-entry-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
 .history-entry-date {
   color: var(--sumi-soft);
   font-size: 11px;
   font-family: 'Varela Round', 'Kosugi Maru', sans-serif;
+}
+.history-entry-edit {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--sumi-soft);
+  font-size: 14px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 0.15s;
+}
+.history-entry-edit:hover {
+  background: rgba(0,0,0,0.05);
+  color: var(--shu);
 }
 .history-entry-memo {
   color: var(--sumi-light);
@@ -1516,6 +1548,42 @@ h1, h2, h3, h4 { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-we
   </div>
 </div>
 
+<!-- 履歴編集・追加モーダル -->
+<div class="modal-overlay" id="modal-history-edit">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="history-edit-title">記録を編集</div>
+      <button class="modal-close" onclick="closeModal('modal-history-edit')">×</button>
+    </div>
+    <div class="text-center mb-3">
+      <div class="text-sm text-muted">レシピ</div>
+      <div style="font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-size: 17px; font-weight: 600; margin-top: 4px;" id="history-edit-recipe-name"></div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">作った日</label>
+      <input type="date" class="form-input" id="history-edit-date">
+    </div>
+
+    <div class="edit-section-title">味はいかがでしたか？</div>
+    <div class="rating-input" id="history-edit-rating-stars">
+      <button class="rating-star" onclick="setHistoryEditRating(1)">☆</button>
+      <button class="rating-star" onclick="setHistoryEditRating(2)">☆</button>
+      <button class="rating-star" onclick="setHistoryEditRating(3)">☆</button>
+      <button class="rating-star" onclick="setHistoryEditRating(4)">☆</button>
+      <button class="rating-star" onclick="setHistoryEditRating(5)">☆</button>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">メモ</label>
+      <textarea class="form-textarea" id="history-edit-memo" rows="3" placeholder="例：醤油を少し控えめに／子供が喜んだ／次は倍量で作る"></textarea>
+    </div>
+
+    <button class="btn btn-accent btn-full btn-lg mb-2" onclick="submitHistoryEdit()">保存する</button>
+    <button class="btn btn-ghost btn-full btn-sm" id="history-edit-delete-btn" onclick="deleteHistoryEntry()" style="color: var(--shu);">この記録を削除</button>
+  </div>
+</div>
+
 <!-- 確認ダイアログ -->
 <div class="dialog-container" id="confirm-dialog">
   <div class="dialog">
@@ -2008,8 +2076,10 @@ function renderRecipes() {
       : '';
     return `
       <div class="recipe-card" onclick="openRecipeDetail('${r.id}')">
-        ${matchBadge}
-        <div class="recipe-card-title">${escapeHtml(r.name)}</div>
+        <div class="recipe-card-head">
+          <div class="recipe-card-title">${escapeHtml(r.name)}</div>
+          ${matchBadge}
+        </div>
         <div class="recipe-card-meta">
           <span>${r.servings}人分</span>
           ${r.cookTime ? `<span>${r.cookTime}分</span>` : ''}
@@ -2050,11 +2120,18 @@ function toggleTagsExpand() {
 
 function calcMatchScore(recipe) {
   if (recipe.ingredients.length === 0) return 0;
+  // 食材のみでマッチ率を計算（調味料・水系は分母から除外）
+  // これにより「食材があれば作れる」という感覚に一致する
+  const foodIngredients = recipe.ingredients.filter(ing =>
+    !isSeasoningIngredient(ing.name) && !isWaterLike(ing.name)
+  );
+  // 食材が1つもないレシピ（=調味料・水のみ）は便宜上100%扱い
+  if (foodIngredients.length === 0) return 1;
   let have = 0;
-  recipe.ingredients.forEach(ing => {
+  foodIngredients.forEach(ing => {
     if (hasIngredient(ing.name)) have++;
   });
-  return have / recipe.ingredients.length;
+  return have / foodIngredients.length;
 }
 
 function normalizeIngredientName(name) {
@@ -2062,10 +2139,35 @@ function normalizeIngredientName(name) {
   return name.trim().toLowerCase().replace(/\s/g, '');
 }
 
-// 食材が「手元にある」か判定（在庫 OR 常備調味料）
+// 水系は常時あるものとして扱う（在庫・常備調味料に含めなくてよい）
+function isWaterLike(ingredientName) {
+  const norm = normalizeIngredientName(ingredientName);
+  if (!norm) return false;
+  // 「水」「お湯」「湯」「熱湯」「ぬるま湯」「冷水」「氷水」等
+  return /^(水|お湯|湯|熱湯|ぬるま湯|冷水|氷水|水道水)$/.test(norm);
+}
+
+// 食材名が「調味料」カテゴリに該当するか（マッチ率計算から除外するため）
+// 判定順: ①常備調味料リストに一致 ②よくある調味料名の正規表現
+function isSeasoningIngredient(ingredientName) {
+  const norm = normalizeIngredientName(ingredientName);
+  if (!norm) return false;
+  // 常備調味料リストに完全一致 or 部分一致
+  const inPantry = (state.pantry || []).some(p => {
+    const pn = normalizeIngredientName(p);
+    return pn === norm || pn.includes(norm) || norm.includes(pn);
+  });
+  if (inPantry) return true;
+  // 定番調味料の名称パターン
+  return /醤油|味噌|塩|砂糖|酢|油|みりん|料理酒|だし|出汁|ソース|ケチャップ|マヨネーズ|マヨ|胡椒|こしょう|コショウ|七味|一味|わさび|からし|しょうが|生姜チューブ|にんにくチューブ|顆粒|コンソメ|鶏がら|ブイヨン|オイスター|ナンプラー|豆板醤|甜麺醤|コチュジャン|片栗粉|小麦粉|薄力粉|強力粉|パン粉|ごま|胡麻|ごま油|オリーブオイル|酒|バター/.test(norm);
+}
+
+// 食材が「手元にある」か判定（在庫 OR 常備調味料 OR 水系）
 function hasIngredient(ingredientName) {
   const norm = normalizeIngredientName(ingredientName);
   if (!norm) return false;
+  // 水系は常時ありとして扱う
+  if (isWaterLike(ingredientName)) return true;
   // 在庫に存在し、かつ qty > 0
   const inStock = state.stock.some(s =>
     normalizeIngredientName(s.name) === norm && s.qty > 0
@@ -2124,21 +2226,24 @@ function openRecipeDetail(id) {
   // 履歴セクション
   const history = (state.history || []).filter(h => h.recipeId === recipe.id).sort((a, b) => new Date(b.date) - new Date(a.date));
   const stats = getRecipeRating(recipe.id);
-  const historyHtml = history.length > 0 ? `
+  const historyHtml = `
     <div class="recipe-detail-section">
       <div class="recipe-detail-heading">調理記録（${history.length}回${stats.count > 0 ? ` · 平均 ${stats.avg.toFixed(1)}` : ''}）</div>
-      ${history.slice(0, 5).map(h => `
+      ${history.length > 0 ? history.slice(0, 5).map(h => `
         <div class="history-entry">
           <div class="history-entry-header">
             <span class="rating-display">${h.rating ? renderStars(h.rating) : '<span class="text-muted">評価なし</span>'}</span>
-            <span class="history-entry-date">${formatDate(h.date)}</span>
+            <span class="history-entry-right">
+              <span class="history-entry-date">${formatDate(h.date)}</span>
+              <button class="history-entry-edit" onclick="event.stopPropagation(); openEditHistoryModal('${h.id}')" title="編集">✎</button>
+            </span>
           </div>
           ${h.memo ? `<div class="history-entry-memo">${escapeHtml(h.memo)}</div>` : ''}
         </div>
-      `).join('')}
+      `).join('') : '<div class="text-sm text-muted" style="padding: 8px 0;">まだ記録がありません。「作った」ボタンを押すと記録できます。</div>'}
       ${history.length > 5 ? `<div class="text-sm text-muted text-center">他 ${history.length - 5} 件</div>` : ''}
     </div>
-  ` : '';
+  `;
 
   document.getElementById('recipe-detail-content').innerHTML = `
     <div class="modal-header">
@@ -2278,6 +2383,118 @@ function completeCook(rating, memo) {
   pendingRating = 0;
   showToast(`記録しました（在庫を${decreased}品更新）`);
   renderRecipes();
+}
+
+// -------- 履歴の後追い追加・編集・削除 --------
+let editingHistoryId = null;      // 編集中の履歴ID（null = 新規追加モード）
+let historyEditRating = 0;        // 編集中の★評価
+let historyEditRecipeId = null;   // 新規追加時のレシピID
+
+// YYYY-MM-DD形式に変換（input[type=date]用）
+function toDateInputValue(isoOrDate) {
+  const d = isoOrDate ? new Date(isoOrDate) : new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+// 既存の履歴編集モーダルを開く
+function openEditHistoryModal(historyId) {
+  const entry = (state.history || []).find(h => h.id === historyId);
+  if (!entry) return;
+  const recipe = state.recipes.find(r => r.id === entry.recipeId);
+  editingHistoryId = historyId;
+  historyEditRecipeId = entry.recipeId;
+  historyEditRating = entry.rating || 0;
+
+  document.getElementById('history-edit-title').textContent = '記録を編集';
+  document.getElementById('history-edit-recipe-name').textContent = recipe ? recipe.name : entry.recipeName || '(削除済みレシピ)';
+  document.getElementById('history-edit-date').value = toDateInputValue(entry.date);
+  document.getElementById('history-edit-memo').value = entry.memo || '';
+  document.getElementById('history-edit-delete-btn').style.display = '';
+  renderHistoryEditStars(historyEditRating);
+  openModal('modal-history-edit');
+}
+
+function renderHistoryEditStars(rating) {
+  const container = document.getElementById('history-edit-rating-stars');
+  if (!container) return;
+  container.innerHTML = [1,2,3,4,5].map(n => `
+    <button class="rating-star ${n <= rating ? 'active' : ''}" onclick="setHistoryEditRating(${n})">${n <= rating ? '★' : '☆'}</button>
+  `).join('');
+}
+
+function setHistoryEditRating(n) {
+  historyEditRating = historyEditRating === n ? 0 : n; // 同じ★を再クリックで解除
+  renderHistoryEditStars(historyEditRating);
+}
+
+function submitHistoryEdit() {
+  const dateStr = document.getElementById('history-edit-date').value;
+  const memo = document.getElementById('history-edit-memo').value.trim();
+  if (!dateStr) {
+    showToast('作った日を指定してください');
+    return;
+  }
+  // 日付は「その日の正午」として保存（タイムゾーンずれ回避のため）
+  const date = new Date(dateStr + 'T12:00:00');
+
+  if (!state.history) state.history = [];
+
+  if (editingHistoryId) {
+    // 既存履歴の更新
+    const entry = state.history.find(h => h.id === editingHistoryId);
+    if (entry) {
+      entry.date = date.toISOString();
+      entry.rating = historyEditRating || null;
+      entry.memo = memo;
+    }
+    showToast('記録を更新しました');
+  } else {
+    // 新規追加（在庫は減らさない = 後追いのため）
+    const recipe = state.recipes.find(r => r.id === historyEditRecipeId);
+    state.history.push({
+      id: uuid(),
+      recipeId: historyEditRecipeId,
+      recipeName: recipe ? recipe.name : '',
+      date: date.toISOString(),
+      rating: historyEditRating || null,
+      memo: memo,
+    });
+    showToast('記録を追加しました');
+  }
+
+  saveState();
+  closeModal('modal-history-edit');
+  // レシピ詳細を開き直して履歴セクションを再描画
+  if (historyEditRecipeId) {
+    openRecipeDetail(historyEditRecipeId);
+  }
+  renderRecipes();
+  editingHistoryId = null;
+  historyEditRating = 0;
+  historyEditRecipeId = null;
+}
+
+function deleteHistoryEntry() {
+  if (!editingHistoryId) return;
+  showConfirm('記録の削除', 'この調理記録を削除しますか？（この操作は取り消せません）', (ok) => {
+    if (!ok) return;
+    const idx = (state.history || []).findIndex(h => h.id === editingHistoryId);
+    if (idx >= 0) {
+      state.history.splice(idx, 1);
+      saveState();
+      showToast('記録を削除しました');
+    }
+    const recipeId = historyEditRecipeId;
+    closeModal('modal-history-edit');
+    editingHistoryId = null;
+    historyEditRating = 0;
+    historyEditRecipeId = null;
+    if (recipeId) openRecipeDetail(recipeId);
+    renderRecipes();
+  });
 }
 
 // -------- レシピ編集 --------
@@ -3106,6 +3323,7 @@ async function generateAIRecipe() {
       : '';
 
     const familyInfo = buildFamilyPromptInfo();
+    const tasteInfo = buildTasteFeedbackInfo();
 
     // 多様性要素：ランダムなジャンルと味の方向性
     const selectedGenre = pickRandomGenre();
@@ -3120,7 +3338,7 @@ async function generateAIRecipe() {
     const fullPrompt = `あなたは料理レシピの専門家です。以下の条件でレシピを1つ提案してください。
 
 ユーザーの希望: ${prompt}
-${stockInfo}${urgentInfo}${avoidInfo}${pantryInfo}${familyInfo}
+${stockInfo}${urgentInfo}${avoidInfo}${pantryInfo}${familyInfo}${tasteInfo}
 
 【重要】今回は「${selectedGenre}」の方向性で、「${selectedFlavor}」味付けのレシピを提案してください。ただし、ユーザーの希望が明確にこれと矛盾する場合（例：「和食」と明示されているのに「タイ料理」にする）は、ユーザーの希望を優先してください。
 ${exclusionInfo}
@@ -3334,6 +3552,7 @@ async function generateMealPlan() {
     const pantryInfo = (state.pantry && state.pantry.length > 0)
       ? `\n常備している調味料（これらを優先的に使用、これら以外の調味料は避ける）: ${state.pantry.join(', ')}` : '';
     const familyInfo = buildFamilyPromptInfo();
+    const tasteInfo = buildTasteFeedbackInfo();
 
     // 献立提案にも多様性指示を追加
     const recent = state.recentAISuggestions || [];
@@ -3354,7 +3573,7 @@ async function generateMealPlan() {
 スタイル: ${styleNote}
 
 現在の在庫: ${stockInfo || 'なし'}
-${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${diversityHint}${exclusionInfo}
+${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${diversityHint}${exclusionInfo}
 
 登録済みレシピ（優先使用）:
 ${recipeInfo || 'なし'}
@@ -3380,7 +3599,7 @@ ${recipeInfo || 'なし'}
       prompt = `1日分の夕食の献立を考えてください。主菜1品＋副菜1〜2品の構成で。
 
 現在の在庫: ${stockInfo || 'なし'}
-${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${diversityHint}${exclusionInfo}
+${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${diversityHint}${exclusionInfo}
 
 登録済みレシピ（優先使用）:
 ${recipeInfo || 'なし'}
@@ -3405,7 +3624,7 @@ ${recipeInfo || 'なし'}
       prompt = `${days}日分の夕食の献立を考えてください。既存のレシピを優先しつつ、足りなければ新規レシピも提案してOKです。
 
 現在の在庫: ${stockInfo || 'なし'}
-${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${diversityHint}${exclusionInfo}
+${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${diversityHint}${exclusionInfo}
 
 登録済みレシピ（優先使用）:
 ${recipeInfo || 'なし'}
@@ -3688,6 +3907,84 @@ function buildFamilyPromptInfo() {
   if (f.note) {
     info += `\n- 追加配慮事項: ${f.note}`;
   }
+  return info;
+}
+
+// 過去の調理記録（★評価・メモ）をAI提案用プロンプトに変換
+// - 高評価レシピ → 好まれた味の傾向として参考に
+// - 低評価レシピ → 避けるべきパターン
+// - 直近のメモ → 味の調整傾向（塩っぱい/薄い等）
+function buildTasteFeedbackInfo() {
+  const history = state.history || [];
+  if (history.length === 0) return '';
+
+  // レシピIDごとに評価を集計
+  const byRecipe = {};
+  history.forEach(h => {
+    if (!h.recipeId) return;
+    if (!byRecipe[h.recipeId]) {
+      byRecipe[h.recipeId] = { name: h.recipeName || '', ratings: [], memos: [] };
+    }
+    const recipe = state.recipes.find(r => r.id === h.recipeId);
+    if (recipe) byRecipe[h.recipeId].name = recipe.name;
+    if (h.rating) byRecipe[h.recipeId].ratings.push(h.rating);
+    if (h.memo) byRecipe[h.recipeId].memos.push({ memo: h.memo, date: h.date });
+  });
+
+  // 各レシピの平均★を算出
+  const summary = Object.values(byRecipe)
+    .filter(r => r.name && r.ratings.length > 0)
+    .map(r => ({
+      name: r.name,
+      avg: r.ratings.reduce((a, b) => a + b, 0) / r.ratings.length,
+      count: r.ratings.length,
+    }));
+
+  // 高評価: ★4.0以上（上位5件まで）
+  const liked = summary
+    .filter(r => r.avg >= 4.0)
+    .sort((a, b) => b.avg - a.avg || b.count - a.count)
+    .slice(0, 5);
+
+  // 低評価: ★2.5以下
+  const disliked = summary
+    .filter(r => r.avg <= 2.5)
+    .sort((a, b) => a.avg - b.avg)
+    .slice(0, 5);
+
+  // 直近のメモ（新しい順に最大8件、短すぎる or 空のものは除外）
+  const recentMemos = history
+    .filter(h => h.memo && h.memo.trim().length >= 2)
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
+    .slice(0, 8)
+    .map(h => {
+      const recipe = state.recipes.find(r => r.id === h.recipeId);
+      const name = recipe ? recipe.name : (h.recipeName || '不明');
+      const star = h.rating ? `★${h.rating}` : '未評価';
+      return `- 「${name}」(${star}): ${h.memo}`;
+    });
+
+  if (liked.length === 0 && disliked.length === 0 && recentMemos.length === 0) return '';
+
+  let info = `\n\n【過去の調理記録からの嗜好フィードバック】`;
+  info += `\nこれまでの記録を踏まえ、味付け・材料選択の参考にしてください。`;
+
+  if (liked.length > 0) {
+    info += `\n\n■ 気に入ったレシピ（これらと似た味・方向性は好まれる傾向）:`;
+    info += '\n' + liked.map(r => `- ${r.name}（平均★${r.avg.toFixed(1)}／${r.count}回）`).join('\n');
+  }
+
+  if (disliked.length > 0) {
+    info += `\n\n■ 評価が低かったレシピ（同じ傾向は避けるか、改善点を反映）:`;
+    info += '\n' + disliked.map(r => `- ${r.name}（平均★${r.avg.toFixed(1)}／${r.count}回）`).join('\n');
+  }
+
+  if (recentMemos.length > 0) {
+    info += `\n\n■ 最近のメモ（味の調整傾向のヒント。例：「塩っぱい」→塩分控えめに、「薄い」→味しっかりめに、「辛い」→辛味控えめに、など）:`;
+    info += '\n' + recentMemos.join('\n');
+    info += `\n※上記メモに「塩っぱい/辛い/濃い」等のネガティブな感想があれば、味付けを控えめ・まろやか方向に調整してください。`;
+  }
+
   return info;
 }
 
