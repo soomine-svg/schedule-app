@@ -6,29 +6,40 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="献立帖">
-<meta name="theme-color" content="#f5f1e8">
+<meta name="apple-mobile-web-app-title" content="Prep">
+<meta name="theme-color" content="#FEFCF9">
 <link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" href="icon-192.png">
-<title>献立帖 - Kondate-cho</title>
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="apple-touch-icon" sizes="192x192" href="icon-192.png">
+<title>Prep</title>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;500;600;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Varela+Round&family=Noto+Sans+JP:wght@300;400;500;700&family=Kosugi+Maru&display=swap');
 
 :root {
-  --washi: #f5f1e8;
-  --washi-dark: #ebe5d3;
-  --sumi: #2a2522;
-  --sumi-light: #4a4240;
-  --sumi-soft: #6b6461;
-  --shu: #c14545;
-  --shu-dark: #a53838;
-  --ai: #2d4a6b;
-  --matcha: #5a6b42;
-  --yamabuki: #d4a53a;
-  --line: rgba(42, 37, 34, 0.12);
-  --line-soft: rgba(42, 37, 34, 0.06);
-  --shadow-soft: 0 2px 8px rgba(42, 37, 34, 0.06);
-  --shadow-card: 0 1px 3px rgba(42, 37, 34, 0.08), 0 4px 12px rgba(42, 37, 34, 0.04);
+  /* 背景系（クリーム白＋薄いブルーグレー） */
+  --washi: #FEFCF9;
+  --washi-dark: #F4EFE6;
+  --bg-soft: #F0F7FA;
+
+  /* テキスト系（ニュートラルグレー・優しい黒） */
+  --sumi: #3A3A3A;
+  --sumi-light: #5A5A5A;
+  --sumi-soft: #8A8A8A;
+
+  /* アクセント系（イラスト調の優しい色） */
+  --shu: #D97959;          /* コーラルオレンジ（メインアクセント） */
+  --shu-dark: #C66748;     /* 濃いコーラル */
+  --ai: #7DBACC;           /* スカイブルー（鍋の色） */
+  --matcha: #7CB342;       /* フレッシュグリーン（葉） */
+  --yamabuki: #FFB347;     /* バターイエロー（Prepロゴの黄） */
+  --beet: #C83658;         /* ビート赤（ロゴのラディッシュ） */
+
+  /* 罫線・影 */
+  --line: rgba(58, 58, 58, 0.10);
+  --line-soft: rgba(58, 58, 58, 0.05);
+  --shadow-soft: 0 2px 8px rgba(58, 58, 58, 0.05);
+  --shadow-card: 0 1px 3px rgba(58, 58, 58, 0.06), 0 4px 12px rgba(58, 58, 58, 0.04);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
@@ -39,18 +50,19 @@ html, body {
 }
 
 body {
-  font-family: 'Zen Kaku Gothic New', sans-serif;
+  font-family: 'Noto Sans JP', 'Kosugi Maru', sans-serif;
+  font-weight: 400;
   background: var(--washi);
   color: var(--sumi);
   line-height: 1.6;
   padding-bottom: 80px;
   min-height: 100vh;
   background-image:
-    radial-gradient(circle at 20% 10%, rgba(193, 69, 69, 0.015) 0%, transparent 40%),
-    radial-gradient(circle at 80% 90%, rgba(45, 74, 107, 0.02) 0%, transparent 50%);
+    radial-gradient(circle at 20% 10%, rgba(217, 121, 89, 0.025) 0%, transparent 40%),
+    radial-gradient(circle at 80% 90%, rgba(125, 186, 204, 0.03) 0%, transparent 50%);
 }
 
-h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter-spacing: 0.02em; }
+h1, h2, h3, h4 { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-weight: 400; letter-spacing: 0.02em; }
 
 /* ========== ヘッダー ========== */
 .app-header {
@@ -62,7 +74,7 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
   z-index: 100;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  background: rgba(245, 241, 232, 0.92);
+  background: rgba(254, 252, 249, 0.92);
 }
 .app-header-inner {
   display: flex;
@@ -72,27 +84,28 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
   margin: 0 auto;
 }
 .app-title {
-  font-family: 'Shippori Mincho', serif;
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  color: var(--sumi);
+  font-family: 'Varela Round', sans-serif;
+  font-size: 26px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  color: var(--beet);
 }
 .app-title::before {
   content: '';
   display: inline-block;
-  width: 4px;
-  height: 18px;
-  background: var(--shu);
+  width: 5px;
+  height: 20px;
+  background: var(--yamabuki);
+  border-radius: 3px;
   margin-right: 10px;
-  vertical-align: -2px;
+  vertical-align: -3px;
 }
 .app-subtitle {
   font-size: 10px;
   color: var(--sumi-soft);
   letter-spacing: 0.3em;
   text-transform: uppercase;
-  font-family: 'Shippori Mincho', serif;
+  font-family: 'Varela Round', sans-serif;
 }
 
 /* ========== メインコンテナ ========== */
@@ -253,7 +266,7 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
 }
 .recipe-card:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(42, 37, 34, 0.1); }
 .recipe-card-title {
-  font-family: 'Shippori Mincho', serif;
+  font-family: 'Varela Round', 'Kosugi Maru', sans-serif;
   font-size: 17px;
   font-weight: 600;
   margin-bottom: 4px;
@@ -291,7 +304,7 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
   position: absolute;
   top: 14px;
   right: 14px;
-  font-family: 'Shippori Mincho', serif;
+  font-family: 'Varela Round', 'Kosugi Maru', sans-serif;
   font-size: 11px;
   color: var(--sumi-soft);
 }
@@ -317,7 +330,7 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
   gap: 8px;
 }
 .stock-item-name { font-size: 14px; font-weight: 500; flex: 1; }
-.stock-item-qty { font-size: 13px; color: var(--sumi-soft); font-family: 'Shippori Mincho', serif; }
+.stock-item-qty { font-size: 13px; color: var(--sumi-soft); font-family: 'Varela Round', 'Kosugi Maru', sans-serif; }
 .stock-item-low .stock-item-qty { color: var(--shu); font-weight: 600; }
 
 /* ========== 空状態 ========== */
@@ -327,7 +340,7 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
   color: var(--sumi-soft);
 }
 .empty-state-icon {
-  font-family: 'Shippori Mincho', serif;
+  font-family: 'Varela Round', 'Kosugi Maru', sans-serif;
   font-size: 40px;
   color: var(--line);
   margin-bottom: 12px;
@@ -341,7 +354,7 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
   bottom: 0;
   left: 0;
   right: 0;
-  background: rgba(245, 241, 232, 0.95);
+  background: rgba(254, 252, 249, 0.95);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-top: 1px solid var(--line);
@@ -362,17 +375,35 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
   cursor: pointer;
   color: var(--sumi-soft);
   font-family: inherit;
-  transition: color 0.2s;
+  transition: all 0.2s;
+  opacity: 0.55;
 }
-.nav-btn.active { color: var(--sumi); }
-.nav-btn.active .nav-icon { color: var(--shu); }
-.nav-icon {
-  font-family: 'Shippori Mincho', serif;
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
+.nav-btn.active {
+  color: var(--sumi);
+  opacity: 1;
 }
-.nav-label { font-size: 10px; letter-spacing: 0.1em; }
+.nav-btn.active .nav-icon-wrap {
+  transform: translateY(-2px);
+}
+.nav-btn.active .nav-label {
+  color: var(--beet);
+  font-weight: 500;
+}
+.nav-icon-wrap {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s;
+}
+.nav-icon-wrap img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  display: block;
+}
+.nav-label { font-size: 10px; letter-spacing: 0.05em; font-family: 'Noto Sans JP', sans-serif; }
 
 /* ========== モーダル ========== */
 .modal-overlay {
@@ -409,7 +440,7 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
   padding-bottom: 12px;
   border-bottom: 1px solid var(--line);
 }
-.modal-title { font-family: 'Shippori Mincho', serif; font-size: 17px; font-weight: 600; }
+.modal-title { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-size: 17px; font-weight: 600; }
 .modal-close {
   background: transparent;
   border: none;
@@ -533,7 +564,7 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
 /* ========== レシピ詳細 ========== */
 .recipe-detail-section { margin-bottom: 20px; }
 .recipe-detail-heading {
-  font-family: 'Shippori Mincho', serif;
+  font-family: 'Varela Round', 'Kosugi Maru', sans-serif;
   font-size: 13px;
   font-weight: 600;
   color: var(--sumi);
@@ -583,7 +614,7 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: 'Shippori Mincho', serif;
+  font-family: 'Varela Round', 'Kosugi Maru', sans-serif;
 }
 
 /* ========== 栄養価 ========== */
@@ -603,7 +634,7 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
   margin-bottom: 2px;
 }
 .nutrition-item-value {
-  font-family: 'Shippori Mincho', serif;
+  font-family: 'Varela Round', 'Kosugi Maru', sans-serif;
   font-size: 18px;
   font-weight: 600;
   color: var(--sumi);
@@ -698,7 +729,7 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
   left: 4px;
   background: var(--shu);
   color: white;
-  font-family: 'Shippori Mincho', serif;
+  font-family: 'Varela Round', 'Kosugi Maru', sans-serif;
   font-size: 11px;
   width: 22px;
   height: 22px;
@@ -710,7 +741,7 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
 
 /* ========== 在庫認識結果 ========== */
 .recognition-heading {
-  font-family: 'Shippori Mincho', serif;
+  font-family: 'Varela Round', 'Kosugi Maru', sans-serif;
   font-size: 13px;
   font-weight: 600;
   color: var(--sumi);
@@ -896,7 +927,7 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
   transition: all 0.15s;
   padding: 0 2px;
   line-height: 1;
-  font-family: 'Shippori Mincho', serif;
+  font-family: 'Varela Round', 'Kosugi Maru', sans-serif;
 }
 .rating-star.active {
   color: var(--yamabuki);
@@ -923,7 +954,7 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
 .history-entry-date {
   color: var(--sumi-soft);
   font-size: 11px;
-  font-family: 'Shippori Mincho', serif;
+  font-family: 'Varela Round', 'Kosugi Maru', sans-serif;
 }
 .history-entry-memo {
   color: var(--sumi-light);
@@ -940,7 +971,7 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
 
 /* ========== 編集モード ========== */
 .edit-section-title {
-  font-family: 'Shippori Mincho', serif;
+  font-family: 'Varela Round', 'Kosugi Maru', sans-serif;
   font-size: 13px;
   color: var(--sumi-soft);
   margin-bottom: 8px;
@@ -958,7 +989,7 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
   margin: auto;
   box-shadow: 0 8px 32px rgba(0,0,0,0.2);
 }
-.dialog-title { font-family: 'Shippori Mincho', serif; font-size: 16px; font-weight: 600; margin-bottom: 10px; }
+.dialog-title { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-size: 16px; font-weight: 600; margin-bottom: 10px; }
 .dialog-message { font-size: 13px; color: var(--sumi-light); margin-bottom: 20px; line-height: 1.6; }
 .dialog-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .dialog-container {
@@ -1012,8 +1043,7 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
 
 <header class="app-header">
   <div class="app-header-inner">
-    <div class="app-title">献立帖</div>
-    <div class="app-subtitle">KONDATE-CHO</div>
+    <div class="app-title">Prep</div>
   </div>
 </header>
 
@@ -1202,7 +1232,7 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
     </div>
 
     <div class="card">
-      <p class="text-sm text-muted text-center">献立帖 v1.9 · Phase 1</p>
+      <p class="text-sm text-muted text-center">Prep v2.0 · Phase 1</p>
     </div>
   </div>
 
@@ -1211,19 +1241,19 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
 <!-- ボトムナビ -->
 <nav class="bottom-nav">
   <button class="nav-btn active" data-view="recipes" onclick="switchView('recipes')">
-    <span class="nav-icon">帖</span><span class="nav-label">レシピ</span>
+    <span class="nav-icon-wrap"><img src="tab-recipes.svg" alt=""></span><span class="nav-label">レシピ</span>
   </button>
   <button class="nav-btn" data-view="stock" onclick="switchView('stock')">
-    <span class="nav-icon">庫</span><span class="nav-label">冷蔵庫</span>
+    <span class="nav-icon-wrap"><img src="tab-stock.svg" alt=""></span><span class="nav-label">冷蔵庫</span>
   </button>
   <button class="nav-btn" data-view="suggest" onclick="switchView('suggest')">
-    <span class="nav-icon">膳</span><span class="nav-label">献立</span>
+    <span class="nav-icon-wrap"><img src="tab-suggest.svg" alt=""></span><span class="nav-label">献立</span>
   </button>
   <button class="nav-btn" data-view="shopping" onclick="switchView('shopping')">
-    <span class="nav-icon">籠</span><span class="nav-label">買物</span>
+    <span class="nav-icon-wrap"><img src="tab-shopping.svg" alt=""></span><span class="nav-label">買物</span>
   </button>
   <button class="nav-btn" data-view="settings" onclick="switchView('settings')">
-    <span class="nav-icon">設</span><span class="nav-label">設定</span>
+    <span class="nav-icon-wrap"><img src="tab-settings.svg" alt=""></span><span class="nav-label">設定</span>
   </button>
 </nav>
 
@@ -1447,7 +1477,7 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
     </div>
     <div class="text-center mb-3">
       <div class="text-sm text-muted">レシピ</div>
-      <div style="font-family: 'Shippori Mincho', serif; font-size: 17px; font-weight: 600; margin-top: 4px;" id="feedback-recipe-name"></div>
+      <div style="font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-size: 17px; font-weight: 600; margin-top: 4px;" id="feedback-recipe-name"></div>
     </div>
 
     <div class="edit-section-title">味はいかがでしたか？</div>
@@ -1486,7 +1516,7 @@ h1, h2, h3, h4 { font-family: 'Shippori Mincho', serif; font-weight: 600; letter
 
 <script>
 // ============================================================
-// 献立帖 - Kondate-cho
+// Prep - レシピ・在庫・献立管理アプリ
 // ============================================================
 
 const STORAGE_KEY = 'kondate_cho_v1';
@@ -3108,7 +3138,7 @@ ${exclusionInfo}
     // プレビュー表示
     document.getElementById('ai-recipe-result').innerHTML = `
       <div class="card">
-        <h3 style="font-family: 'Shippori Mincho', serif; font-size: 16px; margin-bottom: 8px;">${escapeHtml(data.name)}</h3>
+        <h3 style="font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-size: 16px; margin-bottom: 8px;">${escapeHtml(data.name)}</h3>
         <div class="recipe-card-meta mb-2">
           <span>${data.servings}人分</span>
           ${data.cookTime ? `<span>${data.cookTime}分</span>` : ''}
@@ -3425,7 +3455,7 @@ function renderMealPlan(data) {
             ${categoryTag}
             ${d.isExisting ? '<span class="tag tag-matcha">既存</span>' : '<span class="tag tag-ai">新規</span>'}
           </div>
-          <h3 style="font-family: 'Shippori Mincho', serif; font-size: 16px; margin-bottom: 8px;">${escapeHtml(d.name)}</h3>
+          <h3 style="font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-size: 16px; margin-bottom: 8px;">${escapeHtml(d.name)}</h3>
           <div class="text-sm text-muted mb-2">材料: ${(d.ingredients || []).map(i => escapeHtml(i.name)).join('、')}</div>
           ${d.proteinPerServing ? `<div class="text-sm">タンパク質: 約${Math.round(d.proteinPerServing)}g/人</div>` : ''}
           ${d.note ? `<div class="text-sm text-muted mt-3">${escapeHtml(d.note)}</div>` : ''}
@@ -3443,7 +3473,7 @@ function renderMealPlan(data) {
           <div class="form-label">${d.day}日目</div>
           ${d.dinner.isExisting ? '<span class="tag tag-matcha">既存</span>' : '<span class="tag tag-ai">新規</span>'}
         </div>
-        <h3 style="font-family: 'Shippori Mincho', serif; font-size: 16px; margin-bottom: 8px;">${escapeHtml(d.dinner.name)}</h3>
+        <h3 style="font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-size: 16px; margin-bottom: 8px;">${escapeHtml(d.dinner.name)}</h3>
         <div class="text-sm text-muted mb-2">材料: ${(d.dinner.ingredients || []).map(i => escapeHtml(i.name)).join('、')}</div>
         ${d.dinner.proteinPerServing ? `<div class="text-sm">タンパク質: 約${Math.round(d.dinner.proteinPerServing)}g/人</div>` : ''}
         ${d.dinner.note ? `<div class="text-sm text-muted mt-3">${escapeHtml(d.dinner.note)}</div>` : ''}

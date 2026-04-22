@@ -1,9 +1,16 @@
-// 献立帖 Service Worker - v2 (network-first strategy)
-const CACHE_NAME = 'kondate-cho-v2';
+// Prep Service Worker - v3 (network-first strategy)
+const CACHE_NAME = 'prep-v3';
 const FALLBACK_URLS = [
   './',
   './index.html',
   './manifest.json',
+  './tab-recipes.svg',
+  './tab-stock.svg',
+  './tab-suggest.svg',
+  './tab-shopping.svg',
+  './tab-settings.svg',
+  './icon-192.png',
+  './icon-512.png',
 ];
 
 // インストール時：基本ファイルをキャッシュ
