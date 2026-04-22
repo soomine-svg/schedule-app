@@ -55,7 +55,7 @@ body {
   background: var(--washi);
   color: var(--sumi);
   line-height: 1.6;
-  padding-bottom: 100px;
+  padding-bottom: 110px;
   min-height: 100vh;
   background-image:
     radial-gradient(circle at 20% 10%, rgba(217, 121, 89, 0.025) 0%, transparent 40%),
@@ -363,7 +363,7 @@ h1, h2, h3, h4 { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-we
   align-items: stretch;
   padding: 10px 0 max(10px, env(safe-area-inset-bottom));
   z-index: 50;
-  min-height: 68px;
+  min-height: 76px;
 }
 .nav-btn {
   background: transparent;
@@ -373,13 +373,14 @@ h1, h2, h3, h4 { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-we
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 4px;
   cursor: pointer;
   color: var(--sumi-soft);
   font-family: inherit;
   transition: all 0.2s;
   opacity: 0.75;
+  overflow: hidden;
 }
 .nav-btn.active {
   color: var(--sumi);
@@ -393,8 +394,8 @@ h1, h2, h3, h4 { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-we
   font-weight: 500;
 }
 .nav-icon-wrap {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -402,11 +403,18 @@ h1, h2, h3, h4 { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-we
   flex-shrink: 0;
 }
 .nav-icon-wrap img {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   object-fit: contain;
   display: block;
   pointer-events: none;
+}
+.nav-label {
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  font-family: 'Noto Sans JP', sans-serif;
+  line-height: 1;
+  flex-shrink: 0;
 }
 .nav-label {
   font-size: 11px;
@@ -1251,19 +1259,19 @@ h1, h2, h3, h4 { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-we
 <!-- ボトムナビ -->
 <nav class="bottom-nav">
   <button class="nav-btn active" data-view="recipes" onclick="switchView('recipes')">
-    <span class="nav-icon-wrap"><img src="tab-recipes.svg?v=3" alt=""></span><span class="nav-label">レシピ</span>
+    <span class="nav-icon-wrap"><img src="tab-recipes.svg?v=5" alt=""></span><span class="nav-label">レシピ</span>
   </button>
   <button class="nav-btn" data-view="stock" onclick="switchView('stock')">
-    <span class="nav-icon-wrap"><img src="tab-stock.svg?v=3" alt=""></span><span class="nav-label">冷蔵庫</span>
+    <span class="nav-icon-wrap"><img src="tab-stock.svg?v=5" alt=""></span><span class="nav-label">冷蔵庫</span>
   </button>
   <button class="nav-btn" data-view="suggest" onclick="switchView('suggest')">
-    <span class="nav-icon-wrap"><img src="tab-suggest.svg?v=3" alt=""></span><span class="nav-label">献立</span>
+    <span class="nav-icon-wrap"><img src="tab-suggest.svg?v=5" alt=""></span><span class="nav-label">献立</span>
   </button>
   <button class="nav-btn" data-view="shopping" onclick="switchView('shopping')">
-    <span class="nav-icon-wrap"><img src="tab-shopping.svg?v=3" alt=""></span><span class="nav-label">買物</span>
+    <span class="nav-icon-wrap"><img src="tab-shopping.svg?v=5" alt=""></span><span class="nav-label">買物</span>
   </button>
   <button class="nav-btn" data-view="settings" onclick="switchView('settings')">
-    <span class="nav-icon-wrap"><img src="tab-settings.svg?v=3" alt=""></span><span class="nav-label">設定</span>
+    <span class="nav-icon-wrap"><img src="tab-settings.svg?v=5" alt=""></span><span class="nav-label">設定</span>
   </button>
 </nav>
 
