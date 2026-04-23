@@ -956,32 +956,58 @@ function onSlocType(){
   var gpsStatus = document.getElementById("sloc-gps-status");
   if(t==="current"){
     gpsStatus.style.display="block";
-    gpsStatus.innerHTML='<span style="color:#2b6cb0">📡 GPS取得中...</span>';
     window._gpsLat=null; window._gpsLng=null;
     window._gpsLoading=true;
-    if(navigator.geolocation){
+
+    if(!navigator.geolocation){
+      window._gpsLoading = false;
+      gpsStatus.innerHTML='<span style="color:#c53030">⚠️ このブラウザはGPS非対応です（HTTPSページで開いてください）</span>';
+      return;
+    }
+
+    // 多段リトライ：高精度→低精度→キャッシュ許容、合計3回まで挑戦
+    // フィールドワーク主体のため取得失敗を最小化する
+    var attempts = [
+      { label:'高精度', opts:{timeout:12000, maximumAge:30000, enableHighAccuracy:true } },
+      { label:'低精度', opts:{timeout:8000,  maximumAge:60000, enableHighAccuracy:false} },
+      { label:'キャッシュ許容', opts:{timeout:6000,  maximumAge:300000,enableHighAccuracy:false} }
+    ];
+    var attemptIdx = 0;
+
+    function tryGet(){
+      var a = attempts[attemptIdx];
+      gpsStatus.innerHTML='<span style="color:#2b6cb0">📡 GPS取得中...（'+a.label+' '+(attemptIdx+1)+'/'+attempts.length+'）</span>';
       navigator.geolocation.getCurrentPosition(function(pos){
         window._gpsLat = pos.coords.latitude;
         window._gpsLng = pos.coords.longitude;
         window._gpsLoading = false;
+        var ageSec = pos.timestamp ? Math.round((Date.now()-pos.timestamp)/1000) : 0;
+        var ageNote = ageSec > 60 ? '（'+Math.round(ageSec/60)+'分前のキャッシュ）' : '';
         gpsStatus.innerHTML='<span style="color:#276749;font-weight:600">✅ 現在地取得済み（'
-          +pos.coords.latitude.toFixed(4)+', '+pos.coords.longitude.toFixed(4)+'）</span>';
+          +pos.coords.latitude.toFixed(4)+', '+pos.coords.longitude.toFixed(4)+'）'+ageNote+'</span>'
+          +'　<button onclick="onSlocType()" style="margin-left:6px;padding:2px 8px;font-size:.7rem;'
+          +'background:#f7fafc;color:#4a5568;border:1px solid #cbd5e0;border-radius:6px;cursor:pointer">'
+          +'🔄 再取得</button>';
       }, function(err){
+        attemptIdx++;
+        if(attemptIdx < attempts.length){
+          // 次の方式で再挑戦（権限拒否は再挑戦不要なので即終了）
+          if(err.code === 1){ attemptIdx = attempts.length; }
+          else { setTimeout(tryGet, 500); return; }
+        }
         window._gpsLoading = false;
         window._gpsLat=null; window._gpsLng=null;
         var reason = err.code===1 ? '位置情報の使用が拒否されました（ブラウザ設定で許可してください）' :
-                     err.code===2 ? '位置情報を取得できませんでした' :
-                     err.code===3 ? 'タイムアウト（再取得ボタンをお試しください）' : 'エラーコード'+err.code;
+                     err.code===2 ? '位置情報を取得できませんでした（電波状況を確認してください）' :
+                     err.code===3 ? 'タイムアウト（'+attempts.length+'回リトライ全て失敗）' : 'エラーコード'+err.code;
         gpsStatus.innerHTML='<span style="color:#c53030">⚠️ GPS取得失敗：'+reason+'</span>'
           +'　<button onclick="onSlocType()" style="margin-left:6px;padding:3px 10px;font-size:.75rem;'
           +'background:#ebf4ff;color:#2b6cb0;border:1.5px solid #bee3f8;border-radius:6px;cursor:pointer;font-weight:600">'
           +'🔄 再取得</button>'
           +'<div style="font-size:.72rem;color:#a0aec0;margin-top:3px">自宅を出発地として続行するにはそのままスケジュール作成してください</div>';
-      }, {timeout:10000, maximumAge:0, enableHighAccuracy:false});
-    } else {
-      window._gpsLoading = false;
-      gpsStatus.innerHTML='<span style="color:#c53030">⚠️ このブラウザはGPS非対応です（HTTPSページで開いてください）</span>';
+      }, a.opts);
     }
+    tryGet();
   } else {
     gpsStatus.style.display="none";
     window._gpsLat=null; window._gpsLng=null;
@@ -2420,9 +2446,11 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
 
     // 窓終了済みの判定：今からモードのみ適用（翌日モードは必ず窓が先にある）
     // ただし早朝・夜間案件は startMin と無関係に翌日から持ち越されてきているので除外しない
+    // また本日納期案件は窓を過ぎていてもASAP救済対象にするため、timedAvailに入れる
     var isEarlyWindow = wEnd2 <= 9*60;     // 早朝窓（〜9時）
     var isNightWindow = wStart2 >= 20*60;   // 夜間窓（20時〜）
-    if(!isEarlyWindow && !isNightWindow){
+    var isDeadlineTodayCheck = c.d2 && _dStr && c.d2 <= _dStr;
+    if(!isEarlyWindow && !isNightWindow && !isDeadlineTodayCheck){
       // 通常時間帯の窓：startMinが窓終了間際なら今日は無理
       if(startMin >= wEnd2 - Math.min(15, c.dur||10)){
         timedNG.push(c);
@@ -2501,6 +2529,23 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     prev  = c.adr;
     prevC = c;
     placed[c.id] = true; placed[baseId(c.id)] = true; // 完全ID＆baseID両方登録
+    // 自分用の予約ブロックを消費済みにする（calBlocksから除去して以降の処理に影響させない）
+    for(var ri=calBlocks.length-1; ri>=0; ri--){
+      if(calBlocks[ri].isReservation && calBlocks[ri]._reservedFor === c.id){
+        calBlocks.splice(ri, 1);
+      }
+    }
+  }
+
+  // ブロック衝突チェック（自分自身の予約枠は除外）
+  // tcId: 自分の案件ID（指定時はその案件用の予約ブロックを衝突対象外とする）
+  function blockHits(st, dur, tcId){
+    for(var bi=0; bi<calBlocks.length; bi++){
+      var b = calBlocks[bi];
+      if(tcId && b.isReservation && b._reservedFor === tcId) continue;
+      if(st < b.end && (st + dur) > b.start) return b;
+    }
+    return null;
   }
 
   // 夕方以降のカレンダー予定の目的地座標を取得（経路最適化用）
@@ -2666,6 +2711,60 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
   // ── メインループ：時間指定案件を処理 ──
   // 区分①早朝（wEnd <= 9:00）  区分②通常（9:00〜20:00）  区分③夜間（wStart >= 20:00）
   // 夜間はfillFree後に処理するためここではスキップ
+  //
+  // 【本日納期絶対優先】メインループ前に、本日納期の時間指定案件の枠を
+  // 「予約ブロック」としてcalBlocksに追加する。これによりfillFreeや他案件の
+  // 移動時間が予約枠を侵食できなくなり、本日納期案件の翌日繰り越しを防ぐ。
+  // ピン案件・夜間案件・早朝案件は元々ループ内で個別ハンドリングされるため除外し、
+  // 通常時間帯（9:00〜20:00）の本日納期・時間指定案件のみを対象とする。
+  var _todayDeadlineTimed = timedAvail.filter(function(tc){
+    if(!isDeadlineToday(tc)) return false;
+    if(tc.pin != null) return false;
+    if(!tc.tm || !TM_RANGE[tc.tm]) return false;
+    var ws = TM_RANGE[tc.tm][0], we = TM_RANGE[tc.tm][1];
+    if(we <= 9*60) return false;          // 早朝は別経路
+    if(ws >= 20*60) return false;         // 夜間は別経路
+    if(ws <= DAY_START && we >= 20*60+15) return false; // 全日指定はfreePool扱い
+    return true;
+  });
+  // 重複予約を避けるため記録
+  var _reservedIds = {};
+  _todayDeadlineTimed.forEach(function(tc){
+    if(_reservedIds[tc.id]) return;
+    var ws = TM_RANGE[tc.tm][0], we = TM_RANGE[tc.tm][1];
+    // 予約開始時刻：窓の開始時刻と現在のstartMinの大きい方（過去には予約しない）
+    var rsStart = Math.max(ws, FREE_START);
+    var rsEnd = rsStart + tc.dur;
+    if(rsEnd > we){ return; } // 既に窓に入りきらない場合は通常ループに任せる
+    // 既存calBlocksとの衝突チェック（衝突時は窓内で後ろにずらす）
+    var maxShift = 8;
+    while(maxShift-- > 0){
+      var conflict = null;
+      for(var bi=0; bi<calBlocks.length; bi++){
+        var cb = calBlocks[bi];
+        if(rsStart < cb.end && rsEnd > cb.start){ conflict = cb; break; }
+      }
+      if(!conflict) break;
+      rsStart = conflict.end + 5;
+      rsEnd = rsStart + tc.dur;
+      if(rsEnd > we){ rsStart = -1; break; } // 入らない
+    }
+    if(rsStart < 0) return;
+    // 予約ブロックとして追加（_reservedForで自身の案件IDを記録し、
+    // メインループ内で自分自身の予約枠は無視できるようにする）
+    calBlocks.push({
+      start: rsStart,
+      end: rsEnd,
+      title: '【予約】'+tc.id+'（本日納期）',
+      isReservation: true,
+      _reservedFor: tc.id
+    });
+    _reservedIds[tc.id] = rsStart;
+  });
+  // 時刻順に再ソート（fillFree等のループ内ソートが正常動作するため）
+  calBlocks.sort(function(a,b){ return a.start - b.start; });
+
+  // ── メインループ：時間指定案件を処理 ──
   timedAvail.forEach(function(tc){
     if(placed[tc.id] || placed[baseId(tc.id)]) return;
 
@@ -2703,11 +2802,11 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
       var arriveE = cur + trvToTc_e;
       if(arriveE <= wLatestArrival){
         var stE = Math.max(wStart, arriveE);
-        var eBlocked = calBlocks.some(function(b){ return stE < b.end && (stE + tc.dur) > b.start; });
+        var eBlocked = blockHits(stE, tc.dur, tc.id) != null;
         if(!eBlocked && stE + tc.dur <= wEnd){ place(tc, stE); return; }
       } else if(earlyDepart >= cur){
         var stE2 = wStart;
-        var eBlocked2 = calBlocks.some(function(b){ return stE2 < b.end && (stE2 + tc.dur) > b.start; });
+        var eBlocked2 = blockHits(stE2, tc.dur, tc.id) != null;
         if(!eBlocked2 && stE2 + tc.dur <= wEnd){ place(tc, stE2); return; }
       }
       if(isDeadlineToday(tc)) _placeASAP(tc);
@@ -2715,6 +2814,27 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     }
 
     // ── 区分②通常（9:00〜20:00）──
+    // 本日納期で予約枠がある場合は、予約時刻を最優先で使う（予約枠は事前に確保済み）
+    if(_reservedIds[tc.id] != null){
+      var rst = _reservedIds[tc.id];
+      var _trvR = trv(prev, prevC, tc.adr, tc);
+      // 予約時刻に間に合う（cur + 移動時間 <= 予約時刻）かつ窓内であれば予約時刻に配置
+      if(cur + _trvR <= rst && rst + tc.dur <= wEnd && rst >= FREE_START){
+        // 自分の予約枠以外のブロックと衝突しないか念のためチェック
+        if(blockHits(rst, tc.dur, tc.id) == null){
+          place(tc, rst); // place内でcalBlocksから自分の予約枠が除去される
+          return;
+        }
+      }
+      // 予約時刻に間に合わない／使えない場合は予約枠を解放してフォールバック
+      for(var ri2=calBlocks.length-1; ri2>=0; ri2--){
+        if(calBlocks[ri2].isReservation && calBlocks[ri2]._reservedFor === tc.id){
+          calBlocks.splice(ri2, 1);
+        }
+      }
+      delete _reservedIds[tc.id];
+    }
+
     var trvToTc = trv(prev, prevC, tc.adr, tc);
     var arriveAt = cur + trvToTc;
     if(arriveAt > wLatestArrival){
@@ -2734,7 +2854,7 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
       return;
     }
     var st = Math.max(wStart, arriveAt);
-    var tcBlocked = calBlocks.some(function(b){ return st < b.end && (st + tc.dur) > b.start; });
+    var tcBlocked = blockHits(st, tc.dur, tc.id) != null;
     var tcDeadline = (effectiveDayEnd && effectiveDayEnd < wEnd) ? effectiveDayEnd : wEnd;
     if(!tcBlocked && st <= wLatestArrival && st + tc.dur <= tcDeadline){
       place(tc, st);
@@ -2749,13 +2869,10 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     if(placed[tc.id] || placed[baseId(tc.id)]) return;
     var _t = trv(prev, prevC, tc.adr, tc);
     var _st = Math.max(cur + _t, FREE_START);
-    // calBlocksを回避
+    // calBlocksを回避（自分自身の予約枠は除外）
     var _g = 0;
     while(_g++ < calBlocks.length * 2 + 2){
-      var _hit = null;
-      for(var _bi = 0; _bi < calBlocks.length; _bi++){
-        if(_st < calBlocks[_bi].end && (_st + tc.dur) > calBlocks[_bi].start){ _hit = calBlocks[_bi]; break; }
-      }
+      var _hit = blockHits(_st, tc.dur, tc.id);
       if(!_hit) break;
       _st = _hit.end + 15;
     }
@@ -2785,15 +2902,17 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     var arriveAt_n = cur + trvToTc_n;
     var st_n = Math.max(wStart_n, arriveAt_n);
     var wLatest_n = wEnd_n - Math.min(15, tc.dur);
-    var tcBlocked_n = calBlocks.some(function(b){ return st_n < b.end && (st_n + tc.dur) > b.start; });
+    var tcBlocked_n = blockHits(st_n, tc.dur, tc.id) != null;
     if(!tcBlocked_n && st_n <= wLatest_n && st_n + tc.dur <= wEnd_n) place(tc, st_n);
   });
 
   sched.sort(function(a,b){ return a.st-b.st; });
 
   // ── 2-opt改善で自由案件の訪問順を最適化（常時適用） ──
+  // 残存している予約ブロック（配置失敗ケース）は2-optに渡さない
   if(sched.length >= 3){
-    sched = twoOptImprove(sched, startAdr, startMin, spd, calBlocks, FREE_START, FREE_DAY_END);
+    var calBlocksFor2opt = calBlocks.filter(function(b){ return !b.isReservation; });
+    sched = twoOptImprove(sched, startAdr, startMin, spd, calBlocksFor2opt, FREE_START, FREE_DAY_END);
   }
 
   var consumedIds = {};
@@ -3033,10 +3152,12 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
       +'</div>';
   }
   // カレンダー予定の表示（発着移動時間をDM APIで表示）
-  if(calBlocks.length > 0){
+  // 表示用：予約ブロック（本日納期案件用の内部予約枠）は除外
+  var calBlocksDisplay = calBlocks.filter(function(b){ return !b.isReservation; });
+  if(calBlocksDisplay.length > 0){
     h+='<div style="margin-bottom:10px;padding:10px;background:#ebf8ff;border-radius:8px;border:1px solid #90cdf4">'
       +'<div style="font-size:.78rem;font-weight:600;color:#2c5282;margin-bottom:6px">📅 この日のカレンダー予定</div>';
-    calBlocks.forEach(function(b, bi){
+    calBlocksDisplay.forEach(function(b, bi){
       // このブロックへの到着移動時間（場所あり＆DMキャッシュあり時のみ表示）
       var trvToCalStr = '';
       if(b.location){
