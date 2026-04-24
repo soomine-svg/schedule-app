@@ -170,6 +170,17 @@ h1, h2, h3, h4 { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-we
   border: 1px solid var(--line);
 }
 .btn-ghost:hover { background: var(--washi-dark); }
+.btn-ghost.active,
+.btn-sm.active {
+  background: var(--shu);
+  color: white;
+  border-color: var(--shu);
+  font-weight: 600;
+}
+.btn-ghost.active:hover,
+.btn-sm.active:hover {
+  background: var(--shu-dark);
+}
 .btn-danger {
   background: transparent;
   color: var(--shu);
@@ -1190,25 +1201,39 @@ h1, h2, h3, h4 { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-we
       </div>
 
       <div id="prep-options" style="display:none; margin-bottom: 12px;">
-        <div class="form-label">カテゴリ</div>
+        <div class="form-label">カテゴリ（複数選択可）</div>
         <div class="flex gap-2 mb-3">
           <button class="btn btn-ghost btn-sm prep-category-btn active" data-prep-category="main">主菜の作り置き</button>
           <button class="btn btn-ghost btn-sm prep-category-btn" data-prep-category="side">副菜の作り置き</button>
         </div>
 
-        <div class="form-label">保存方法</div>
-        <div class="flex gap-2 mb-3" id="prep-storage-buttons">
-          <button class="btn btn-ghost btn-sm prep-storage-btn active" data-prep-storage="chilled">冷蔵保存（3〜5日）</button>
-          <button class="btn btn-ghost btn-sm prep-storage-btn" data-prep-storage="frozen">下味冷凍（2〜3週間）</button>
+        <!-- 主菜オプション（主菜選択時のみ表示） -->
+        <div id="prep-main-options" style="padding: 10px 12px; background: var(--washi-dark); border-radius: 8px; margin-bottom: 12px;">
+          <div class="form-label" style="margin-top: 0;">主菜の品数</div>
+          <div class="flex gap-2 mb-3" id="prep-main-count-buttons">
+            <button class="btn btn-ghost btn-sm prep-main-count-btn active" data-count="1">1品</button>
+            <button class="btn btn-ghost btn-sm prep-main-count-btn" data-count="2">2品</button>
+            <button class="btn btn-ghost btn-sm prep-main-count-btn" data-count="3">3品</button>
+          </div>
+          <div class="form-label">主菜の保存方法（複数選択可）</div>
+          <div class="flex gap-2" id="prep-storage-buttons">
+            <button class="btn btn-ghost btn-sm prep-storage-btn active" data-prep-storage="chilled">冷蔵保存（3〜5日）</button>
+            <button class="btn btn-ghost btn-sm prep-storage-btn" data-prep-storage="frozen">下味冷凍（2〜3週間）</button>
+          </div>
         </div>
 
-        <div class="form-label">提案する品数</div>
-        <div class="flex gap-2" id="prep-count-buttons">
-          <button class="btn btn-ghost btn-sm prep-count-btn active" data-prep-count="1">1品</button>
-          <button class="btn btn-ghost btn-sm prep-count-btn" data-prep-count="2">2品</button>
-          <button class="btn btn-ghost btn-sm prep-count-btn" data-prep-count="3">3品</button>
+        <!-- 副菜オプション（副菜選択時のみ表示） -->
+        <div id="prep-side-options" style="display:none; padding: 10px 12px; background: var(--washi-dark); border-radius: 8px; margin-bottom: 12px;">
+          <div class="form-label" style="margin-top: 0;">副菜の品数</div>
+          <div class="flex gap-2" id="prep-side-count-buttons">
+            <button class="btn btn-ghost btn-sm prep-side-count-btn active" data-count="1">1品</button>
+            <button class="btn btn-ghost btn-sm prep-side-count-btn" data-count="2">2品</button>
+            <button class="btn btn-ghost btn-sm prep-side-count-btn" data-count="3">3品</button>
+            <button class="btn btn-ghost btn-sm prep-side-count-btn" data-count="4">4品</button>
+            <button class="btn btn-ghost btn-sm prep-side-count-btn" data-count="5">5品</button>
+          </div>
+          <div class="text-sm text-muted mt-2">※ 副菜は冷蔵保存（3〜5日）で提案されます</div>
         </div>
-        <div class="text-sm text-muted mt-2" id="prep-count-hint">※ 主菜は最大3品まで</div>
       </div>
 
       <button class="btn btn-accent btn-full btn-lg" onclick="generateMealPlan()">献立を提案してもらう</button>
@@ -3708,16 +3733,18 @@ async function enrichRecipeNutrition(recipeId) {
 
 let currentPlanType = 'dinner-3'; // dinner-3, dinner-7, dinner-1, bento, prep
 let currentBentoStyle = 'morning'; // morning, prep
-let currentPrepCategory = 'main'; // main, side
-let currentPrepStorage = 'chilled'; // chilled, frozen
-let currentPrepCount = 1; // 1-5
+
+// 作り置き: 複数選択対応
+let prepCategories = new Set(['main']); // 'main', 'side' の組み合わせ（最低1つ必須）
+let prepStorages = new Set(['chilled']); // 'chilled', 'frozen' の組み合わせ（主菜時のみ有効）
+let prepMainCount = 1; // 主菜の品数 (1-3)
+let prepSideCount = 3; // 副菜の品数 (1-5)
 
 document.querySelectorAll('.plan-period-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.plan-period-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     currentPlanType = btn.dataset.planType;
-    // お弁当・作り置き選択時のみ該当オプションを表示
     document.getElementById('bento-options').style.display = currentPlanType === 'bento' ? 'block' : 'none';
     document.getElementById('prep-options').style.display = currentPlanType === 'prep' ? 'block' : 'none';
   });
@@ -3731,79 +3758,68 @@ document.querySelectorAll('.bento-style-btn').forEach(btn => {
   });
 });
 
-// 作り置き: カテゴリ切替（主菜/副菜）
+// --- 作り置き: カテゴリ（主菜/副菜）の複数選択 ---
 document.querySelectorAll('.prep-category-btn').forEach(btn => {
   btn.addEventListener('click', () => {
-    document.querySelectorAll('.prep-category-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    currentPrepCategory = btn.dataset.prepCategory;
-    updatePrepOptionsUI();
+    const cat = btn.dataset.prepCategory;
+    // トグル: 最後の1つは解除不可（必ず1つは選択状態を維持）
+    if (prepCategories.has(cat)) {
+      if (prepCategories.size > 1) {
+        prepCategories.delete(cat);
+        btn.classList.remove('active');
+      } else {
+        showToast('カテゴリは最低1つ選んでください');
+      }
+    } else {
+      prepCategories.add(cat);
+      btn.classList.add('active');
+    }
+    updatePrepSubOptions();
   });
 });
 
-// 作り置き: 保存方法切替（冷蔵/冷凍）
+// --- 作り置き: 主菜の保存方法の複数選択（冷蔵/冷凍） ---
 document.querySelectorAll('.prep-storage-btn').forEach(btn => {
   btn.addEventListener('click', () => {
-    document.querySelectorAll('.prep-storage-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    currentPrepStorage = btn.dataset.prepStorage;
+    const storage = btn.dataset.prepStorage;
+    if (prepStorages.has(storage)) {
+      if (prepStorages.size > 1) {
+        prepStorages.delete(storage);
+        btn.classList.remove('active');
+      } else {
+        showToast('保存方法は最低1つ選んでください');
+      }
+    } else {
+      prepStorages.add(storage);
+      btn.classList.add('active');
+    }
   });
 });
 
-// 作り置き: 品数切替
-document.querySelectorAll('.prep-count-btn').forEach(btn => {
+// --- 作り置き: 主菜の品数（単一選択） ---
+document.querySelectorAll('.prep-main-count-btn').forEach(btn => {
   btn.addEventListener('click', () => {
-    document.querySelectorAll('.prep-count-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.prep-main-count-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    currentPrepCount = parseInt(btn.dataset.prepCount, 10);
+    prepMainCount = parseInt(btn.dataset.count, 10);
   });
 });
 
-// 作り置きUI: 主菜は最大3品・下味冷凍OK、副菜は最大5品・冷蔵のみ
-function updatePrepOptionsUI() {
-  const countButtons = document.getElementById('prep-count-buttons');
-  const storageButtons = document.getElementById('prep-storage-buttons');
-  const hint = document.getElementById('prep-count-hint');
-
-  if (currentPrepCategory === 'main') {
-    // 主菜: 1-3品、冷蔵/冷凍両方可
-    countButtons.innerHTML = [1, 2, 3].map(n =>
-      `<button class="btn btn-ghost btn-sm prep-count-btn ${n === currentPrepCount ? 'active' : ''}" data-prep-count="${n}">${n}品</button>`
-    ).join('');
-    storageButtons.innerHTML = `
-      <button class="btn btn-ghost btn-sm prep-storage-btn ${currentPrepStorage === 'chilled' ? 'active' : ''}" data-prep-storage="chilled">冷蔵保存（3〜5日）</button>
-      <button class="btn btn-ghost btn-sm prep-storage-btn ${currentPrepStorage === 'frozen' ? 'active' : ''}" data-prep-storage="frozen">下味冷凍（2〜3週間）</button>
-    `;
-    hint.textContent = '※ 主菜は最大3品まで';
-    // 主菜に切り替え時、品数が3を超えていたら3に戻す
-    if (currentPrepCount > 3) currentPrepCount = 3;
-  } else {
-    // 副菜: 1-5品、冷蔵のみ（下味冷凍は副菜に合わない）
-    countButtons.innerHTML = [1, 2, 3, 4, 5].map(n =>
-      `<button class="btn btn-ghost btn-sm prep-count-btn ${n === currentPrepCount ? 'active' : ''}" data-prep-count="${n}">${n}品</button>`
-    ).join('');
-    storageButtons.innerHTML = `
-      <button class="btn btn-ghost btn-sm prep-storage-btn active" data-prep-storage="chilled">冷蔵保存（3〜5日）</button>
-    `;
-    currentPrepStorage = 'chilled'; // 副菜は冷蔵固定
-    hint.textContent = '※ 副菜は最大5品まで';
-  }
-
-  // イベント再バインド（innerHTML更新後）
-  countButtons.querySelectorAll('.prep-count-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      countButtons.querySelectorAll('.prep-count-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      currentPrepCount = parseInt(btn.dataset.prepCount, 10);
-    });
+// --- 作り置き: 副菜の品数（単一選択） ---
+document.querySelectorAll('.prep-side-count-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.prep-side-count-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    prepSideCount = parseInt(btn.dataset.count, 10);
   });
-  storageButtons.querySelectorAll('.prep-storage-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      storageButtons.querySelectorAll('.prep-storage-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      currentPrepStorage = btn.dataset.prepStorage;
-    });
-  });
+});
+
+// カテゴリ選択状態に応じて主菜/副菜サブオプションの表示切替
+function updatePrepSubOptions() {
+  const mainOptionsEl = document.getElementById('prep-main-options');
+  const sideOptionsEl = document.getElementById('prep-side-options');
+  if (mainOptionsEl) mainOptionsEl.style.display = prepCategories.has('main') ? 'block' : 'none';
+  if (sideOptionsEl) sideOptionsEl.style.display = prepCategories.has('side') ? 'block' : 'none';
 }
 
 async function generateMealPlan() {
@@ -3852,41 +3868,73 @@ async function generateMealPlan() {
     let prompt = '';
 
     if (currentPlanType === 'prep') {
-      // 作り置きプラン
-      const categoryJa = currentPrepCategory === 'main' ? '主菜' : '副菜';
-      const count = currentPrepCount;
-      let storageNote = '';
-      let mainGuidance = '';
+      // 作り置きプラン（複数カテゴリ・複数保存方法に対応）
+      const useMain = prepCategories.has('main');
+      const useSide = prepCategories.has('side');
+      const useChilled = prepStorages.has('chilled');
+      const useFrozen = prepStorages.has('frozen');
 
-      if (currentPrepStorage === 'frozen' && currentPrepCategory === 'main') {
-        storageNote = `下味冷凍保存（2〜3週間）を前提とした主菜の作り置きレシピ`;
-        mainGuidance = `
-- 生の肉・魚に下味をつけて密閉袋で冷凍する形式
-- 食べる日に冷蔵庫で解凍 → 焼く/炒める/煮るだけで完成する設計にすること
-- 調理手順は「解凍→加熱」のシンプルな流れにする
-- 1食分ずつ小分け冷凍を推奨
-- 下味は冷凍耐性のあるもの（醤油・味噌・塩麹・味噌漬け・照り焼きダレ・生姜焼きのタレ等）
-- 各レシピのnoteに「冷凍保存の注意点」「解凍方法」「当日の調理方法」を必ず含めること`;
-      } else if (currentPrepCategory === 'main') {
-        storageNote = `冷蔵保存（3〜5日）を前提とした主菜の作り置きレシピ`;
-        mainGuidance = `
-- 主菜としてタンパク質（肉・魚・卵・豆腐など）をしっかり含むこと
-- 加熱済みで、温め直すだけで食べられる形式
-- 汁気が多すぎず、味が馴染んで美味しくなる系統（煮物・煮込み・漬け込み・炒め物）
-- 冷めても美味しい、または再加熱で美味しくなるものを優先
-- 各レシピのnoteに「冷蔵保存の目安日数」「再加熱方法」「アレンジ例（丼にする・サンドにする等）」を記載`;
-      } else {
-        storageNote = `冷蔵保存（3〜5日）を前提とした副菜の作り置きレシピ`;
-        mainGuidance = `
-- 副菜として野菜中心で構成すること
-- マリネ・ナムル・和え物・きんぴら・佃煮・浅漬け・ピクルス系が特に向く
-- 味が馴染んで日が経つほど美味しくなるものを優先
-- お弁当の彩りにも使える副菜が望ましい
-- 異なる味付け系統（和・洋・中・エスニック）や色味（赤・黄・緑・茶）で${count}品のバリエーションを出す
-- 各レシピのnoteに「冷蔵保存の目安日数」「食べ方の工夫」を記載`;
+      // 主菜の内訳を構築（保存方法が2つなら分配）
+      const mainBreakdown = [];
+      if (useMain) {
+        if (useChilled && useFrozen) {
+          const chilledCount = Math.ceil(prepMainCount / 2);
+          const frozenCount = prepMainCount - chilledCount;
+          if (chilledCount > 0) mainBreakdown.push({ type: 'chilled', count: chilledCount });
+          if (frozenCount > 0) mainBreakdown.push({ type: 'frozen', count: frozenCount });
+        } else if (useFrozen) {
+          mainBreakdown.push({ type: 'frozen', count: prepMainCount });
+        } else {
+          mainBreakdown.push({ type: 'chilled', count: prepMainCount });
+        }
       }
 
-      prompt = `${storageNote}を${count}品提案してください。
+      const sideCount = useSide ? prepSideCount : 0;
+      const totalCount = (useMain ? prepMainCount : 0) + sideCount;
+
+      // プロンプト用の要求仕様文
+      const requirements = [];
+      if (useMain) {
+        mainBreakdown.forEach(b => {
+          if (b.type === 'frozen') {
+            requirements.push(`■ 主菜（下味冷凍・2〜3週間保存）${b.count}品
+  - 生の肉・魚に下味をつけて密閉袋で冷凍する形式
+  - 食べる日に冷蔵庫で解凍 → 焼く/炒める/煮るだけで完成する設計
+  - 下味は冷凍耐性のあるもの（醤油・味噌・塩麹・照り焼きダレ・生姜焼きのタレ等）
+  - 各レシピのnoteに「冷凍保存の注意点」「解凍方法」「当日の調理方法」を必ず含める
+  - dishオブジェクトのprepStorage="frozen"で識別`);
+          } else {
+            requirements.push(`■ 主菜（冷蔵作り置き・3〜5日保存）${b.count}品
+  - タンパク質（肉・魚・卵・豆腐など）をしっかり含む
+  - 加熱済みで温め直すだけで食べられる形式
+  - 汁気が多すぎず、味が馴染んで美味しくなる系統（煮物・煮込み・漬け込み・炒め物）
+  - 冷めても美味しい、または再加熱で美味しくなるものを優先
+  - 各レシピのnoteに「冷蔵保存の目安日数」「再加熱方法」「アレンジ例」を記載
+  - dishオブジェクトのprepStorage="chilled"で識別`);
+          }
+        });
+      }
+      if (useSide) {
+        requirements.push(`■ 副菜（冷蔵作り置き・3〜5日保存）${sideCount}品
+  - 野菜中心で構成
+  - マリネ・ナムル・和え物・きんぴら・佃煮・浅漬け・ピクルス系が特に向く
+  - 味が馴染んで日が経つほど美味しくなるものを優先
+  - お弁当の彩りにも使える副菜が望ましい
+  - 異なる味付け系統（和・洋・中・エスニック）や色味（赤・黄・緑・茶）でバリエーションを出す
+  - 各レシピのnoteに「冷蔵保存の目安日数」「食べ方の工夫」を記載
+  - dishオブジェクトのprepStorage="chilled"で識別`);
+      }
+
+      // タイトル組立
+      const titleParts = [];
+      if (useMain) titleParts.push(`主菜${prepMainCount}品`);
+      if (useSide) titleParts.push(`副菜${sideCount}品`);
+      const title = `作り置き ${titleParts.join('・')}`;
+
+      prompt = `以下の条件で作り置きレシピを合計${totalCount}品提案してください。
+
+【提案する内訳】
+${requirements.join('\n\n')}
 
 現在の在庫: ${stockInfo || 'なし'}
 ${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}${diversityHint}${exclusionInfo}
@@ -3894,20 +3942,22 @@ ${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${equi
 登録済みレシピ（優先使用・参考）:
 ${recipeInfo || 'なし'}
 
-【作り置きレシピの設計方針】${mainGuidance}
+【作り置きレシピ全体の設計方針】
 - 同じ食材（例：にんじん1本、鶏むね肉1枚）を複数品で使い切る発想も歓迎
 - 既存レシピを参考にしても、新規提案でもどちらでもOK
-- ${count}品それぞれ異なる味付けや調理法にし、食卓で飽きない構成に
+- 各品が異なる味付けや調理法にし、食卓で飽きない構成に
+- 主菜と副菜を両方提案する場合、お互いの味付けがかぶらないようバランスを取る
 
 【厳守事項】
 1. 純粋なJSONのみ返す。マークダウン・コードブロック・コメント・前置き禁止
 2. すべての値は実際の値（数値は数値、true/falseはtrue/false、文字列はダブルクォート囲み）
 3. 文字列内では改行を使わない
 4. 末尾カンマ禁止
-5. dishes配列には必ず${count}個の要素を含めること
+5. dishes配列には必ず合計${totalCount}個の要素を含めること
+6. 各dishにはcategory（"主菜"または"副菜"）とprepStorage（"chilled"または"frozen"）を必ず含めること
 
 出力例（この通りの構造で実際の値を入れて返すこと）:
-{"planType":"prep","prepCategory":"${currentPrepCategory}","prepStorage":"${currentPrepStorage}","title":"作り置き${categoryJa}${count}品","dishes":[{"category":"${categoryJa}","name":"鶏むね肉の味噌漬け","isExisting":false,"ingredients":[{"name":"鶏むね肉","amount":300,"unit":"g"},{"name":"味噌","amount":2,"unit":"大さじ"},{"name":"みりん","amount":1,"unit":"大さじ"}],"proteinPerServing":25,"storageNote":"冷蔵4日 / 焼く前にタレを軽く落とすと焦げにくい","note":"漬け込み後は密閉袋で保存。食べる30分前に常温に戻してからフライパンで焼く"}],"shoppingList":[{"name":"鶏むね肉","amount":300,"unit":"g"}],"totalProtein":25}`;
+{"planType":"prep","title":"${title}","dishes":[{"category":"主菜","prepStorage":"chilled","name":"鶏むね肉の塩麹漬け焼き","isExisting":false,"ingredients":[{"name":"鶏むね肉","amount":300,"unit":"g"},{"name":"塩麹","amount":2,"unit":"大さじ"}],"proteinPerServing":25,"storageNote":"冷蔵4日","note":"漬け込み1時間以上→フライパンで両面焼き。密閉容器で保存"},{"category":"副菜","prepStorage":"chilled","name":"にんじんのラペ","isExisting":false,"ingredients":[{"name":"にんじん","amount":1,"unit":"本"},{"name":"オリーブオイル","amount":1,"unit":"大さじ"}],"proteinPerServing":1,"storageNote":"冷蔵5日","note":"時間が経つほど味が馴染む"}],"shoppingList":[{"name":"鶏むね肉","amount":300,"unit":"g"}],"totalProtein":26}`;
     } else if (currentPlanType === 'bento') {
       // お弁当プラン
       const styleNote = currentBentoStyle === 'morning'
@@ -4031,11 +4081,11 @@ function renderMealPlan(data) {
         : d.category === '副菜'
           ? '<span class="tag tag-matcha">副菜</span>'
           : '<span class="tag">' + escapeHtml(d.category || '') + '</span>';
-      // 作り置きの場合は保存方法バッジを追加
+      // 作り置きの場合は保存方法バッジを追加（各dishごとに判定）
       const storageTag = data.planType === 'prep'
-        ? (data.prepStorage === 'frozen'
-            ? '<span class="tag">下味冷凍</span>'
-            : '<span class="tag">冷蔵作り置き</span>')
+        ? (d.prepStorage === 'frozen'
+            ? '<span class="tag" style="background:#e3f2fd; color:#0277bd;">下味冷凍</span>'
+            : '<span class="tag" style="background:#fff3e0; color:#e65100;">冷蔵作り置き</span>')
         : '';
       return `
         <div class="card">
@@ -4129,10 +4179,10 @@ function savePlanDish(dishIdx) {
   if (d.category === '主菜') tags.push('主菜');
   else if (d.category === '副菜') tags.push('副菜');
   if (state.mealPlan.planType === 'bento') tags.push('お弁当');
-  // 作り置き用タグ
+  // 作り置き用タグ（各dishごとにprepStorageで判定）
   if (state.mealPlan.planType === 'prep') {
     tags.push('作り置き');
-    if (state.mealPlan.prepStorage === 'frozen') tags.push('下味冷凍');
+    if (d.prepStorage === 'frozen') tags.push('下味冷凍');
     else tags.push('冷蔵保存');
   }
 
