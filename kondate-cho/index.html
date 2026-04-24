@@ -193,6 +193,42 @@ h1, h2, h3, h4 { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-we
 
 /* ========== フォーム ========== */
 .form-group { margin-bottom: 16px; }
+
+/* 調理器具チェックボックスグリッド */
+.equipment-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-top: 6px;
+}
+.equipment-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--washi-dark);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.15s;
+  border: 1.5px solid transparent;
+}
+.equipment-item input[type="checkbox"] {
+  margin: 0;
+  accent-color: var(--shu);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.equipment-item:has(input:checked) {
+  background: #fff5f7;
+  border-color: var(--shu);
+  color: var(--sumi);
+}
+.equipment-item-label {
+  flex: 1;
+  line-height: 1.3;
+  word-break: break-word;
+}
 .form-label {
   display: block;
   font-size: 12px;
@@ -1142,6 +1178,7 @@ h1, h2, h3, h4 { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-we
         <button class="btn btn-ghost btn-sm plan-period-btn" data-plan-type="dinner-7">1週間（夕食）</button>
         <button class="btn btn-ghost btn-sm plan-period-btn" data-plan-type="dinner-1">1日（夕食）</button>
         <button class="btn btn-ghost btn-sm plan-period-btn" data-plan-type="bento">お弁当</button>
+        <button class="btn btn-ghost btn-sm plan-period-btn" data-plan-type="prep">作り置き</button>
       </div>
 
       <div id="bento-options" style="display:none; margin-bottom: 12px;">
@@ -1150,6 +1187,28 @@ h1, h2, h3, h4 { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-we
           <button class="btn btn-ghost btn-sm bento-style-btn active" data-bento-style="morning">朝に作る（時短）</button>
           <button class="btn btn-ghost btn-sm bento-style-btn" data-bento-style="prep">作り置き活用</button>
         </div>
+      </div>
+
+      <div id="prep-options" style="display:none; margin-bottom: 12px;">
+        <div class="form-label">カテゴリ</div>
+        <div class="flex gap-2 mb-3">
+          <button class="btn btn-ghost btn-sm prep-category-btn active" data-prep-category="main">主菜の作り置き</button>
+          <button class="btn btn-ghost btn-sm prep-category-btn" data-prep-category="side">副菜の作り置き</button>
+        </div>
+
+        <div class="form-label">保存方法</div>
+        <div class="flex gap-2 mb-3" id="prep-storage-buttons">
+          <button class="btn btn-ghost btn-sm prep-storage-btn active" data-prep-storage="chilled">冷蔵保存（3〜5日）</button>
+          <button class="btn btn-ghost btn-sm prep-storage-btn" data-prep-storage="frozen">下味冷凍（2〜3週間）</button>
+        </div>
+
+        <div class="form-label">提案する品数</div>
+        <div class="flex gap-2" id="prep-count-buttons">
+          <button class="btn btn-ghost btn-sm prep-count-btn active" data-prep-count="1">1品</button>
+          <button class="btn btn-ghost btn-sm prep-count-btn" data-prep-count="2">2品</button>
+          <button class="btn btn-ghost btn-sm prep-count-btn" data-prep-count="3">3品</button>
+        </div>
+        <div class="text-sm text-muted mt-2" id="prep-count-hint">※ 主菜は最大3品まで</div>
       </div>
 
       <button class="btn btn-accent btn-full btn-lg" onclick="generateMealPlan()">献立を提案してもらう</button>
@@ -1216,6 +1275,17 @@ h1, h2, h3, h4 { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-we
         <textarea class="form-textarea" id="family-note" rows="2" placeholder="例：2歳児がいるので刺激物・誤嚥リスクのある食材は避けて／好き嫌いが多い／離乳食完了期" onchange="saveFamily()"></textarea>
       </div>
       <div class="text-sm text-muted" id="family-summary"></div>
+    </div>
+
+    <div class="card">
+      <h3 style="font-size: 14px; margin-bottom: 4px;">調理環境</h3>
+      <p class="text-sm text-muted mb-3">保有している調理機材や避けたい調理法をAI提案時に考慮します</p>
+      <label class="form-label">保有している機材（該当するものにチェック）</label>
+      <div id="equipment-checkboxes" class="equipment-grid"></div>
+      <div class="form-group" style="margin-top: 14px;">
+        <label class="form-label">苦手な調理／避けたいジャンル（任意）</label>
+        <textarea class="form-textarea" id="equipment-avoid-note" rows="2" placeholder="例：揚げ物は家でやらない／内臓系が苦手／魚をさばくのは避けたい／パクチーが苦手" onchange="saveEquipment()"></textarea>
+      </div>
     </div>
 
     <div class="card">
@@ -1620,7 +1690,23 @@ let state = {
   recentAISuggestions: [], // 直近のAI提案（重複回避用、最大5件）
   pantry: [], // 常備調味料リスト（AI提案時の参考）
   family: { adults: 0, teens: 0, schoolKids: 0, preschoolers: 0, note: '' }, // 家族構成
+  equipment: { tools: [], avoidNote: '' }, // 調理環境（保有機材 + 苦手な調理/避けたいジャンル）
 };
+
+// 調理器具マスタ（将来拡張しやすいよう配列で管理）
+// id: 保存用の一意キー / label: UI表示 / promptHint: AIプロンプト用の説明文
+const EQUIPMENT_MASTER = [
+  { id: 'oven', label: '本格オーブン', promptHint: '大型のオーブン（電子レンジと別体、ローストやグラタン・タルトが焼ける本格サイズ）' },
+  { id: 'grill', label: '魚焼きグリル', promptHint: '魚焼きグリル（両面焼き・トースト・野菜の焼き調理にも活用可能）' },
+  { id: 'seiro', label: '蒸篭（せいろ）', promptHint: '蒸篭（せいろ）。蒸し野菜・蒸し鶏・点心・茶碗蒸しなどの蒸し料理が得意' },
+  { id: 'sousvide', label: '低温調理器', promptHint: '低温調理器（ローストビーフ・鶏ハム・コンフィ・温泉卵などの精密温度調理が可能）' },
+  { id: 'hotplate', label: 'ホットプレート', promptHint: 'ホットプレート（お好み焼き・焼肉・パエリア・チーズタッカルビなど家族イベント料理向け）' },
+  { id: 'blender', label: 'ブレンダー/FP', promptHint: 'ブレンダーまたはフードプロセッサー（ポタージュ・スムージー・自家製ペースト・離乳食などが作れる）' },
+  { id: 'pressure', label: '圧力鍋', promptHint: '圧力鍋（角煮・牛すじ・豆類などの時短煮込みが可能）' },
+  { id: 'hotcook', label: 'ホットクック等', promptHint: '自動調理鍋（ホットクック等、放置調理が可能）' },
+  { id: 'donabe', label: '土鍋', promptHint: '土鍋（炊き込みご飯・本格的な鍋料理向け）' },
+  { id: 'wok', label: '中華鍋/鉄鍋', promptHint: '中華鍋または鉄のフライパン（高温調理の炒め物・炒飯向け）' },
+];
 
 let apiKey = '';
 let currentAddMode = 'manual';
@@ -2120,12 +2206,12 @@ function toggleTagsExpand() {
 
 function calcMatchScore(recipe) {
   if (recipe.ingredients.length === 0) return 0;
-  // 食材のみでマッチ率を計算（調味料・水系は分母から除外）
+  // 食材のみでマッチ率を計算（調味料・水系・米系は分母から除外）
   // これにより「食材があれば作れる」という感覚に一致する
   const foodIngredients = recipe.ingredients.filter(ing =>
-    !isSeasoningIngredient(ing.name) && !isWaterLike(ing.name)
+    !isSeasoningIngredient(ing.name) && !isWaterLike(ing.name) && !isStapleRice(ing.name)
   );
-  // 食材が1つもないレシピ（=調味料・水のみ）は便宜上100%扱い
+  // 食材が1つもないレシピ（=調味料・水・米のみ）は便宜上100%扱い
   if (foodIngredients.length === 0) return 1;
   let have = 0;
   foodIngredients.forEach(ing => {
@@ -2147,37 +2233,159 @@ function isWaterLike(ingredientName) {
   return /^(水|お湯|湯|熱湯|ぬるま湯|冷水|氷水|水道水)$/.test(norm);
 }
 
+// 米系も常時あるものとして扱う（在庫・常備調味料に含めなくてよい）
+function isStapleRice(ingredientName) {
+  const norm = normalizeIngredientName(ingredientName);
+  if (!norm) return false;
+  return /^(米|白米|玄米|精米|ご飯|ごはん|白ごはん|白ご飯|炊いたご飯|炊いたごはん)$/.test(norm);
+}
+
+// 食材名エイリアス辞書
+// レシピに書かれる表記 → それを満たす「実体」の候補リスト
+// いずれかが在庫・常備調味料に存在すれば「ある」と判定
+const INGREDIENT_ALIASES = {
+  // 油類: 揚げ油は汎用名
+  '揚げ油': ['サラダ油', '油', 'ごま油', 'オリーブオイル', '米油', 'こめ油', 'キャノーラ油'],
+  '揚げ用油': ['サラダ油', '油', 'ごま油', 'オリーブオイル', '米油'],
+  '炒め油': ['サラダ油', '油', 'ごま油', 'オリーブオイル'],
+  'サラダ油': ['サラダ油', '油', '米油', 'こめ油', 'キャノーラ油'],
+  // 塩こしょう: 塩 or こしょう のどちらか
+  '塩こしょう': ['塩こしょう', '塩胡椒', '塩コショウ', '塩', 'こしょう', '胡椒', 'コショウ'],
+  '塩胡椒': ['塩こしょう', '塩胡椒', '塩', 'こしょう', '胡椒'],
+  '塩コショウ': ['塩こしょう', '塩', 'こしょう', '胡椒', 'コショウ'],
+  // 表記揺れ
+  '生姜': ['生姜', 'しょうが', 'ショウガ', '生姜チューブ', 'おろし生姜'],
+  'しょうが': ['生姜', 'しょうが', 'ショウガ', '生姜チューブ'],
+  'にんにく': ['にんにく', 'ニンニク', '大蒜', 'にんにくチューブ', 'おろしにんにく'],
+  'ニンニク': ['にんにく', 'ニンニク', '大蒜', 'にんにくチューブ'],
+  '醤油': ['醤油', 'しょうゆ', '濃口醤油', '薄口醤油', 'うすくち醤油'],
+  'しょうゆ': ['醤油', 'しょうゆ'],
+  '酒': ['酒', '料理酒', '日本酒'],
+  '料理酒': ['酒', '料理酒', '日本酒'],
+  'みそ': ['味噌', 'みそ', '合わせ味噌', '白味噌', '赤味噌'],
+  '味噌': ['味噌', 'みそ'],
+  'バター': ['バター', '有塩バター', '無塩バター'],
+  '砂糖': ['砂糖', '上白糖', 'きび砂糖', 'てんさい糖'],
+  '片栗粉': ['片栗粉', 'かたくり粉'],
+  '小麦粉': ['小麦粉', '薄力粉', '強力粉'],
+  '薄力粉': ['薄力粉', '小麦粉'],
+  'だし': ['だし', '出汁', '和風だし', '顆粒だし', 'ほんだし', 'だしの素', 'だし汁'],
+  '出汁': ['だし', '出汁', '和風だし', '顆粒だし'],
+  'だし汁': ['だし', '出汁', 'だし汁', '和風だし', '顆粒だし'],
+  'コンソメ': ['コンソメ', '顆粒コンソメ', 'コンソメキューブ'],
+  '鶏がらスープの素': ['鶏がら', '鶏がらスープ', '鶏ガラ', '鶏ガラスープ', '創味シャンタン', '鶏がらスープの素'],
+  '鶏がら': ['鶏がら', '鶏がらスープ', '鶏ガラ', '鶏ガラスープ'],
+};
+
+// ある食材が「手元の在庫 or 常備調味料」に存在するか（エイリアスも考慮）
+// 部分一致の挙動:
+//   - 2文字以上の短い方が長い方に含まれる場合のみマッチ
+//   - 例: 在庫「新じゃがいも」↔ レシピ「じゃがいも」→ ○
+//   - 例: pantry「こしょう」↔ レシピ「粗びき黒こしょう」→ ○
+//   - 例: 在庫「鶏むね肉」↔ レシピ「肉」→ ✕（「肉」が1文字ルール未満でなく単独単語なので）→ 現状は○になるが許容
+function checkIngredientInInventory(ingredientName) {
+  const norm = normalizeIngredientName(ingredientName);
+  if (!norm) return false;
+
+  // 部分一致ヘルパー: 短い方の長さが2以上の場合のみOK
+  const safePartialMatch = (a, b) => {
+    if (a === b) return true;
+    const shorter = a.length < b.length ? a : b;
+    const longer = a.length < b.length ? b : a;
+    if (shorter.length < 2) return false;
+    return longer.includes(shorter);
+  };
+
+  // 在庫に存在し qty > 0（完全一致 or 部分一致）
+  const inStock = state.stock.some(s => {
+    if (s.qty <= 0) return false;
+    const sn = normalizeIngredientName(s.name);
+    return safePartialMatch(sn, norm);
+  });
+  if (inStock) return true;
+  // 常備調味料リストに存在（完全一致 or 部分一致）
+  const inPantry = (state.pantry || []).some(p => {
+    const pn = normalizeIngredientName(p);
+    return safePartialMatch(pn, norm);
+  });
+  return inPantry;
+}
+
 // 食材名が「調味料」カテゴリに該当するか（マッチ率計算から除外するため）
-// 判定順: ①常備調味料リストに一致 ②よくある調味料名の正規表現
+// 判定順: ①常備調味料リストに一致 ②よくある調味料名の完全一致/明確なパターン
+// 注意: 部分一致で拾うと「豚ごま切れ肉」の"ごま"や「鶏むね肉」が誤検出されるため、
+//       完全一致または末尾一致（〜油、〜こしょう）など明確なパターンに限定する
 function isSeasoningIngredient(ingredientName) {
   const norm = normalizeIngredientName(ingredientName);
   if (!norm) return false;
+
+  // 肉・魚など明らかに食材であるものを先に除外（誤検出防止）
+  if (/肉|豚|牛|鶏|鮭|まぐろ|さば|いわし|かつお|えび|いか|たこ|貝|ベーコン|ハム|ソーセージ|ウインナー|挽肉|ひき肉|ミンチ|切り身|魚/.test(norm)) {
+    return false;
+  }
+
   // 常備調味料リストに完全一致 or 部分一致
   const inPantry = (state.pantry || []).some(p => {
     const pn = normalizeIngredientName(p);
     return pn === norm || pn.includes(norm) || norm.includes(pn);
   });
   if (inPantry) return true;
-  // 定番調味料の名称パターン
-  return /醤油|味噌|塩|砂糖|酢|油|みりん|料理酒|だし|出汁|ソース|ケチャップ|マヨネーズ|マヨ|胡椒|こしょう|コショウ|七味|一味|わさび|からし|しょうが|生姜チューブ|にんにくチューブ|顆粒|コンソメ|鶏がら|ブイヨン|オイスター|ナンプラー|豆板醤|甜麺醤|コチュジャン|片栗粉|小麦粉|薄力粉|強力粉|パン粉|ごま|胡麻|ごま油|オリーブオイル|酒|バター/.test(norm);
+
+  // 完全一致で判定する定番調味料
+  const exactSeasonings = [
+    '醤油','しょうゆ','味噌','みそ','塩','砂糖','酢','米酢','穀物酢','みりん','料理酒','酒','日本酒',
+    'だし','出汁','だし汁','和風だし','顆粒だし','ほんだし','だしの素',
+    'ソース','中濃ソース','ウスターソース','ケチャップ','マヨネーズ','マヨ',
+    '胡椒','こしょう','コショウ','粗びき黒こしょう','黒こしょう','白こしょう','黒胡椒','白胡椒',
+    '七味','一味','七味唐辛子','一味唐辛子','わさび','からし','辛子','マスタード',
+    'コンソメ','顆粒コンソメ','鶏がら','鶏がらスープ','鶏ガラ','鶏ガラスープ','鶏がらスープの素','創味シャンタン',
+    'ブイヨン','オイスターソース','オイスター','ナンプラー','豆板醤','甜麺醤','コチュジャン',
+    '片栗粉','かたくり粉','小麦粉','薄力粉','強力粉','パン粉',
+    'ごま','白ごま','黒ごま','すりごま','いりごま','金ごま','胡麻','すり胡麻','いり胡麻',
+    'ごま油','オリーブオイル','オリーブ油','サラダ油','米油','こめ油','キャノーラ油','揚げ油','揚げ用油','炒め油','油',
+    'バター','有塩バター','無塩バター','マーガリン',
+    'しょうが','生姜','ショウガ','生姜チューブ','おろし生姜',
+    'にんにく','ニンニク','大蒜','にんにくチューブ','おろしにんにく',
+    'ゆずこしょう','柚子胡椒','ポン酢','ぽん酢','めんつゆ','白だし','顆粒和風だし',
+    'きなこ','きな粉','青のり','青海苔','ごま塩','塩こしょう','塩胡椒','塩コショウ',
+  ];
+  if (exactSeasonings.some(s => normalizeIngredientName(s) === norm)) return true;
+
+  // 末尾パターン（〜油、〜こしょう、〜胡椒、〜ソース、〜醤油、〜味噌、〜だし）
+  // これらの接尾辞で終わる場合は調味料と判定
+  if (/(油|こしょう|胡椒|ソース|醤油|しょうゆ|味噌|みそ|だし|出汁|酢|チューブ|スープの素)$/.test(norm)) {
+    return true;
+  }
+
+  return false;
 }
 
-// 食材が「手元にある」か判定（在庫 OR 常備調味料 OR 水系）
+// 食材が「手元にある」か判定（在庫 OR 常備調味料 OR 水系 OR 米系 OR エイリアス）
 function hasIngredient(ingredientName) {
   const norm = normalizeIngredientName(ingredientName);
   if (!norm) return false;
-  // 水系は常時ありとして扱う
+  // 水系・米系は常時ありとして扱う
   if (isWaterLike(ingredientName)) return true;
-  // 在庫に存在し、かつ qty > 0
-  const inStock = state.stock.some(s =>
-    normalizeIngredientName(s.name) === norm && s.qty > 0
-  );
-  if (inStock) return true;
-  // 常備調味料リストに存在
-  const inPantry = (state.pantry || []).some(p =>
-    normalizeIngredientName(p) === norm
-  );
-  return inPantry;
+  if (isStapleRice(ingredientName)) return true;
+  // 直接一致チェック
+  if (checkIngredientInInventory(ingredientName)) return true;
+  // エイリアス展開: 入力名がエイリアス辞書のキーに該当すれば、その候補のいずれかが在庫にあるかチェック
+  const aliases = INGREDIENT_ALIASES[ingredientName] || INGREDIENT_ALIASES[norm];
+  if (aliases) {
+    for (const alias of aliases) {
+      if (checkIngredientInInventory(alias)) return true;
+    }
+  }
+  // 逆引き: 入力名がエイリアスの候補値になっている場合（「サラダ油」と書かれて在庫に「サラダ油」そのものがない、等は通常の一致で拾うのでここは主に表記揺れ用）
+  for (const [key, values] of Object.entries(INGREDIENT_ALIASES)) {
+    if (values.some(v => normalizeIngredientName(v) === norm)) {
+      // このグループの他の候補値が在庫にあるかチェック
+      for (const v of values) {
+        if (checkIngredientInInventory(v)) return true;
+      }
+    }
+  }
+  return false;
 }
 
 // 食材名が常備調味料に部分一致するか（「醤油」が「濃口醤油」を含むなど）
@@ -3324,6 +3532,7 @@ async function generateAIRecipe() {
 
     const familyInfo = buildFamilyPromptInfo();
     const tasteInfo = buildTasteFeedbackInfo();
+    const equipmentInfo = buildEquipmentPromptInfo();
 
     // 多様性要素：ランダムなジャンルと味の方向性
     const selectedGenre = pickRandomGenre();
@@ -3338,7 +3547,7 @@ async function generateAIRecipe() {
     const fullPrompt = `あなたは料理レシピの専門家です。以下の条件でレシピを1つ提案してください。
 
 ユーザーの希望: ${prompt}
-${stockInfo}${urgentInfo}${avoidInfo}${pantryInfo}${familyInfo}${tasteInfo}
+${stockInfo}${urgentInfo}${avoidInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}
 
 【重要】今回は「${selectedGenre}」の方向性で、「${selectedFlavor}」味付けのレシピを提案してください。ただし、ユーザーの希望が明確にこれと矛盾する場合（例：「和食」と明示されているのに「タイ料理」にする）は、ユーザーの希望を優先してください。
 ${exclusionInfo}
@@ -3497,16 +3706,20 @@ async function enrichRecipeNutrition(recipeId) {
 // 献立プラン
 // ============================================================
 
-let currentPlanType = 'dinner-3'; // dinner-3, dinner-7, dinner-1, bento
+let currentPlanType = 'dinner-3'; // dinner-3, dinner-7, dinner-1, bento, prep
 let currentBentoStyle = 'morning'; // morning, prep
+let currentPrepCategory = 'main'; // main, side
+let currentPrepStorage = 'chilled'; // chilled, frozen
+let currentPrepCount = 1; // 1-5
 
 document.querySelectorAll('.plan-period-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.plan-period-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     currentPlanType = btn.dataset.planType;
-    // お弁当選択時のみオプションを表示
+    // お弁当・作り置き選択時のみ該当オプションを表示
     document.getElementById('bento-options').style.display = currentPlanType === 'bento' ? 'block' : 'none';
+    document.getElementById('prep-options').style.display = currentPlanType === 'prep' ? 'block' : 'none';
   });
 });
 
@@ -3517,6 +3730,81 @@ document.querySelectorAll('.bento-style-btn').forEach(btn => {
     currentBentoStyle = btn.dataset.bentoStyle;
   });
 });
+
+// 作り置き: カテゴリ切替（主菜/副菜）
+document.querySelectorAll('.prep-category-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.prep-category-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentPrepCategory = btn.dataset.prepCategory;
+    updatePrepOptionsUI();
+  });
+});
+
+// 作り置き: 保存方法切替（冷蔵/冷凍）
+document.querySelectorAll('.prep-storage-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.prep-storage-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentPrepStorage = btn.dataset.prepStorage;
+  });
+});
+
+// 作り置き: 品数切替
+document.querySelectorAll('.prep-count-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.prep-count-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentPrepCount = parseInt(btn.dataset.prepCount, 10);
+  });
+});
+
+// 作り置きUI: 主菜は最大3品・下味冷凍OK、副菜は最大5品・冷蔵のみ
+function updatePrepOptionsUI() {
+  const countButtons = document.getElementById('prep-count-buttons');
+  const storageButtons = document.getElementById('prep-storage-buttons');
+  const hint = document.getElementById('prep-count-hint');
+
+  if (currentPrepCategory === 'main') {
+    // 主菜: 1-3品、冷蔵/冷凍両方可
+    countButtons.innerHTML = [1, 2, 3].map(n =>
+      `<button class="btn btn-ghost btn-sm prep-count-btn ${n === currentPrepCount ? 'active' : ''}" data-prep-count="${n}">${n}品</button>`
+    ).join('');
+    storageButtons.innerHTML = `
+      <button class="btn btn-ghost btn-sm prep-storage-btn ${currentPrepStorage === 'chilled' ? 'active' : ''}" data-prep-storage="chilled">冷蔵保存（3〜5日）</button>
+      <button class="btn btn-ghost btn-sm prep-storage-btn ${currentPrepStorage === 'frozen' ? 'active' : ''}" data-prep-storage="frozen">下味冷凍（2〜3週間）</button>
+    `;
+    hint.textContent = '※ 主菜は最大3品まで';
+    // 主菜に切り替え時、品数が3を超えていたら3に戻す
+    if (currentPrepCount > 3) currentPrepCount = 3;
+  } else {
+    // 副菜: 1-5品、冷蔵のみ（下味冷凍は副菜に合わない）
+    countButtons.innerHTML = [1, 2, 3, 4, 5].map(n =>
+      `<button class="btn btn-ghost btn-sm prep-count-btn ${n === currentPrepCount ? 'active' : ''}" data-prep-count="${n}">${n}品</button>`
+    ).join('');
+    storageButtons.innerHTML = `
+      <button class="btn btn-ghost btn-sm prep-storage-btn active" data-prep-storage="chilled">冷蔵保存（3〜5日）</button>
+    `;
+    currentPrepStorage = 'chilled'; // 副菜は冷蔵固定
+    hint.textContent = '※ 副菜は最大5品まで';
+  }
+
+  // イベント再バインド（innerHTML更新後）
+  countButtons.querySelectorAll('.prep-count-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      countButtons.querySelectorAll('.prep-count-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentPrepCount = parseInt(btn.dataset.prepCount, 10);
+    });
+  });
+  storageButtons.querySelectorAll('.prep-storage-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      storageButtons.querySelectorAll('.prep-storage-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentPrepStorage = btn.dataset.prepStorage;
+    });
+  });
+}
 
 async function generateMealPlan() {
   if (!apiKey) {
@@ -3553,6 +3841,7 @@ async function generateMealPlan() {
       ? `\n常備している調味料（これらを優先的に使用、これら以外の調味料は避ける）: ${state.pantry.join(', ')}` : '';
     const familyInfo = buildFamilyPromptInfo();
     const tasteInfo = buildTasteFeedbackInfo();
+    const equipmentInfo = buildEquipmentPromptInfo();
 
     // 献立提案にも多様性指示を追加
     const recent = state.recentAISuggestions || [];
@@ -3562,7 +3851,64 @@ async function generateMealPlan() {
 
     let prompt = '';
 
-    if (currentPlanType === 'bento') {
+    if (currentPlanType === 'prep') {
+      // 作り置きプラン
+      const categoryJa = currentPrepCategory === 'main' ? '主菜' : '副菜';
+      const count = currentPrepCount;
+      let storageNote = '';
+      let mainGuidance = '';
+
+      if (currentPrepStorage === 'frozen' && currentPrepCategory === 'main') {
+        storageNote = `下味冷凍保存（2〜3週間）を前提とした主菜の作り置きレシピ`;
+        mainGuidance = `
+- 生の肉・魚に下味をつけて密閉袋で冷凍する形式
+- 食べる日に冷蔵庫で解凍 → 焼く/炒める/煮るだけで完成する設計にすること
+- 調理手順は「解凍→加熱」のシンプルな流れにする
+- 1食分ずつ小分け冷凍を推奨
+- 下味は冷凍耐性のあるもの（醤油・味噌・塩麹・味噌漬け・照り焼きダレ・生姜焼きのタレ等）
+- 各レシピのnoteに「冷凍保存の注意点」「解凍方法」「当日の調理方法」を必ず含めること`;
+      } else if (currentPrepCategory === 'main') {
+        storageNote = `冷蔵保存（3〜5日）を前提とした主菜の作り置きレシピ`;
+        mainGuidance = `
+- 主菜としてタンパク質（肉・魚・卵・豆腐など）をしっかり含むこと
+- 加熱済みで、温め直すだけで食べられる形式
+- 汁気が多すぎず、味が馴染んで美味しくなる系統（煮物・煮込み・漬け込み・炒め物）
+- 冷めても美味しい、または再加熱で美味しくなるものを優先
+- 各レシピのnoteに「冷蔵保存の目安日数」「再加熱方法」「アレンジ例（丼にする・サンドにする等）」を記載`;
+      } else {
+        storageNote = `冷蔵保存（3〜5日）を前提とした副菜の作り置きレシピ`;
+        mainGuidance = `
+- 副菜として野菜中心で構成すること
+- マリネ・ナムル・和え物・きんぴら・佃煮・浅漬け・ピクルス系が特に向く
+- 味が馴染んで日が経つほど美味しくなるものを優先
+- お弁当の彩りにも使える副菜が望ましい
+- 異なる味付け系統（和・洋・中・エスニック）や色味（赤・黄・緑・茶）で${count}品のバリエーションを出す
+- 各レシピのnoteに「冷蔵保存の目安日数」「食べ方の工夫」を記載`;
+      }
+
+      prompt = `${storageNote}を${count}品提案してください。
+
+現在の在庫: ${stockInfo || 'なし'}
+${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}${diversityHint}${exclusionInfo}
+
+登録済みレシピ（優先使用・参考）:
+${recipeInfo || 'なし'}
+
+【作り置きレシピの設計方針】${mainGuidance}
+- 同じ食材（例：にんじん1本、鶏むね肉1枚）を複数品で使い切る発想も歓迎
+- 既存レシピを参考にしても、新規提案でもどちらでもOK
+- ${count}品それぞれ異なる味付けや調理法にし、食卓で飽きない構成に
+
+【厳守事項】
+1. 純粋なJSONのみ返す。マークダウン・コードブロック・コメント・前置き禁止
+2. すべての値は実際の値（数値は数値、true/falseはtrue/false、文字列はダブルクォート囲み）
+3. 文字列内では改行を使わない
+4. 末尾カンマ禁止
+5. dishes配列には必ず${count}個の要素を含めること
+
+出力例（この通りの構造で実際の値を入れて返すこと）:
+{"planType":"prep","prepCategory":"${currentPrepCategory}","prepStorage":"${currentPrepStorage}","title":"作り置き${categoryJa}${count}品","dishes":[{"category":"${categoryJa}","name":"鶏むね肉の味噌漬け","isExisting":false,"ingredients":[{"name":"鶏むね肉","amount":300,"unit":"g"},{"name":"味噌","amount":2,"unit":"大さじ"},{"name":"みりん","amount":1,"unit":"大さじ"}],"proteinPerServing":25,"storageNote":"冷蔵4日 / 焼く前にタレを軽く落とすと焦げにくい","note":"漬け込み後は密閉袋で保存。食べる30分前に常温に戻してからフライパンで焼く"}],"shoppingList":[{"name":"鶏むね肉","amount":300,"unit":"g"}],"totalProtein":25}`;
+    } else if (currentPlanType === 'bento') {
       // お弁当プラン
       const styleNote = currentBentoStyle === 'morning'
         ? '朝に短時間で作れるレシピを優先（30分以内）。冷めても美味しい料理を選ぶこと。'
@@ -3573,7 +3919,7 @@ async function generateMealPlan() {
 スタイル: ${styleNote}
 
 現在の在庫: ${stockInfo || 'なし'}
-${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${diversityHint}${exclusionInfo}
+${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}${diversityHint}${exclusionInfo}
 
 登録済みレシピ（優先使用）:
 ${recipeInfo || 'なし'}
@@ -3599,7 +3945,7 @@ ${recipeInfo || 'なし'}
       prompt = `1日分の夕食の献立を考えてください。主菜1品＋副菜1〜2品の構成で。
 
 現在の在庫: ${stockInfo || 'なし'}
-${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${diversityHint}${exclusionInfo}
+${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}${diversityHint}${exclusionInfo}
 
 登録済みレシピ（優先使用）:
 ${recipeInfo || 'なし'}
@@ -3624,7 +3970,7 @@ ${recipeInfo || 'なし'}
       prompt = `${days}日分の夕食の献立を考えてください。既存のレシピを優先しつつ、足りなければ新規レシピも提案してOKです。
 
 現在の在庫: ${stockInfo || 'なし'}
-${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${diversityHint}${exclusionInfo}
+${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}${diversityHint}${exclusionInfo}
 
 登録済みレシピ（優先使用）:
 ${recipeInfo || 'なし'}
@@ -3676,7 +4022,7 @@ function renderMealPlan(data) {
 
   let mainHtml = '';
 
-  // 単発プラン（お弁当 or 1日）
+  // 単発プラン（お弁当 or 1日 or 作り置き）
   if (data.dishes && Array.isArray(data.dishes)) {
     const titleHtml = data.title ? `<div class="recipe-detail-heading">${escapeHtml(data.title)}</div>` : '';
     const dishesHtml = data.dishes.map((d, idx) => {
@@ -3685,15 +4031,22 @@ function renderMealPlan(data) {
         : d.category === '副菜'
           ? '<span class="tag tag-matcha">副菜</span>'
           : '<span class="tag">' + escapeHtml(d.category || '') + '</span>';
+      // 作り置きの場合は保存方法バッジを追加
+      const storageTag = data.planType === 'prep'
+        ? (data.prepStorage === 'frozen'
+            ? '<span class="tag">下味冷凍</span>'
+            : '<span class="tag">冷蔵作り置き</span>')
+        : '';
       return `
         <div class="card">
           <div class="flex flex-between mb-2">
-            ${categoryTag}
+            <span>${categoryTag}${storageTag}</span>
             ${d.isExisting ? '<span class="tag tag-matcha">既存</span>' : '<span class="tag tag-ai">新規</span>'}
           </div>
           <h3 style="font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-size: 16px; margin-bottom: 8px;">${escapeHtml(d.name)}</h3>
           <div class="text-sm text-muted mb-2">材料: ${(d.ingredients || []).map(i => escapeHtml(i.name)).join('、')}</div>
           ${d.proteinPerServing ? `<div class="text-sm">タンパク質: 約${Math.round(d.proteinPerServing)}g/人</div>` : ''}
+          ${d.storageNote ? `<div class="text-sm" style="color: var(--shu); margin-top: 6px;">📦 ${escapeHtml(d.storageNote)}</div>` : ''}
           ${d.note ? `<div class="text-sm text-muted mt-3">${escapeHtml(d.note)}</div>` : ''}
           ${!d.isExisting ? `<button class="btn btn-ghost btn-sm mt-3" onclick="savePlanDish(${idx})">このレシピを保存</button>` : ''}
         </div>
@@ -3776,6 +4129,16 @@ function savePlanDish(dishIdx) {
   if (d.category === '主菜') tags.push('主菜');
   else if (d.category === '副菜') tags.push('副菜');
   if (state.mealPlan.planType === 'bento') tags.push('お弁当');
+  // 作り置き用タグ
+  if (state.mealPlan.planType === 'prep') {
+    tags.push('作り置き');
+    if (state.mealPlan.prepStorage === 'frozen') tags.push('下味冷凍');
+    else tags.push('冷蔵保存');
+  }
+
+  // 保存メモに storageNote を含める
+  let notes = '献立提案から保存';
+  if (d.storageNote) notes += `\n保存目安: ${d.storageNote}`;
 
   const recipe = {
     id: uuid(),
@@ -3785,7 +4148,7 @@ function savePlanDish(dishIdx) {
     tags: tags,
     ingredients: d.ingredients || [],
     steps: d.note ? [d.note] : ['手順は後で追加してください'],
-    notes: '献立提案から保存',
+    notes: notes,
     createdAt: new Date().toISOString(),
     proteinPerServing: d.proteinPerServing || null,
   };
@@ -3833,6 +4196,7 @@ function renderSettings() {
   renderPrefList();
   renderPantry();
   renderFamily();
+  renderEquipment();
 }
 
 // ========== 家族構成 ==========
@@ -3907,6 +4271,71 @@ function buildFamilyPromptInfo() {
   if (f.note) {
     info += `\n- 追加配慮事項: ${f.note}`;
   }
+  return info;
+}
+
+// ========== 調理環境（調理器具・苦手な調理） ==========
+function renderEquipment() {
+  const container = document.getElementById('equipment-checkboxes');
+  if (!container) return;
+  const eq = state.equipment || { tools: [], avoidNote: '' };
+  const selected = new Set(eq.tools || []);
+
+  container.innerHTML = EQUIPMENT_MASTER.map(item => `
+    <label class="equipment-item">
+      <input type="checkbox" data-equipment-id="${item.id}" ${selected.has(item.id) ? 'checked' : ''}>
+      <span class="equipment-item-label">${item.label}</span>
+    </label>
+  `).join('');
+
+  // 各チェックボックスにイベントバインド
+  container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+    cb.addEventListener('change', saveEquipment);
+  });
+
+  // 自由記述欄の初期値
+  const noteEl = document.getElementById('equipment-avoid-note');
+  if (noteEl) noteEl.value = eq.avoidNote || '';
+}
+
+function saveEquipment() {
+  const container = document.getElementById('equipment-checkboxes');
+  const noteEl = document.getElementById('equipment-avoid-note');
+  if (!container) return;
+
+  const tools = Array.from(container.querySelectorAll('input[type="checkbox"]:checked'))
+    .map(cb => cb.dataset.equipmentId);
+  const avoidNote = noteEl ? noteEl.value.trim() : '';
+
+  state.equipment = { tools, avoidNote };
+  saveState();
+}
+
+// 調理環境をAIプロンプト用テキストに変換
+// - 保有機材があれば「これらを積極的に活用して提案の幅を広げる」旨を伝える
+// - 苦手な調理が書かれていればそれを避けるよう明示
+function buildEquipmentPromptInfo() {
+  const eq = state.equipment || { tools: [], avoidNote: '' };
+  const tools = Array.isArray(eq.tools) ? eq.tools : [];
+  const avoidNote = (eq.avoidNote || '').trim();
+
+  if (tools.length === 0 && !avoidNote) return '';
+
+  let info = '\n\n【調理環境】';
+
+  if (tools.length > 0) {
+    // 選択されたIDから説明文を引く
+    const hints = tools
+      .map(id => EQUIPMENT_MASTER.find(e => e.id === id))
+      .filter(Boolean)
+      .map(e => `- ${e.label}: ${e.promptHint}`);
+    info += `\n保有している調理機材（これらを活かした提案を積極的に組み込んでOK。標準的なフライパン・鍋・電子レンジ・炊飯器は当然あるものとして扱う）:\n${hints.join('\n')}`;
+  }
+
+  if (avoidNote) {
+    info += `\n\n苦手な調理・避けたいジャンル: ${avoidNote}\nこれらに該当する料理は提案に含めないでください。`;
+  }
+
   return info;
 }
 
