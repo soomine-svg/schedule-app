@@ -1397,20 +1397,89 @@ function showSyncDiagnostics(){
   alert(msg);
 }
 
-// Sheetsに保存
+// Sheetsに保存（セル分割対応）
+// 1セル50,000文字制限を考慮し、安全マージンを取って40,000文字で分割
+// 保存形式:
+//   A1: メタデータ（seq, updatedAt, 各データのセル位置インデックス）
+//   A2〜An: cases（通常1セルで十分）
+//   B1〜Bn: done（件数増加に応じて複数セル）
+//   C1〜Cn: visitLog
+var SHEET_CELL_LIMIT = 40000; // 安全マージン込み
+
+// 長い文字列を指定サイズで分割
+function _splitStringByChunks(str, chunkSize){
+  if(!str) return [''];
+  if(str.length <= chunkSize) return [str];
+  var chunks = [];
+  for(var i=0; i<str.length; i+=chunkSize) chunks.push(str.substring(i, i+chunkSize));
+  return chunks;
+}
+
 function saveCasesToSheet(){
   if(!gcalToken) return;
   var sid = localStorage.getItem(SHEET_ID_KEY) || FIXED_SHEET_ID;
-  var data = JSON.stringify({cases:cases, done:done, visitLog:visitLog, seq:seq, updatedAt: Date.now()});
   var el = document.getElementById('sync-sheet-status');
   if(el) el.textContent = '☁️ シートに同期中...';
-  fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sid+'/values/A1?valueInputOption=RAW',{
-    method:'PUT',
-    headers:{'Authorization':'Bearer '+gcalToken,'Content-Type':'application/json'},
-    body: JSON.stringify({values:[[data]]})
+
+  // データを3系列に分けてJSON化
+  var casesJson = JSON.stringify(cases || []);
+  var doneJson = JSON.stringify(done || []);
+  var visitLogJson = JSON.stringify(visitLog || []);
+
+  // それぞれ40,000文字でチャンク分割
+  var casesChunks = _splitStringByChunks(casesJson, SHEET_CELL_LIMIT);
+  var doneChunks = _splitStringByChunks(doneJson, SHEET_CELL_LIMIT);
+  var visitLogChunks = _splitStringByChunks(visitLogJson, SHEET_CELL_LIMIT);
+
+  // メタデータ（A1セルに入れる）
+  var meta = {
+    _format: 'schedule_v3_split',
+    seq: seq || 1,
+    updatedAt: Date.now(),
+    casesCells: casesChunks.length,
+    doneCells: doneChunks.length,
+    visitLogCells: visitLogChunks.length,
+    totalChars: casesJson.length + doneJson.length + visitLogJson.length
+  };
+  var metaJson = JSON.stringify(meta);
+
+  // batchUpdateで一括送信（1リクエストで複数セル書き込み）
+  var dataRanges = [];
+  dataRanges.push({range: 'A1', values: [[metaJson]]});
+  casesChunks.forEach(function(chunk, i){
+    dataRanges.push({range: 'A'+(i+2), values: [[chunk]]});
+  });
+  doneChunks.forEach(function(chunk, i){
+    dataRanges.push({range: 'B'+(i+1), values: [[chunk]]});
+  });
+  visitLogChunks.forEach(function(chunk, i){
+    dataRanges.push({range: 'C'+(i+1), values: [[chunk]]});
+  });
+
+  // まず古いデータを消すためA〜C列を広めにクリアしてから書き込み
+  // （doneが減ったケース等で古いチャンクが残らないように）
+  var totalRows = Math.max(
+    casesChunks.length + 1,
+    doneChunks.length,
+    visitLogChunks.length,
+    50  // 最低50行はクリア（将来の拡張分）
+  );
+
+  fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sid+'/values/A1:C'+totalRows+':clear',{
+    method:'POST',
+    headers:{'Authorization':'Bearer '+gcalToken,'Content-Type':'application/json'}
+  }).then(function(r){
+    // クリア後、batchUpdateで書き込み
+    return fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sid+'/values:batchUpdate',{
+      method:'POST',
+      headers:{'Authorization':'Bearer '+gcalToken,'Content-Type':'application/json'},
+      body: JSON.stringify({
+        valueInputOption: 'RAW',
+        data: dataRanges
+      })
+    });
   }).then(function(r){
     if(!r.ok){
-      // エラー詳細を取得するためレスポンスボディも読む
       return r.text().then(function(body){
         var err = new Error('HTTP '+r.status);
         err._status = r.status;
@@ -1421,18 +1490,17 @@ function saveCasesToSheet(){
     }
     var now = new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
     if(el){
-      el.textContent = '✅ シート同期済み '+now+'（'+cases.length+'件）';
-      // 成功時は失敗時スタイルをリセット
+      var cellNote = (casesChunks.length + doneChunks.length + visitLogChunks.length) > 3
+        ? '（'+(casesChunks.length + doneChunks.length + visitLogChunks.length)+'セル分割保存）' : '';
+      el.textContent = '✅ シート同期済み '+now+'（'+cases.length+'件）'+cellNote;
       el.style.color = '';
       el.style.cursor = '';
       el.style.fontWeight = '';
       el.onclick = null;
     }
-    // 成功時は前のエラーをクリア
     try{ localStorage.removeItem('schedule_lastSheetError'); }catch(e){}
   }).catch(function(e){
     console.log('Sheet save error:',e);
-    // エラー詳細をlocalStorageに保存（診断機能で表示するため）
     try{
       var errInfo = {
         time: new Date().toISOString(),
@@ -1442,7 +1510,8 @@ function saveCasesToSheet(){
         body: (e._body || '').substring(0, 1000),
         sheetId: e._sheetId || sid,
         casesCount: cases.length,
-        hasToken: !!gcalToken
+        hasToken: !!gcalToken,
+        totalChars: casesJson.length + doneJson.length + visitLogJson.length
       };
       localStorage.setItem('schedule_lastSheetError', JSON.stringify(errInfo));
     }catch(saveErr){}
@@ -1460,7 +1529,6 @@ function saveCasesToSheet(){
           }
           return;
         }
-        // 新シートIDを保存して再度同期
         localStorage.setItem(SHEET_ID_KEY, newSid);
         if(el) el.textContent = '✅ 新規シート作成完了。再度同期します...';
         setTimeout(saveCasesToSheet, 300);
@@ -1480,15 +1548,17 @@ function saveCasesToSheet(){
 
 // Sheetsから読み込んでローカルとマージ（新しい方を採用）
 // 404の場合は自動でシートを新規作成する
+// A1のメタデータを見て新形式（schedule_v3_split）か旧形式かを判定
 function loadCasesFromSheet(callback){
   if(!gcalToken){ if(callback) callback(); return; }
   var sid = localStorage.getItem(SHEET_ID_KEY) || FIXED_SHEET_ID;
   var el = document.getElementById('sync-sheet-status');
   if(el) el.textContent = '☁️ シートからデータ取得中...';
+
+  // まずA1だけ取得してフォーマットを判定
   fetch('https://sheets.googleapis.com/v4/spreadsheets/'+sid+'/values/A1',{
     headers:{'Authorization':'Bearer '+gcalToken}
   }).then(function(r){
-    // ステータスコードも拾う
     return r.json().then(function(body){ return {ok:r.ok, status:r.status, body:body}; });
   })
   .then(function(resp){
@@ -1496,7 +1566,6 @@ function loadCasesFromSheet(callback){
     if(!resp.ok){
       var status = resp.status;
       if(status === 404){
-        // シート未作成 → 自動作成
         if(el) el.textContent = '🆕 シートが見つかりません。新規シートを作成します...';
         createNewSheet(function(newSid, err){
           if(err){
@@ -1505,9 +1574,7 @@ function loadCasesFromSheet(callback){
             return;
           }
           if(el) el.textContent = '✅ 新規シート作成完了。データを同期中...';
-          // 新シートIDを保存
           localStorage.setItem(SHEET_ID_KEY, newSid);
-          // 既存のローカルデータをシートに書き込む
           if(cases.length > 0){
             saveCasesToSheet();
           } else {
@@ -1527,39 +1594,114 @@ function loadCasesFromSheet(callback){
       }
     }
     var d = resp.body;
-    if(d.values && d.values[0] && d.values[0][0]){
-      try{
-        var remote = JSON.parse(d.values[0][0]);
-        var localRaw = localStorage.getItem(STORAGE_KEY);
-        var local = localRaw ? JSON.parse(localRaw) : null;
-        var localTime = local && local.updatedAt ? local.updatedAt : 0;
-        var remoteTime = remote.updatedAt || 0;
-        if(remote.cases && remote.cases.length > 0){
-          if(remoteTime >= localTime){
-            // シートが新しい → シートのデータを使用
-            cases = remote.cases; seq = remote.seq||1;
-            if(remote.done) done = remote.done;
-            if(remote.visitLog) visitLog = remote.visitLog;
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(remote));
-            renderCases();
-            if(el) el.textContent = '✅ シートから'+cases.length+'件を読み込みました';
-          } else {
-            // ローカルが新しい → シートに上書き保存
-            saveCasesToSheet();
-            if(el) el.textContent = '✅ ローカルデータ（'+cases.length+'件）をシートに同期しました';
-          }
-        } else if(cases.length > 0){
-          saveCasesToSheet();
-          if(el) el.textContent = '✅ ローカルデータ（'+cases.length+'件）をシートに同期しました';
-        } else {
-          if(el) el.textContent = '✅ シート接続済み（データなし）';
-        }
-      } catch(e){
-        if(el) el.textContent = '⚠️ シートデータの解析失敗';
+    if(!d.values || !d.values[0] || !d.values[0][0]){
+      // A1が空 → 新規シート扱い
+      if(cases.length > 0){
+        saveCasesToSheet();
+        if(el) el.textContent = '✅ ローカルデータ（'+cases.length+'件）をシートに初回同期しました';
+      } else {
+        if(el) el.textContent = '✅ シート接続済み（新規）';
       }
-    } else if(cases.length > 0){
+      if(callback) callback();
+      return;
+    }
+
+    // A1の中身をパース
+    var a1Raw = d.values[0][0];
+    var a1Parsed;
+    try{
+      a1Parsed = JSON.parse(a1Raw);
+    }catch(e){
+      if(el) el.textContent = '⚠️ シートA1の解析失敗';
+      if(callback) callback();
+      return;
+    }
+
+    // ── 新形式（schedule_v3_split）の判定と処理 ──
+    if(a1Parsed && a1Parsed._format === 'schedule_v3_split'){
+      // メタデータからセル範囲を決定し、batchGetで一括取得
+      var meta = a1Parsed;
+      var ranges = [];
+      if(meta.casesCells > 0){
+        ranges.push('A2:A'+(1 + meta.casesCells));
+      }
+      if(meta.doneCells > 0){
+        ranges.push('B1:B'+meta.doneCells);
+      }
+      if(meta.visitLogCells > 0){
+        ranges.push('C1:C'+meta.visitLogCells);
+      }
+      var url = 'https://sheets.googleapis.com/v4/spreadsheets/'+sid+'/values:batchGet?'+
+        ranges.map(function(r){return 'ranges='+encodeURIComponent(r);}).join('&');
+      fetch(url, {headers:{'Authorization':'Bearer '+gcalToken}})
+        .then(function(r){ return r.json(); })
+        .then(function(batchData){
+          try{
+            // 各セル範囲からチャンクを結合して文字列にする
+            var valueRanges = batchData.valueRanges || [];
+            var idx = 0;
+            var casesStr = '', doneStr = '', visitLogStr = '';
+            if(meta.casesCells > 0){
+              var casesRows = (valueRanges[idx] && valueRanges[idx].values) || [];
+              casesStr = casesRows.map(function(row){ return row[0] || ''; }).join('');
+              idx++;
+            }
+            if(meta.doneCells > 0){
+              var doneRows = (valueRanges[idx] && valueRanges[idx].values) || [];
+              doneStr = doneRows.map(function(row){ return row[0] || ''; }).join('');
+              idx++;
+            }
+            if(meta.visitLogCells > 0){
+              var visitLogRows = (valueRanges[idx] && valueRanges[idx].values) || [];
+              visitLogStr = visitLogRows.map(function(row){ return row[0] || ''; }).join('');
+              idx++;
+            }
+            var remoteCases = casesStr ? JSON.parse(casesStr) : [];
+            var remoteDone = doneStr ? JSON.parse(doneStr) : [];
+            var remoteVisitLog = visitLogStr ? JSON.parse(visitLogStr) : [];
+            var remote = {
+              cases: remoteCases,
+              done: remoteDone,
+              visitLog: remoteVisitLog,
+              seq: meta.seq || 1,
+              updatedAt: meta.updatedAt || 0
+            };
+            _applyRemoteOrPush(remote, el);
+          }catch(err){
+            console.log('Split format parse error', err);
+            if(el) el.textContent = '⚠️ シートデータ結合失敗（タップで詳細）';
+            if(el){
+              el.style.cursor = 'pointer';
+              el.style.color = '#c53030';
+              el.style.fontWeight = '600';
+              el.onclick = showSyncDiagnostics;
+            }
+          }
+          if(callback) callback();
+        })
+        .catch(function(err){
+          console.log('batchGet error', err);
+          if(el) el.textContent = '⚠️ シート分割取得失敗';
+          if(callback) callback();
+        });
+      return;
+    }
+
+    // ── 旧形式の処理（A1に全部入っているケース）──
+    // 昔の単一セル保存や、エラー状態で残ってしまったデータ
+    try{
+      if(a1Parsed.cases){
+        var remote = a1Parsed;
+        _applyRemoteOrPush(remote, el);
+        if(callback) callback();
+        return;
+      }
+    }catch(e){}
+
+    // どちらの形式でもない → 新規扱い
+    if(cases.length > 0){
       saveCasesToSheet();
-      if(el) el.textContent = '✅ ローカルデータ（'+cases.length+'件）をシートに初回同期しました';
+      if(el) el.textContent = '✅ ローカルデータ（'+cases.length+'件）をシートに同期しました';
     } else {
       if(el) el.textContent = '✅ シート接続済み（新規）';
     }
@@ -1567,11 +1709,40 @@ function loadCasesFromSheet(callback){
   }).catch(function(e){
     console.log('Sheet load error:',e);
     if(el) el.textContent = '⚠️ シート読込失敗（ローカルデータで動作中）';
-    // エラーでもsync-statusを正常表示に戻す
     var ss = document.getElementById('sync-status');
     if(ss && ss.textContent.indexOf('同期中') >= 0) ss.textContent = '✅ Google接続済み';
     if(callback) callback();
   });
+}
+
+// リモートとローカルを比較して新しい方を採用（共通処理）
+function _applyRemoteOrPush(remote, el){
+  var localRaw = localStorage.getItem(STORAGE_KEY);
+  var local = localRaw ? JSON.parse(localRaw) : null;
+  var localTime = local && local.updatedAt ? local.updatedAt : 0;
+  var remoteTime = remote.updatedAt || 0;
+  if(remote.cases && remote.cases.length > 0){
+    if(remoteTime >= localTime){
+      // シートが新しい → シートのデータを使用
+      cases = remote.cases; seq = remote.seq || 1;
+      if(remote.done) done = remote.done;
+      if(remote.visitLog) visitLog = remote.visitLog;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        cases:cases, done:done, visitLog:visitLog, seq:seq, updatedAt: remoteTime
+      }));
+      renderCases();
+      if(el) el.textContent = '✅ シートから'+cases.length+'件を読み込みました';
+    } else {
+      // ローカルが新しい → シートに上書き保存
+      saveCasesToSheet();
+      if(el) el.textContent = '✅ ローカルデータ（'+cases.length+'件）をシートに同期しました';
+    }
+  } else if(cases.length > 0){
+    saveCasesToSheet();
+    if(el) el.textContent = '✅ ローカルデータ（'+cases.length+'件）をシートに同期しました';
+  } else {
+    if(el) el.textContent = '✅ シート接続済み（データなし）';
+  }
 }
 
 // 新規シートを自動作成する（初回またはシート紛失時）
