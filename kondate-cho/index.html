@@ -1248,6 +1248,8 @@ h1, h2, h3, h4 { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-we
 
       <button class="btn btn-accent btn-full btn-lg" onclick="generateMealPlan()">献立を提案してもらう</button>
       <div class="text-sm text-muted mt-3 text-center">※ AI提案にはClaude APIキーが必要です</div>
+
+      <button class="btn btn-ghost btn-full btn-sm mt-3" onclick="openMealPlanHistory()" id="meal-plan-history-btn" style="display:none;">📋 過去の献立を見る（<span id="meal-plan-history-count">0</span>件）</button>
     </div>
 
     <div id="meal-plan-result"></div>
@@ -1700,6 +1702,18 @@ h1, h2, h3, h4 { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-we
   </div>
 </div>
 
+<!-- 献立履歴モーダル -->
+<div class="modal-overlay" id="modal-meal-plan-history">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">過去の献立履歴</div>
+      <button class="modal-close" onclick="closeModal('modal-meal-plan-history')">×</button>
+    </div>
+    <div class="text-sm text-muted mb-3">過去20件まで保存されます。タップで内容を表示</div>
+    <div id="meal-plan-history-list"></div>
+  </div>
+</div>
+
 <!-- 確認ダイアログ -->
 <div class="dialog-container" id="confirm-dialog">
   <div class="dialog">
@@ -1733,6 +1747,7 @@ let state = {
   avoidIngredients: [],
   preferences: [],
   mealPlan: null,
+  mealPlanHistory: [], // 過去の献立履歴（最新が先頭、最大20件）
   recentAISuggestions: [], // 直近のAI提案（重複回避用、最大5件）
   pantry: [], // 常備調味料リスト（AI提案時の参考）
   family: { adults: 0, teens: 0, schoolKids: 0, preschoolers: 0, note: '' }, // 家族構成
@@ -1825,6 +1840,7 @@ function switchView(name) {
   if (name === 'stock') renderStock();
   if (name === 'shopping') renderShopping();
   if (name === 'settings') renderSettings();
+  if (name === 'suggest') renderMealPlanHistoryButton();
 }
 
 // ============================================================
@@ -4238,7 +4254,19 @@ ${recipeInfo || 'なし'}
 
     const text = extractText(response);
     const data = parseJSON(text);
+
+    // 履歴用の追加メタ情報を付与（生成時刻、表示用ID）
+    data.id = uuid();
+    data.createdAt = new Date().toISOString();
+
     state.mealPlan = data;
+
+    // 履歴に追加（最新が先頭、最大20件保持）
+    if (!state.mealPlanHistory) state.mealPlanHistory = [];
+    state.mealPlanHistory.unshift(data);
+    if (state.mealPlanHistory.length > 20) {
+      state.mealPlanHistory = state.mealPlanHistory.slice(0, 20);
+    }
 
     // 直近提案履歴に料理名を追加
     const names = [];
@@ -4250,6 +4278,7 @@ ${recipeInfo || 'なし'}
 
     saveState();
     renderMealPlan(data);
+    renderMealPlanHistoryButton();
   } catch (e) {
     console.error(e);
     resultEl.innerHTML = `<div class="card"><div class="text-sm" style="color: var(--shu);">エラー: ${escapeHtml(e.message)}</div></div>`;
@@ -4288,7 +4317,11 @@ function renderMealPlan(data) {
           ${d.proteinPerServing ? `<div class="text-sm">タンパク質: 約${Math.round(d.proteinPerServing)}g/人${d.saltPerServing ? ` ・ 塩分: 約${(Math.round(d.saltPerServing * 10) / 10).toFixed(1)}g/人` : ''}</div>` : (d.saltPerServing ? `<div class="text-sm">塩分: 約${(Math.round(d.saltPerServing * 10) / 10).toFixed(1)}g/人</div>` : '')}
           ${d.storageNote ? `<div class="text-sm" style="color: var(--shu); margin-top: 6px;">📦 ${escapeHtml(d.storageNote)}</div>` : ''}
           ${d.note ? `<div class="text-sm text-muted mt-3">${escapeHtml(d.note)}</div>` : ''}
-          ${!d.isExisting ? `<button class="btn btn-ghost btn-sm mt-3" onclick="savePlanDish(${idx})">このレシピを保存</button>` : ''}
+          ${!d.isExisting ? (
+            d._savedRecipeId && state.recipes.some(r => r.id === d._savedRecipeId)
+              ? `<button class="btn btn-ghost btn-sm mt-3" disabled style="opacity:0.6; background:var(--washi-dark); cursor:default;">✓ 保存済み</button>`
+              : `<button class="btn btn-ghost btn-sm mt-3" onclick="savePlanDish(${idx})">このレシピを保存</button>`
+          ) : ''}
         </div>
       `;
     }).join('');
@@ -4306,7 +4339,11 @@ function renderMealPlan(data) {
         <div class="text-sm text-muted mb-2">材料: ${(d.dinner.ingredients || []).map(i => escapeHtml(i.name)).join('、')}</div>
         ${d.dinner.proteinPerServing ? `<div class="text-sm">タンパク質: 約${Math.round(d.dinner.proteinPerServing)}g/人${d.dinner.saltPerServing ? ` ・ 塩分: 約${(Math.round(d.dinner.saltPerServing * 10) / 10).toFixed(1)}g/人` : ''}</div>` : (d.dinner.saltPerServing ? `<div class="text-sm">塩分: 約${(Math.round(d.dinner.saltPerServing * 10) / 10).toFixed(1)}g/人</div>` : '')}
         ${d.dinner.note ? `<div class="text-sm text-muted mt-3">${escapeHtml(d.dinner.note)}</div>` : ''}
-        ${!d.dinner.isExisting ? `<button class="btn btn-ghost btn-sm mt-3" onclick="savePlanRecipe(${d.day - 1})">このレシピを保存</button>` : ''}
+        ${!d.dinner.isExisting ? (
+          d.dinner._savedRecipeId && state.recipes.some(r => r.id === d.dinner._savedRecipeId)
+            ? `<button class="btn btn-ghost btn-sm mt-3" disabled style="opacity:0.6; background:var(--washi-dark); cursor:default;">✓ 保存済み</button>`
+            : `<button class="btn btn-ghost btn-sm mt-3" onclick="savePlanRecipe(${d.day - 1})">このレシピを保存</button>`
+        ) : ''}
       </div>
     `).join('');
   }
@@ -4347,8 +4384,13 @@ function renderMealPlan(data) {
 function savePlanRecipe(dayIdx) {
   if (!state.mealPlan || !state.mealPlan.days || !state.mealPlan.days[dayIdx]) return;
   const d = state.mealPlan.days[dayIdx].dinner;
+  if (d._savedRecipeId) {
+    showToast('既に保存済みです');
+    return;
+  }
+  const recipeId = uuid();
   const recipe = {
-    id: uuid(),
+    id: recipeId,
     name: d.name,
     servings: 2,
     cookTime: null,
@@ -4361,14 +4403,22 @@ function savePlanRecipe(dayIdx) {
     saltPerServing: d.saltPerServing || null,
   };
   state.recipes.unshift(recipe);
+  d._savedRecipeId = recipeId;
+  syncMealPlanToHistory();
   saveState();
   showToast('レシピを保存しました');
   renderRecipes();
+  renderMealPlan(state.mealPlan);
 }
 
 function savePlanDish(dishIdx) {
   if (!state.mealPlan || !state.mealPlan.dishes || !state.mealPlan.dishes[dishIdx]) return;
   const d = state.mealPlan.dishes[dishIdx];
+  // 既に保存済みの場合はスキップ
+  if (d._savedRecipeId) {
+    showToast('既に保存済みです');
+    return;
+  }
   const tags = ['献立提案'];
   if (d.category === '主菜') tags.push('主菜');
   else if (d.category === '副菜') tags.push('副菜');
@@ -4384,8 +4434,9 @@ function savePlanDish(dishIdx) {
   let notes = '献立提案から保存';
   if (d.storageNote) notes += `\n保存目安: ${d.storageNote}`;
 
+  const recipeId = uuid();
   const recipe = {
-    id: uuid(),
+    id: recipeId,
     name: d.name,
     servings: 2,
     cookTime: null,
@@ -4398,14 +4449,118 @@ function savePlanDish(dishIdx) {
     saltPerServing: d.saltPerServing || null,
   };
   state.recipes.unshift(recipe);
+
+  // 保存済みフラグ：献立データに紐付けて永続化
+  d._savedRecipeId = recipeId;
+  // 履歴側にも反映するため、対応する履歴エントリも更新
+  syncMealPlanToHistory();
+
   saveState();
   showToast('レシピを保存しました');
   renderRecipes();
+  renderMealPlan(state.mealPlan); // ボタン状態を更新するため再描画
+}
+
+// state.mealPlan を mealPlanHistory 内の同じIDのものと同期
+function syncMealPlanToHistory() {
+  if (!state.mealPlan || !state.mealPlan.id) return;
+  const idx = (state.mealPlanHistory || []).findIndex(p => p.id === state.mealPlan.id);
+  if (idx >= 0) {
+    state.mealPlanHistory[idx] = state.mealPlan;
+  }
+}
+
+// ========== 献立履歴 ==========
+// 献立タブ表示時に履歴ボタンの表示を更新
+function renderMealPlanHistoryButton() {
+  const btn = document.getElementById('meal-plan-history-btn');
+  const countEl = document.getElementById('meal-plan-history-count');
+  if (!btn || !countEl) return;
+  const count = (state.mealPlanHistory || []).length;
+  if (count > 0) {
+    btn.style.display = '';
+    countEl.textContent = count;
+  } else {
+    btn.style.display = 'none';
+  }
+}
+
+// 履歴一覧モーダルを開く
+function openMealPlanHistory() {
+  const list = state.mealPlanHistory || [];
+  const listEl = document.getElementById('meal-plan-history-list');
+  if (!listEl) return;
+  if (list.length === 0) {
+    listEl.innerHTML = '<div class="text-sm text-muted text-center" style="padding: 20px 0;">まだ履歴がありません</div>';
+  } else {
+    listEl.innerHTML = list.map((p, idx) => {
+      const date = p.createdAt ? formatDate(p.createdAt) : '日時不明';
+      const title = p.title || '献立';
+      // タイプを表示用に整形
+      let typeBadge = '';
+      if (p.planType === 'prep') typeBadge = '<span class="tag" style="background:#fff3e0; color:#e65100;">作り置き</span>';
+      else if (p.planType === 'bento') typeBadge = '<span class="tag tag-shu">お弁当</span>';
+      else if (p.planType === 'dinner-1') typeBadge = '<span class="tag">1日</span>';
+      else if (p.planType === 'dinner-3' || (p.days && p.days.length === 3)) typeBadge = '<span class="tag">3日</span>';
+      else if (p.planType === 'dinner-7' || (p.days && p.days.length === 7)) typeBadge = '<span class="tag">1週間</span>';
+
+      // 内容のサマリー
+      let summary = '';
+      if (p.dishes && p.dishes.length > 0) {
+        summary = p.dishes.slice(0, 3).map(d => d.name).join('・');
+        if (p.dishes.length > 3) summary += ` ほか${p.dishes.length - 3}品`;
+      } else if (p.days && p.days.length > 0) {
+        summary = p.days.slice(0, 3).map(d => d.dinner ? d.dinner.name : '').filter(Boolean).join('・');
+        if (p.days.length > 3) summary += ` ほか${p.days.length - 3}日分`;
+      }
+
+      return `
+        <div class="card" style="cursor:pointer; padding: 12px; margin-bottom: 8px;" onclick="loadMealPlanFromHistory(${idx})">
+          <div class="flex flex-between" style="align-items: flex-start; margin-bottom: 6px;">
+            <div style="font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-size: 15px; font-weight: 600; flex: 1; min-width: 0; word-break: break-word;">${escapeHtml(title)}</div>
+            ${typeBadge}
+          </div>
+          <div class="text-sm text-muted" style="margin-bottom: 4px;">${date}</div>
+          ${summary ? `<div class="text-sm" style="line-height:1.5;">${escapeHtml(summary)}</div>` : ''}
+          <div style="margin-top: 8px; display: flex; justify-content: flex-end;">
+            <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); deleteMealPlanFromHistory(${idx})" style="color: var(--shu); font-size: 11px; padding: 4px 8px;">削除</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+  openModal('modal-meal-plan-history');
+}
+
+// 履歴から献立を読み込み、現在表示として復元
+function loadMealPlanFromHistory(idx) {
+  const list = state.mealPlanHistory || [];
+  const plan = list[idx];
+  if (!plan) return;
+  state.mealPlan = plan;
+  saveState();
+  closeModal('modal-meal-plan-history');
+  renderMealPlan(plan);
+  // ページ上部の結果カードまでスクロール
+  const resultEl = document.getElementById('meal-plan-result');
+  if (resultEl) resultEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// 履歴から1件削除
+function deleteMealPlanFromHistory(idx) {
+  showConfirm('削除の確認', 'この献立履歴を削除しますか？', (ok) => {
+    if (!ok) return;
+    if (!state.mealPlanHistory) state.mealPlanHistory = [];
+    state.mealPlanHistory.splice(idx, 1);
+    saveState();
+    openMealPlanHistory(); // 再描画
+    renderMealPlanHistoryButton();
+    showToast('履歴を削除しました');
+  });
 }
 
 function addPlanShoppingToList() {
   if (!state.mealPlan || !state.mealPlan.shoppingList) return;
-  const total = state.mealPlan.shoppingList.length;
   let added = 0;
   let skipped = 0;
   state.mealPlan.shoppingList.forEach(s => {
