@@ -1314,6 +1314,17 @@ h1, h2, h3, h4 { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-we
     </div>
 
     <div class="card">
+      <h3 style="font-size: 14px; margin-bottom: 4px;">料理の作り方ルール</h3>
+      <p class="text-sm text-muted mb-3">塩分濃度・調理法・材料の扱いなど、AIに守ってほしい料理上のルールを書きます。家族構成や食材の好み（避けたい食材欄）とは別の、調理方針についての指示を想定しています</p>
+      <textarea class="form-textarea" id="cooking-rules-input" rows="6" placeholder="例：
+・肉・魚の下味の塩は素材重量の0.8%を基準にする
+・ソース・スープの塩分濃度は0.6〜0.8%を上限とする
+・塩分を含む調味料（醤油・味噌・ベーコン等）を使う場合、追加の塩を減らす
+・砂糖は控えめに、みりんで代替できる場合はみりん優先
+・揚げ物は油の使用量を最小化（揚げ焼き・少量油でOK）" onchange="saveCookingRules()"></textarea>
+    </div>
+
+    <div class="card">
       <h3 style="font-size: 14px; margin-bottom: 4px;">避けたい食材・アレルギー</h3>
       <p class="text-sm text-muted mb-3">AI提案時に除外されます</p>
       <div class="flex gap-2 mb-2">
@@ -1716,6 +1727,7 @@ let state = {
   pantry: [], // 常備調味料リスト（AI提案時の参考）
   family: { adults: 0, teens: 0, schoolKids: 0, preschoolers: 0, note: '' }, // 家族構成
   equipment: { tools: [], avoidNote: '' }, // 調理環境（保有機材 + 苦手な調理/避けたいジャンル）
+  cookingRules: '', // 料理の作り方ルール（塩分濃度、調味料の扱い等、独立セクションとしてAI提案に注入）
 };
 
 // 調理器具マスタ（将来拡張しやすいよう配列で管理）
@@ -1903,6 +1915,7 @@ function saveRecipe() {
     notes: document.getElementById('recipe-notes-input').value.trim(),
     createdAt: new Date().toISOString(),
     proteinPerServing: null, // 後で栄養計算
+    saltPerServing: null, // 塩分量はAI生成時のみ取得
   };
 
   state.recipes.unshift(recipe);
@@ -2181,6 +2194,7 @@ function renderRecipes() {
       ? `<div class="match-score">マッチ<span class="match-score-value">${Math.round(r._match * 100)}</span>%</div>`
       : '';
     const proteinBadge = r.proteinPerServing ? `<span>タンパク質${Math.round(r.proteinPerServing)}g</span>` : '';
+    const saltBadge = r.saltPerServing ? `<span>塩分${(Math.round(r.saltPerServing * 10) / 10).toFixed(1)}g</span>` : '';
     const ratingStats = getRecipeRating(r.id);
     const ratingBadge = ratingStats.count > 0
       ? `<span>${renderStars(ratingStats.avg)} <span class="rating-count">(${ratingStats.count}回)</span></span>`
@@ -2195,6 +2209,7 @@ function renderRecipes() {
           <span>${r.servings}人分</span>
           ${r.cookTime ? `<span>${r.cookTime}分</span>` : ''}
           ${proteinBadge}
+          ${saltBadge}
           ${ratingBadge}
         </div>
         <div class="recipe-card-tags">
@@ -2429,6 +2444,7 @@ function openRecipeDetail(id) {
   if (!recipe) return;
 
   const totalProtein = recipe.proteinPerServing ? recipe.proteinPerServing * recipe.servings : null;
+  const saltDisplay = recipe.saltPerServing ? (Math.round(recipe.saltPerServing * 10) / 10).toFixed(1) : null;
 
   const ingredientsHtml = recipe.ingredients.map(ing => {
     const has = hasIngredient(ing.name);
@@ -2441,19 +2457,26 @@ function openRecipeDetail(id) {
 
   const stepsHtml = recipe.steps.map(s => `<li>${escapeHtml(s)}</li>`).join('');
 
-  const nutritionHtml = recipe.proteinPerServing ? `
+  const nutritionHtml = (recipe.proteinPerServing || saltDisplay) ? `
     <div class="nutrition-box">
+      ${recipe.proteinPerServing ? `
       <div>
-        <div class="nutrition-item-label">1人前</div>
+        <div class="nutrition-item-label">タンパク質/人</div>
         <div class="nutrition-item-value">${Math.round(recipe.proteinPerServing)}<span class="nutrition-item-unit">g</span></div>
-        <div class="text-sm text-muted" style="font-size:9px;">タンパク質</div>
       </div>
       <div>
-        <div class="nutrition-item-label">全量</div>
+        <div class="nutrition-item-label">タンパク質/全量</div>
         <div class="nutrition-item-value">${Math.round(totalProtein)}<span class="nutrition-item-unit">g</span></div>
-        <div class="text-sm text-muted" style="font-size:9px;">タンパク質</div>
       </div>
+      ` : ''}
+      ${saltDisplay ? `
+      <div>
+        <div class="nutrition-item-label">塩分/人</div>
+        <div class="nutrition-item-value" style="color: var(--shu);">${saltDisplay}<span class="nutrition-item-unit">g</span></div>
+      </div>
+      ` : ''}
     </div>
+    ${saltDisplay ? `<div class="text-sm text-muted" style="margin-top: 4px; font-size: 10px;">※ 塩分は調味料・素材から推定。目標値: 男性7.5g/日・女性6.5g/日</div>` : ''}
   ` : `<div class="text-sm text-muted mb-3">栄養情報は自動計算中...</div>`;
 
   // 履歴セクション
@@ -3558,6 +3581,7 @@ async function generateAIRecipe() {
     const familyInfo = buildFamilyPromptInfo();
     const tasteInfo = buildTasteFeedbackInfo();
     const equipmentInfo = buildEquipmentPromptInfo();
+    const cookingRulesInfo = buildCookingRulesPromptInfo();
 
     // 多様性要素：ランダムなジャンルと味の方向性
     const selectedGenre = pickRandomGenre();
@@ -3572,7 +3596,7 @@ async function generateAIRecipe() {
     const fullPrompt = `あなたは料理レシピの専門家です。以下の条件でレシピを1つ提案してください。
 
 ユーザーの希望: ${prompt}
-${stockInfo}${urgentInfo}${avoidInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}
+${stockInfo}${urgentInfo}${avoidInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}${cookingRulesInfo}
 
 【重要】今回は「${selectedGenre}」の方向性で、「${selectedFlavor}」味付けのレシピを提案してください。ただし、ユーザーの希望が明確にこれと矛盾する場合（例：「和食」と明示されているのに「タイ料理」にする）は、ユーザーの希望を優先してください。
 ${exclusionInfo}
@@ -3584,9 +3608,10 @@ ${exclusionInfo}
 2. すべての値は実際の値（数値は数値、文字列はダブルクォート囲み）
 3. 文字列内では改行を使わない
 4. 末尾カンマ禁止
+5. saltPerServing（1人分の推定塩分量、g単位の数値）と proteinPerServing（1人分のタンパク質量、g単位の数値）を必ず含めること。塩分は調味料・素材の塩分を合算して算出。醤油大さじ1=約2.6g、味噌大さじ1=約2.2g、塩小さじ1=約6g、コンソメ1個=約2.5g、ベーコン20g=約0.4g 等を参考に
 
 出力例（この通りの構造で実際の値を入れて返すこと）:
-{"name":"鶏むね肉のレモンハーブ焼き","servings":2,"cookTime":20,"tags":["洋風","鶏肉","時短"],"ingredients":[{"name":"鶏むね肉","amount":300,"unit":"g"},{"name":"レモン","amount":1,"unit":"個"},{"name":"オリーブオイル","amount":2,"unit":"大さじ"}],"steps":["鶏むね肉に塩こしょうを振る","オリーブオイルで両面を焼く","レモン汁を絞ってハーブを散らす"],"notes":"レモンの酸味でさっぱり"}`;
+{"name":"鶏むね肉のレモンハーブ焼き","servings":2,"cookTime":20,"tags":["洋風","鶏肉","時短"],"ingredients":[{"name":"鶏むね肉","amount":300,"unit":"g"},{"name":"レモン","amount":1,"unit":"個"},{"name":"オリーブオイル","amount":2,"unit":"大さじ"}],"steps":["鶏むね肉に塩こしょうを振る","オリーブオイルで両面を焼く","レモン汁を絞ってハーブを散らす"],"notes":"レモンの酸味でさっぱり","proteinPerServing":28,"saltPerServing":1.4}`;
 
     const response = await callClaudeAPI({
       model: 'claude-sonnet-4-5',
@@ -3643,7 +3668,8 @@ function saveAIRecipe() {
     steps: r.steps || [],
     notes: r.notes || '',
     createdAt: new Date().toISOString(),
-    proteinPerServing: null,
+    proteinPerServing: r.proteinPerServing || null,
+    saltPerServing: r.saltPerServing || null,
   };
   state.recipes.unshift(recipe);
   saveState();
@@ -3858,6 +3884,7 @@ async function generateMealPlan() {
     const familyInfo = buildFamilyPromptInfo();
     const tasteInfo = buildTasteFeedbackInfo();
     const equipmentInfo = buildEquipmentPromptInfo();
+    const cookingRulesInfo = buildCookingRulesPromptInfo();
 
     // 献立提案にも多様性指示を追加
     const recent = state.recentAISuggestions || [];
@@ -3937,7 +3964,7 @@ async function generateMealPlan() {
 ${requirements.join('\n\n')}
 
 現在の在庫: ${stockInfo || 'なし'}
-${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}${diversityHint}${exclusionInfo}
+${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}${cookingRulesInfo}${diversityHint}${exclusionInfo}
 
 登録済みレシピ（優先使用・参考）:
 ${recipeInfo || 'なし'}
@@ -3953,11 +3980,12 @@ ${recipeInfo || 'なし'}
 2. すべての値は実際の値（数値は数値、true/falseはtrue/false、文字列はダブルクォート囲み）
 3. 文字列内では改行を使わない
 4. 末尾カンマ禁止
-5. dishes配列には必ず合計${totalCount}個の要素を含めること
-6. 各dishにはcategory（"主菜"または"副菜"）とprepStorage（"chilled"または"frozen"）を必ず含めること
+5. 各dishにはsaltPerServing（1人分の推定塩分量、g単位の数値）と proteinPerServing（1人分のタンパク質量、g単位の数値）を必ず含めること。塩分は調味料・素材の塩分を合算して算出（醤油大さじ1=約2.6g、味噌大さじ1=約2.2g、塩小さじ1=約6g、コンソメ1個=約2.5g、ベーコン20g=約0.4g 等を参考に）。
+6. dishes配列には必ず合計${totalCount}個の要素を含めること
+7. 各dishにはcategory（"主菜"または"副菜"）とprepStorage（"chilled"または"frozen"）を必ず含めること
 
 出力例（この通りの構造で実際の値を入れて返すこと）:
-{"planType":"prep","title":"${title}","dishes":[{"category":"主菜","prepStorage":"chilled","name":"鶏むね肉の塩麹漬け焼き","isExisting":false,"ingredients":[{"name":"鶏むね肉","amount":300,"unit":"g"},{"name":"塩麹","amount":2,"unit":"大さじ"}],"proteinPerServing":25,"storageNote":"冷蔵4日","note":"漬け込み1時間以上→フライパンで両面焼き。密閉容器で保存"},{"category":"副菜","prepStorage":"chilled","name":"にんじんのラペ","isExisting":false,"ingredients":[{"name":"にんじん","amount":1,"unit":"本"},{"name":"オリーブオイル","amount":1,"unit":"大さじ"}],"proteinPerServing":1,"storageNote":"冷蔵5日","note":"時間が経つほど味が馴染む"}],"shoppingList":[{"name":"鶏むね肉","amount":300,"unit":"g"}],"totalProtein":26}`;
+{"planType":"prep","title":"${title}","dishes":[{"category":"主菜","prepStorage":"chilled","name":"鶏むね肉の塩麹漬け焼き","isExisting":false,"ingredients":[{"name":"鶏むね肉","amount":300,"unit":"g"},{"name":"塩麹","amount":2,"unit":"大さじ"}],"proteinPerServing":25,"saltPerServing":1.5,"storageNote":"冷蔵4日","note":"漬け込み1時間以上→フライパンで両面焼き。密閉容器で保存"},{"category":"副菜","prepStorage":"chilled","name":"にんじんのラペ","isExisting":false,"ingredients":[{"name":"にんじん","amount":1,"unit":"本"},{"name":"オリーブオイル","amount":1,"unit":"大さじ"}],"proteinPerServing":1,"saltPerServing":0.5,"storageNote":"冷蔵5日","note":"時間が経つほど味が馴染む"}],"shoppingList":[{"name":"鶏むね肉","amount":300,"unit":"g"}],"totalProtein":26}`;
     } else if (currentPlanType === 'bento') {
       // お弁当プラン
       const styleNote = currentBentoStyle === 'morning'
@@ -3969,7 +3997,7 @@ ${recipeInfo || 'なし'}
 スタイル: ${styleNote}
 
 現在の在庫: ${stockInfo || 'なし'}
-${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}${diversityHint}${exclusionInfo}
+${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}${cookingRulesInfo}${diversityHint}${exclusionInfo}
 
 登録済みレシピ（優先使用）:
 ${recipeInfo || 'なし'}
@@ -3980,6 +4008,7 @@ ${recipeInfo || 'なし'}
 - お弁当に適した（冷めても美味しい・汁気が少ない）料理を選ぶ
 - 既存レシピを優先しつつ、足りなければ新規提案OK
 - 主菜と副菜の味付けがかぶらないようにすること（全部醤油系にしない等）
+- 各dishにsaltPerServing（1人分の推定塩分量、g単位の数値）とproteinPerServing（1人分のタンパク質量、g単位の数値）を必ず含めること（醤油大さじ1=約2.6g、味噌大さじ1=約2.2g、塩小さじ1=約6g、コンソメ1個=約2.5g等を参考に算出）
 - dishes配列には必ず3つの要素（主菜1＋副菜2）を含めること
 
 【厳守事項】
@@ -3989,13 +4018,13 @@ ${recipeInfo || 'なし'}
 4. 末尾カンマ禁止
 
 出力例（この通りの構造で実際の値を入れて返すこと）:
-{"planType":"bento","title":"今日のお弁当","dishes":[{"category":"主菜","name":"鶏むね肉のハーブソテー","isExisting":false,"ingredients":[{"name":"鶏むね肉","amount":200,"unit":"g"},{"name":"塩","amount":1,"unit":"小さじ"}],"proteinPerServing":25,"note":"前日から下味をつけておくと味が染みる"},{"category":"副菜","name":"ブロッコリーのペペロンチーノ","isExisting":false,"ingredients":[{"name":"ブロッコリー","amount":100,"unit":"g"},{"name":"にんにく","amount":1,"unit":"片"}],"proteinPerServing":3,"note":""},{"category":"副菜","name":"人参のラペ","isExisting":false,"ingredients":[{"name":"人参","amount":1,"unit":"本"},{"name":"オリーブオイル","amount":1,"unit":"大さじ"}],"proteinPerServing":1,"note":""}],"shoppingList":[{"name":"鶏むね肉","amount":200,"unit":"g"}],"totalProtein":29}`;
+{"planType":"bento","title":"今日のお弁当","dishes":[{"category":"主菜","name":"鶏むね肉のハーブソテー","isExisting":false,"ingredients":[{"name":"鶏むね肉","amount":200,"unit":"g"},{"name":"塩","amount":1,"unit":"小さじ"}],"proteinPerServing":25,"saltPerServing":1.5,"note":"前日から下味をつけておくと味が染みる"},{"category":"副菜","name":"ブロッコリーのペペロンチーノ","isExisting":false,"ingredients":[{"name":"ブロッコリー","amount":100,"unit":"g"},{"name":"にんにく","amount":1,"unit":"片"}],"proteinPerServing":3,"saltPerServing":0.5,"note":""},{"category":"副菜","name":"人参のラペ","isExisting":false,"ingredients":[{"name":"人参","amount":1,"unit":"本"},{"name":"オリーブオイル","amount":1,"unit":"大さじ"}],"proteinPerServing":1,"saltPerServing":0.5,"note":""}],"shoppingList":[{"name":"鶏むね肉","amount":200,"unit":"g"}],"totalProtein":29}`;
     } else if (currentPlanType === 'dinner-1') {
       // 1日分（夕食、主菜＋副菜）
       prompt = `1日分の夕食の献立を考えてください。主菜1品＋副菜1〜2品の構成で。
 
 現在の在庫: ${stockInfo || 'なし'}
-${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}${diversityHint}${exclusionInfo}
+${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}${cookingRulesInfo}${diversityHint}${exclusionInfo}
 
 登録済みレシピ（優先使用）:
 ${recipeInfo || 'なし'}
@@ -4005,6 +4034,7 @@ ${recipeInfo || 'なし'}
 - 副菜は野菜中心、汁物または和え物などの軽いもの
 - 主菜と副菜の味付けが被らないようにバランスを取る（全部醤油系にしない）
 - 既存レシピを優先しつつ、足りなければ新規提案OK
+- 各dishにsaltPerServing（1人分の推定塩分量、g単位の数値）とproteinPerServing（1人分のタンパク質量、g単位の数値）を必ず含めること（醤油大さじ1=約2.6g、味噌大さじ1=約2.2g、塩小さじ1=約6g、コンソメ1個=約2.5g等を参考に算出）
 
 【厳守事項】
 1. 純粋なJSONのみ返す。マークダウン・コードブロック・コメント・前置き禁止
@@ -4013,14 +4043,14 @@ ${recipeInfo || 'なし'}
 4. 末尾カンマ禁止
 
 出力例（この通りの構造で実際の値を入れて返すこと）:
-{"planType":"dinner-1","title":"今夜の献立","dishes":[{"category":"主菜","name":"鮭のムニエル","isExisting":false,"ingredients":[{"name":"鮭","amount":2,"unit":"切れ"},{"name":"バター","amount":1,"unit":"大さじ"}],"proteinPerServing":22,"note":"皮はカリッと焼く"},{"category":"副菜","name":"きのこのバター醤油炒め","isExisting":false,"ingredients":[{"name":"しめじ","amount":1,"unit":"パック"},{"name":"バター","amount":1,"unit":"大さじ"}],"proteinPerServing":3,"note":""}],"shoppingList":[{"name":"鮭","amount":2,"unit":"切れ"}],"totalProtein":25}`;
+{"planType":"dinner-1","title":"今夜の献立","dishes":[{"category":"主菜","name":"鮭のムニエル","isExisting":false,"ingredients":[{"name":"鮭","amount":2,"unit":"切れ"},{"name":"バター","amount":1,"unit":"大さじ"}],"proteinPerServing":22,"saltPerServing":1.5,"note":"皮はカリッと焼く"},{"category":"副菜","name":"きのこのバター醤油炒め","isExisting":false,"ingredients":[{"name":"しめじ","amount":1,"unit":"パック"},{"name":"バター","amount":1,"unit":"大さじ"}],"proteinPerServing":3,"saltPerServing":0.5,"note":""}],"shoppingList":[{"name":"鮭","amount":2,"unit":"切れ"}],"totalProtein":25}`;
     } else {
       // 3日 or 1週間（複数日分の夕食）
       const days = currentPlanType === 'dinner-7' ? 7 : 3;
       prompt = `${days}日分の夕食の献立を考えてください。既存のレシピを優先しつつ、足りなければ新規レシピも提案してOKです。
 
 現在の在庫: ${stockInfo || 'なし'}
-${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}${diversityHint}${exclusionInfo}
+${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}${cookingRulesInfo}${diversityHint}${exclusionInfo}
 
 登録済みレシピ（優先使用）:
 ${recipeInfo || 'なし'}
@@ -4028,6 +4058,7 @@ ${recipeInfo || 'なし'}
 注意:
 - 連日同じ味付けにならないよう、ジャンルを分散させる（例：1日目和食、2日目洋食、3日目中華）
 - 主要食材（肉・魚など）も連日同じにしないこと
+- 各日のdinnerにsaltPerServing（1人分の推定塩分量、g単位の数値）とproteinPerServing（1人分のタンパク質量、g単位の数値）を必ず含めること（醤油大さじ1=約2.6g、味噌大さじ1=約2.2g、塩小さじ1=約6g、コンソメ1個=約2.5g等を参考に算出）
 - days配列には必ず${days}個の要素を含めること
 
 【厳守事項】
@@ -4037,7 +4068,7 @@ ${recipeInfo || 'なし'}
 4. 末尾カンマ禁止
 
 出力例（この通りの構造で実際の値を入れて返すこと）:
-{"planType":"dinner-multi","days":[{"day":1,"dinner":{"name":"鶏むね肉のレモンクリームパスタ","isExisting":false,"ingredients":[{"name":"パスタ","amount":200,"unit":"g"},{"name":"鶏むね肉","amount":150,"unit":"g"}],"proteinPerServing":28,"note":"レモンを最後に絞る"}},{"day":2,"dinner":{"name":"豚肉と大根の中華煮","isExisting":false,"ingredients":[{"name":"豚バラ","amount":200,"unit":"g"},{"name":"大根","amount":300,"unit":"g"}],"proteinPerServing":24,"note":"五香粉で香りづけ"}}],"shoppingList":[{"name":"パスタ","amount":200,"unit":"g","forDay":1},{"name":"豚バラ","amount":200,"unit":"g","forDay":2}],"totalProteinAvg":26}`;
+{"planType":"dinner-multi","days":[{"day":1,"dinner":{"name":"鶏むね肉のレモンクリームパスタ","isExisting":false,"ingredients":[{"name":"パスタ","amount":200,"unit":"g"},{"name":"鶏むね肉","amount":150,"unit":"g"}],"proteinPerServing":28,"saltPerServing":1.5,"note":"レモンを最後に絞る"}},{"day":2,"dinner":{"name":"豚肉と大根の中華煮","isExisting":false,"ingredients":[{"name":"豚バラ","amount":200,"unit":"g"},{"name":"大根","amount":300,"unit":"g"}],"proteinPerServing":24,"saltPerServing":1.5,"note":"五香粉で香りづけ"}}],"shoppingList":[{"name":"パスタ","amount":200,"unit":"g","forDay":1},{"name":"豚バラ","amount":200,"unit":"g","forDay":2}],"totalProteinAvg":26}`;
     }
 
     const response = await callClaudeAPI({
@@ -4095,7 +4126,7 @@ function renderMealPlan(data) {
           </div>
           <h3 style="font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-size: 16px; margin-bottom: 8px;">${escapeHtml(d.name)}</h3>
           <div class="text-sm text-muted mb-2">材料: ${(d.ingredients || []).map(i => escapeHtml(i.name)).join('、')}</div>
-          ${d.proteinPerServing ? `<div class="text-sm">タンパク質: 約${Math.round(d.proteinPerServing)}g/人</div>` : ''}
+          ${d.proteinPerServing ? `<div class="text-sm">タンパク質: 約${Math.round(d.proteinPerServing)}g/人${d.saltPerServing ? ` ・ 塩分: 約${(Math.round(d.saltPerServing * 10) / 10).toFixed(1)}g/人` : ''}</div>` : (d.saltPerServing ? `<div class="text-sm">塩分: 約${(Math.round(d.saltPerServing * 10) / 10).toFixed(1)}g/人</div>` : '')}
           ${d.storageNote ? `<div class="text-sm" style="color: var(--shu); margin-top: 6px;">📦 ${escapeHtml(d.storageNote)}</div>` : ''}
           ${d.note ? `<div class="text-sm text-muted mt-3">${escapeHtml(d.note)}</div>` : ''}
           ${!d.isExisting ? `<button class="btn btn-ghost btn-sm mt-3" onclick="savePlanDish(${idx})">このレシピを保存</button>` : ''}
@@ -4114,7 +4145,7 @@ function renderMealPlan(data) {
         </div>
         <h3 style="font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-size: 16px; margin-bottom: 8px;">${escapeHtml(d.dinner.name)}</h3>
         <div class="text-sm text-muted mb-2">材料: ${(d.dinner.ingredients || []).map(i => escapeHtml(i.name)).join('、')}</div>
-        ${d.dinner.proteinPerServing ? `<div class="text-sm">タンパク質: 約${Math.round(d.dinner.proteinPerServing)}g/人</div>` : ''}
+        ${d.dinner.proteinPerServing ? `<div class="text-sm">タンパク質: 約${Math.round(d.dinner.proteinPerServing)}g/人${d.dinner.saltPerServing ? ` ・ 塩分: 約${(Math.round(d.dinner.saltPerServing * 10) / 10).toFixed(1)}g/人` : ''}</div>` : (d.dinner.saltPerServing ? `<div class="text-sm">塩分: 約${(Math.round(d.dinner.saltPerServing * 10) / 10).toFixed(1)}g/人</div>` : '')}
         ${d.dinner.note ? `<div class="text-sm text-muted mt-3">${escapeHtml(d.dinner.note)}</div>` : ''}
         ${!d.dinner.isExisting ? `<button class="btn btn-ghost btn-sm mt-3" onclick="savePlanRecipe(${d.day - 1})">このレシピを保存</button>` : ''}
       </div>
@@ -4165,6 +4196,7 @@ function savePlanRecipe(dayIdx) {
     notes: '献立提案から保存',
     createdAt: new Date().toISOString(),
     proteinPerServing: d.proteinPerServing || null,
+    saltPerServing: d.saltPerServing || null,
   };
   state.recipes.unshift(recipe);
   saveState();
@@ -4201,6 +4233,7 @@ function savePlanDish(dishIdx) {
     notes: notes,
     createdAt: new Date().toISOString(),
     proteinPerServing: d.proteinPerServing || null,
+    saltPerServing: d.saltPerServing || null,
   };
   state.recipes.unshift(recipe);
   saveState();
@@ -4247,6 +4280,32 @@ function renderSettings() {
   renderPantry();
   renderFamily();
   renderEquipment();
+  renderCookingRules();
+}
+
+// ========== 料理の作り方ルール ==========
+function renderCookingRules() {
+  const el = document.getElementById('cooking-rules-input');
+  if (!el) return;
+  el.value = state.cookingRules || '';
+}
+
+function saveCookingRules() {
+  const el = document.getElementById('cooking-rules-input');
+  if (!el) return;
+  state.cookingRules = el.value.trim();
+  saveState();
+}
+
+// 料理ルールをAIプロンプト用テキストに変換（独立セクションとして注入）
+function buildCookingRulesPromptInfo() {
+  const rules = (state.cookingRules || '').trim();
+  if (!rules) return '';
+  return `
+
+【料理の作り方ルール（厳守）】
+以下のルールはユーザーが定めた料理方針です。レシピ生成時には必ず以下のルールを守ってください。
+${rules}`;
 }
 
 // ========== 家族構成 ==========
