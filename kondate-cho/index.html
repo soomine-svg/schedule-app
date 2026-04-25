@@ -1236,6 +1236,16 @@ h1, h2, h3, h4 { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-we
         </div>
       </div>
 
+      <div style="margin-bottom: 12px; padding: 10px 12px; background: var(--washi-dark); border-radius: 8px;">
+        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+          <input type="checkbox" id="meal-plan-use-stock" checked style="margin: 0; accent-color: var(--shu); cursor: pointer; transform: scale(1.2);">
+          <div>
+            <div style="font-size: 13px; font-weight: 600;">現在の在庫を考慮する</div>
+            <div class="text-sm text-muted" style="margin-top: 2px;">OFFにすると在庫に縛られずまとめ買い前提の提案になります</div>
+          </div>
+        </label>
+      </div>
+
       <button class="btn btn-accent btn-full btn-lg" onclick="generateMealPlan()">献立を提案してもらう</button>
       <div class="text-sm text-muted mt-3 text-center">※ AI提案にはClaude APIキーが必要です</div>
     </div>
@@ -2356,6 +2366,20 @@ const INGREDIENT_ALIASES = {
   'ワインビネガー': ['ワインビネガー', '白ワインビネガー', '赤ワインビネガー'],
   // 塩麹
   '塩麹': ['塩麹', '塩こうじ', '塩糀'],
+  // 焼肉のタレ
+  '焼肉のタレ': ['焼肉のタレ', '焼肉のたれ', '焼き肉のタレ', '焼き肉のたれ', 'ヤキニクのタレ'],
+  '焼肉のたれ': ['焼肉のタレ', '焼肉のたれ', '焼き肉のタレ', '焼き肉のたれ'],
+  // ごま系（いりごま・すりごま：色違い・調理形態違いを相互認識）
+  'ごま': ['ごま', '胡麻', '白ごま', '黒ごま', '金ごま', 'いりごま', 'すりごま', '白いりごま', '黒いりごま', '白すりごま', '黒すりごま'],
+  '胡麻': ['ごま', '胡麻', '白ごま', '黒ごま', 'いりごま', 'すりごま', '白いりごま', '黒いりごま', '白すりごま', '黒すりごま'],
+  'いりごま': ['いりごま', '白いりごま', '黒いりごま', 'ごま', '胡麻', '白ごま', '黒ごま'],
+  'すりごま': ['すりごま', '白すりごま', '黒すりごま', 'ごま', '胡麻', '白ごま', '黒ごま'],
+  '白ごま': ['白ごま', '白いりごま', '白すりごま', 'ごま', '胡麻', 'いりごま', 'すりごま'],
+  '黒ごま': ['黒ごま', '黒いりごま', '黒すりごま', 'ごま', '胡麻', 'いりごま', 'すりごま'],
+  '白いりごま': ['白いりごま', '白ごま', '白すりごま', 'いりごま', 'すりごま', 'ごま', '胡麻'],
+  '黒いりごま': ['黒いりごま', '黒ごま', '黒すりごま', 'いりごま', 'すりごま', 'ごま', '胡麻'],
+  '白すりごま': ['白すりごま', '白ごま', '白いりごま', 'すりごま', 'いりごま', 'ごま', '胡麻'],
+  '黒すりごま': ['黒すりごま', '黒ごま', '黒いりごま', 'すりごま', 'いりごま', 'ごま', '胡麻'],
   // チーズ系（用途別グループ分け）
   // -- 総称「チーズ」: 在庫にどれかチーズ系があればOK
   'チーズ': ['チーズ', 'ピザ用チーズ', 'シュレッドチーズ', 'とろけるチーズ', 'スライスチーズ', 'モッツァレラ', 'モッツァレラチーズ', '粉チーズ', 'パルメザン', 'パルミジャーノ', 'クリームチーズ', 'プロセスチーズ', 'ナチュラルチーズ', 'カマンベール', 'チェダーチーズ', 'ゴーダチーズ'],
@@ -2390,12 +2414,21 @@ function checkIngredientInInventory(ingredientName) {
   if (!norm) return false;
 
   // 部分一致ヘルパー: 短い方の長さが2以上の場合のみOK
+  // ただし「ごま」⇔「ごま油」のような偽陽性を防ぐためのガードあり
   const safePartialMatch = (a, b) => {
     if (a === b) return true;
     const shorter = a.length < b.length ? a : b;
     const longer = a.length < b.length ? b : a;
     if (shorter.length < 2) return false;
-    return longer.includes(shorter);
+    if (!longer.includes(shorter)) return false;
+    // 偽陽性ガード: 「○○油」と「○○」、「○○汁」と「○○」など、
+    // 接尾辞が違うだけで実体が別物のケースを除外
+    // shorterがlongerに含まれていて、長い方が「shorter + 接尾辞」の形式なら危険ペア
+    const danger_suffixes = ['油', 'オイル', '汁', 'ソース', 'タレ', 'たれ', 'スープ', 'チューブ', 'ペースト', 'パウダー'];
+    for (const suf of danger_suffixes) {
+      if (longer === shorter + suf) return false; // 完全に「shorter + 接尾辞」の形は誤検出
+    }
+    return true;
   };
 
   // 在庫に存在し qty > 0（完全一致 or 部分一致）
@@ -3975,14 +4008,24 @@ async function generateMealPlan() {
   resultEl.innerHTML = `<div class="card text-center"><span class="loading"></span>献立を考えています...</div>`;
 
   try {
-    const stockInfo = state.stock.filter(s => s.qty > 0).map(s => `${s.name} ${formatQty(s.qty)}${s.unit}`).join(', ');
+    // 在庫考慮トグルの状態（チェックON=在庫を活かす、OFF=まとめ買い前提）
+    const useStockCheckbox = document.getElementById('meal-plan-use-stock');
+    const useStock = useStockCheckbox ? useStockCheckbox.checked : true;
 
-    // 消費期限間近の食材
-    const urgentStock = state.stock.filter(s => {
+    const stockInfoBase = state.stock.filter(s => s.qty > 0).map(s => `${s.name} ${formatQty(s.qty)}${s.unit}`).join(', ');
+    // 在庫考慮ON: 通常通り在庫情報を渡し「在庫優先」の指示
+    // 在庫考慮OFF: 在庫情報を渡さず「まとめ買い前提」の指示を加える
+    const stockInfo = useStock ? stockInfoBase : '';
+    const stockPolicyInfo = useStock
+      ? '' // デフォルトのプロンプト指示で在庫優先になっている
+      : '\n\n【今回は在庫を考慮しない提案】\nこれから買い物に行くため、現在の在庫は無視してください。理想的なメニュー構成・栄養バランス・調理の楽しさを優先し、必要な食材は買い物リストにすべて反映させてください。在庫消費の縛りはありません。';
+
+    // 消費期限間近の食材（在庫考慮OFFの場合は無効化）
+    const urgentStock = useStock ? state.stock.filter(s => {
       if (!s.expiry || s.qty <= 0) return false;
       const days = getExpiryDaysLeft(s.expiry);
       return days !== null && days <= 3;
-    });
+    }) : [];
     const urgentInfo = urgentStock.length > 0
       ? `\n【最優先】以下の食材は消費期限が迫っているため、献立に必ず組み込んでください: ${urgentStock.map(s => `${s.name}（あと${Math.max(0, getExpiryDaysLeft(s.expiry))}日）`).join('、')}`
       : '';
@@ -4079,7 +4122,7 @@ async function generateMealPlan() {
 【提案する内訳】
 ${requirements.join('\n\n')}
 
-現在の在庫: ${stockInfo || 'なし'}
+現在の在庫: ${stockInfo || (useStock ? "なし" : "（今回は在庫不問・まとめ買い前提）")}${stockPolicyInfo}
 ${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}${cookingRulesInfo}${diversityHint}${exclusionInfo}
 
 登録済みレシピ（優先使用・参考）:
@@ -4112,7 +4155,7 @@ ${recipeInfo || 'なし'}
 
 スタイル: ${styleNote}
 
-現在の在庫: ${stockInfo || 'なし'}
+現在の在庫: ${stockInfo || (useStock ? "なし" : "（今回は在庫不問・まとめ買い前提）")}${stockPolicyInfo}
 ${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}${cookingRulesInfo}${diversityHint}${exclusionInfo}
 
 登録済みレシピ（優先使用）:
@@ -4139,7 +4182,7 @@ ${recipeInfo || 'なし'}
       // 1日分（夕食、主菜＋副菜）
       prompt = `1日分の夕食の献立を考えてください。主菜1品＋副菜1〜2品の構成で。
 
-現在の在庫: ${stockInfo || 'なし'}
+現在の在庫: ${stockInfo || (useStock ? "なし" : "（今回は在庫不問・まとめ買い前提）")}${stockPolicyInfo}
 ${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}${cookingRulesInfo}${diversityHint}${exclusionInfo}
 
 登録済みレシピ（優先使用）:
@@ -4165,7 +4208,7 @@ ${recipeInfo || 'なし'}
       const days = currentPlanType === 'dinner-7' ? 7 : 3;
       prompt = `${days}日分の夕食の献立を考えてください。既存のレシピを優先しつつ、足りなければ新規レシピも提案してOKです。
 
-現在の在庫: ${stockInfo || 'なし'}
+現在の在庫: ${stockInfo || (useStock ? "なし" : "（今回は在庫不問・まとめ買い前提）")}${stockPolicyInfo}
 ${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}${cookingRulesInfo}${diversityHint}${exclusionInfo}
 
 登録済みレシピ（優先使用）:
@@ -4271,14 +4314,17 @@ function renderMealPlan(data) {
   // 買い物リスト
   const shoppingHtml = (data.shoppingList || []).length > 0 ? `
     <div class="card">
-      <div class="recipe-detail-heading">買い物リスト</div>
+      <div class="flex flex-between" style="align-items: center; margin-bottom: 8px;">
+        <div class="recipe-detail-heading" style="margin-bottom: 0;">買い物リスト（${data.shoppingList.length}品）</div>
+        <button class="btn btn-accent btn-sm" onclick="addPlanShoppingToList()" style="white-space: nowrap;">📋 一括追加</button>
+      </div>
+      <div class="text-sm text-muted mb-3">「一括追加」で全品を買物タブのリストに登録します</div>
       ${data.shoppingList.map(s => `
         <div class="ingredient-list-item">
           <span>${escapeHtml(s.name)}${s.forDay ? ` <span class="text-sm text-muted">(${s.forDay}日目)</span>` : ''}</span>
           <span>${s.amount || ''} ${s.unit || ''}</span>
         </div>
       `).join('')}
-      <button class="btn btn-accent btn-full mt-3" onclick="addPlanShoppingToList()">買い物リストに追加</button>
     </div>
   ` : '';
 
@@ -4359,7 +4405,9 @@ function savePlanDish(dishIdx) {
 
 function addPlanShoppingToList() {
   if (!state.mealPlan || !state.mealPlan.shoppingList) return;
+  const total = state.mealPlan.shoppingList.length;
   let added = 0;
+  let skipped = 0;
   state.mealPlan.shoppingList.forEach(s => {
     const existing = state.shoppingList.find(x => normalizeIngredientName(x.name) === normalizeIngredientName(s.name));
     if (!existing) {
@@ -4372,10 +4420,33 @@ function addPlanShoppingToList() {
         source: '献立提案',
       });
       added++;
+    } else {
+      skipped++;
     }
   });
   saveState();
-  showToast(`${added}品を買い物リストに追加しました`);
+
+  // フィードバックメッセージ：スキップ件数も伝える
+  let msg;
+  if (added === 0 && skipped > 0) {
+    msg = `すべて買い物リストに登録済み（${skipped}品）`;
+  } else if (skipped === 0) {
+    msg = `${added}品を買い物リストに追加しました`;
+  } else {
+    msg = `${added}品追加（${skipped}品は重複のためスキップ）`;
+  }
+  showToast(msg, 3500);
+
+  // 確認ダイアログ：買物タブに移動するか
+  if (added > 0) {
+    setTimeout(() => {
+      showConfirm('買物タブを開きますか？', `${added}品を追加しました。今すぐ買い物リストを確認しますか？`, (ok) => {
+        if (ok) {
+          switchView('shopping');
+        }
+      });
+    }, 600);
+  }
 }
 
 // ============================================================
