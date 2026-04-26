@@ -668,6 +668,18 @@ h1, h2, h3, h4 { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-we
 }
 .ingredient-list-item.missing { color: var(--shu); }
 .ingredient-list-item.missing::after { content: ' 不足'; font-size: 10px; }
+.ingredient-group-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--shu);
+  margin-top: 12px;
+  margin-bottom: 4px;
+  padding-bottom: 3px;
+  border-bottom: 1px dashed var(--line);
+}
+.ingredient-group-label:first-child {
+  margin-top: 4px;
+}
 .step-list { list-style: none; counter-reset: step; }
 .step-list li {
   counter-increment: step;
@@ -2611,7 +2623,18 @@ function openRecipeDetail(id) {
   const totalProtein = recipe.proteinPerServing ? recipe.proteinPerServing * recipe.servings : null;
   const saltDisplay = recipe.saltPerServing ? (Math.round(recipe.saltPerServing * 10) / 10).toFixed(1) : null;
 
-  const ingredientsHtml = recipe.ingredients.map(ing => {
+  // 材料: groupごとにまとめて表示
+  // group未指定の材料は「材料」グループ。groupが付いている材料が1つでもあれば見出し付き表示
+  const groupedIng = {};
+  recipe.ingredients.forEach(ing => {
+    const grp = ing.group || '材料';
+    if (!groupedIng[grp]) groupedIng[grp] = [];
+    groupedIng[grp].push(ing);
+  });
+  const grpKeys = Object.keys(groupedIng);
+  const hasIngGroups = grpKeys.some(k => k !== '材料');
+
+  const renderIngList = (items) => items.map(ing => {
     const has = hasIngredient(ing.name);
     const missing = !has;
     return `<div class="ingredient-list-item ${missing ? 'missing' : ''}">
@@ -2619,6 +2642,13 @@ function openRecipeDetail(id) {
       <span>${ing.amount || ''} ${ing.unit || ''}</span>
     </div>`;
   }).join('');
+
+  const ingredientsHtml = hasIngGroups
+    ? grpKeys.map(grp => `
+        <div class="ingredient-group-label">${escapeHtml(grp)}</div>
+        ${renderIngList(groupedIng[grp])}
+      `).join('')
+    : renderIngList(recipe.ingredients);
 
   const stepsHtml = recipe.steps.map(s => `<li>${escapeHtml(s)}</li>`).join('');
 
@@ -2709,6 +2739,9 @@ function openRecipeDetail(id) {
     <div class="flex gap-2 mb-3">
       <button class="btn btn-ghost btn-full btn-sm" onclick="addMissingToShopping('${recipe.id}')">不足分を買い物リストへ</button>
     </div>
+    <div class="flex gap-2 mb-3">
+      <button class="btn btn-ghost btn-full btn-sm" onclick="restructureRecipeWithAI('${recipe.id}')" id="restructure-btn-${recipe.id}">✨ AIに手順を詳しく書き直してもらう</button>
+    </div>
     <div class="flex gap-2">
       <button class="btn btn-ghost btn-full btn-sm" onclick="openEditRecipeModal('${recipe.id}')">編集</button>
       <button class="btn btn-danger btn-sm" onclick="deleteRecipe('${recipe.id}')">削除</button>
@@ -2731,6 +2764,128 @@ function formatDate(iso) {
 
 let pendingCookRecipeId = null;
 let pendingRating = 0;
+
+// ========== レシピのAI構造化（既存レシピを手順詳細化＆材料グループ化） ==========
+async function restructureRecipeWithAI(recipeId) {
+  const recipe = state.recipes.find(r => r.id === recipeId);
+  if (!recipe) {
+    showToast('レシピが見つかりません');
+    return;
+  }
+  if (!apiKey) {
+    showToast('APIキーが未設定です。設定画面で登録してください');
+    return;
+  }
+
+  // 確認ダイアログ
+  showConfirm(
+    'AIで詳細化',
+    `「${recipe.name}」の手順をAIに書き直してもらいます。\n\n・手順は1工程ずつに分割\n・材料に下味用/タレ用などのラベルを追加\n・材料の種類は変えません\n\n実行しますか？`,
+    async (ok) => {
+      if (!ok) return;
+      await doRestructureRecipe(recipeId);
+    }
+  );
+}
+
+async function doRestructureRecipe(recipeId) {
+  const recipe = state.recipes.find(r => r.id === recipeId);
+  if (!recipe) return;
+
+  // ボタンをローディング状態に
+  const btn = document.getElementById(`restructure-btn-${recipeId}`);
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '⏳ AI処理中…';
+    btn.style.opacity = '0.6';
+  }
+
+  try {
+    // 既存材料・手順を文字列化してAIに渡す
+    const ingredientsText = (recipe.ingredients || []).map(i =>
+      `${i.name}${i.amount || i.unit ? ` ${i.amount || ''}${i.unit || ''}` : ''}${i.group ? ` [${i.group}]` : ''}`
+    ).join('、');
+    const stepsText = (recipe.steps || []).join(' / ');
+
+    const prompt = `以下のレシピを構造化してください。材料の種類・分量は変えず、用途分けと手順整理のみ行ってください。
+
+レシピ名: ${recipe.name}
+人数: ${recipe.servings}人分
+${recipe.cookTime ? `調理時間: ${recipe.cookTime}分` : ''}
+
+現在の材料: ${ingredientsText}
+
+現在の手順: ${stepsText}
+
+【厳守事項】
+1. 純粋なJSONのみ返す。マークダウン・コードブロック・コメント・前置き禁止
+2. 材料の種類は変更しない（種類を増減させない、別の食材に置き換えない）
+3. 分量も既存の値を維持する（明らかな誤りや不足単位の補完はOK）
+4. ingredients内の各要素にoptionalで group フィールドを付ける。同じ調味料が下味用とタレ用で2回出る場合などに、用途を区別する。値の例: 「下味用」「タレ用」「ソース用」「仕上げ用」「合わせ調味料」「漬け込み用」など。用途分けが不要な材料には group を付けない
+5. steps は調理手順を配列で返す。1工程=1要素として分割し、各工程は具体的に書く（時間・火加減・判断ポイント・状態の見分け方を含める）。元の手順が圧縮されている場合は適切な粒度に展開する
+6. 文字列内では改行を使わない
+7. 末尾カンマ禁止
+
+出力JSON構造:
+{"ingredients":[{"name":"...","amount":数値,"unit":"...","group":"..."}],"steps":["工程1","工程2",...]}
+
+出力例:
+{"ingredients":[{"name":"鶏もも肉","amount":300,"unit":"g"},{"name":"酒","amount":1,"unit":"大さじ","group":"下味用"},{"name":"塩","amount":1,"unit":"少々","group":"下味用"},{"name":"醤油","amount":2,"unit":"大さじ","group":"タレ用"},{"name":"みりん","amount":2,"unit":"大さじ","group":"タレ用"}],"steps":["鶏もも肉を一口大に切り、下味用の調味料を揉み込み10分置く","フライパンに油を熱し中火で皮目から3分焼く","裏返してさらに2分焼く","タレ用の調味料を加え強火で煮絡める","煮汁が半分になり照りが出たら完成"]}`;
+
+    const response = await callClaudeAPI({
+      model: 'claude-sonnet-4-5',
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 2000,
+    });
+
+    const text = extractText(response);
+    const data = parseJSON(text);
+
+    if (!data || !Array.isArray(data.ingredients) || !Array.isArray(data.steps)) {
+      throw new Error('AIの応答が想定外の形式でした');
+    }
+
+    // 念のためバリデーション: 元の材料数と大きく違っていたら警告
+    const oldCount = (recipe.ingredients || []).length;
+    const newCount = data.ingredients.length;
+    if (oldCount > 0 && Math.abs(newCount - oldCount) > Math.max(2, oldCount * 0.3)) {
+      // 30%以上の増減または2品以上の差があれば確認
+      const proceed = await new Promise(resolve => {
+        showConfirm(
+          '材料の数が変化しました',
+          `元の材料: ${oldCount}品 → AIの応答: ${newCount}品\n\nAIが材料を改変した可能性があります。それでも適用しますか？`,
+          (ok) => resolve(ok)
+        );
+      });
+      if (!proceed) {
+        showToast('適用をキャンセルしました');
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = '✨ AIに手順を詳しく書き直してもらう';
+          btn.style.opacity = '';
+        }
+        return;
+      }
+    }
+
+    // 上書き保存
+    recipe.ingredients = data.ingredients;
+    recipe.steps = data.steps;
+    saveState();
+    showToast('レシピを構造化しました');
+    closeModal('modal-recipe-detail');
+    setTimeout(() => openRecipeDetail(recipeId), 200); // 再描画
+    renderRecipes();
+  } catch (e) {
+    console.error(e);
+    showToast(`エラー: ${e.message}`, 4000);
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '✨ AIに手順を詳しく書き直してもらう';
+      btn.style.opacity = '';
+    }
+  }
+}
 
 function cookRecipe(id) {
   const recipe = state.recipes.find(r => r.id === id);
@@ -3774,9 +3929,11 @@ ${exclusionInfo}
 3. 文字列内では改行を使わない
 4. 末尾カンマ禁止
 5. saltPerServing（1人分の推定塩分量、g単位の数値）と proteinPerServing（1人分のタンパク質量、g単位の数値）を必ず含めること。塩分は調味料・素材の塩分を合算して算出。醤油大さじ1=約2.6g、味噌大さじ1=約2.2g、塩小さじ1=約6g、コンソメ1個=約2.5g、ベーコン20g=約0.4g 等を参考に
+6. steps は調理手順を配列で返す。1工程=1要素として分割し、各工程は具体的に書く（時間・火加減・判断ポイントを含める）
+7. ingredients内の各要素にはoptionalで group フィールドを付けてOK。同じ調味料が下味用とタレ用で2回出る場合などに、用途を区別する。例: {"name":"醤油","amount":1,"unit":"大さじ","group":"下味用"}, {"name":"醤油","amount":2,"unit":"大さじ","group":"タレ用"}。groupの値は「下味用」「タレ用」「ソース用」「仕上げ用」「合わせ調味料」「漬け込み用」など、用途分けが不要な材料には group を付けない
 
 出力例（この通りの構造で実際の値を入れて返すこと）:
-{"name":"鶏むね肉のレモンハーブ焼き","servings":2,"cookTime":20,"tags":["洋風","鶏肉","時短"],"ingredients":[{"name":"鶏むね肉","amount":300,"unit":"g"},{"name":"レモン","amount":1,"unit":"個"},{"name":"オリーブオイル","amount":2,"unit":"大さじ"}],"steps":["鶏むね肉に塩こしょうを振る","オリーブオイルで両面を焼く","レモン汁を絞ってハーブを散らす"],"notes":"レモンの酸味でさっぱり","proteinPerServing":28,"saltPerServing":1.4}`;
+{"name":"鶏もも肉の照り焼き","servings":2,"cookTime":20,"tags":["和風","鶏肉"],"ingredients":[{"name":"鶏もも肉","amount":300,"unit":"g"},{"name":"酒","amount":1,"unit":"大さじ","group":"下味用"},{"name":"塩","amount":1,"unit":"少々","group":"下味用"},{"name":"醤油","amount":2,"unit":"大さじ","group":"タレ用"},{"name":"みりん","amount":2,"unit":"大さじ","group":"タレ用"},{"name":"砂糖","amount":1,"unit":"大さじ","group":"タレ用"}],"steps":["鶏もも肉を一口大に切り、下味用の調味料を揉み込み10分置く","フライパンに油を熱し中火で皮目から3分焼く","裏返してさらに2分焼く","タレ用の調味料を加え強火で煮絡める","煮汁が半分になり照りが出たら完成"],"notes":"皮はパリッと焼き上げるのがコツ","proteinPerServing":28,"saltPerServing":1.6}`;
 
     const response = await callClaudeAPI({
       model: 'claude-sonnet-4-5',
@@ -4036,6 +4193,17 @@ async function generateMealPlan() {
       ? '' // デフォルトのプロンプト指示で在庫優先になっている
       : '\n\n【今回は在庫を考慮しない提案】\nこれから買い物に行くため、現在の在庫は無視してください。理想的なメニュー構成・栄養バランス・調理の楽しさを優先し、必要な食材は買い物リストにすべて反映させてください。在庫消費の縛りはありません。';
 
+    // 全プロンプト共通: 手順を配列化、材料に用途グループを付ける指示
+    const structuredRecipeInfo = `
+
+【レシピの構造化（重要）】
+各料理（dish）には以下のフィールドを必ず含めてください:
+1. steps: 調理手順を配列で返す。1工程=1要素として分割。各工程は具体的に書く（時間・火加減・判断ポイントを含める）。例: ["鶏もも肉を一口大に切り、ボウルで下味用の調味料を揉み込み15分置く", "フライパンに油を熱し中火で皮目から3分焼く", "裏返してタレ用の調味料を加え強火で煮絡める"]
+2. ingredients内の各要素にはoptionalで group フィールドを付けてOK。同じ調味料が下味用とタレ用で2回出る場合などに、用途を区別したい時にだけ使う。例: {"name":"醤油","amount":1,"unit":"大さじ","group":"下味用"}, {"name":"醤油","amount":2,"unit":"大さじ","group":"タレ用"}
+   groupの値は「下味用」「タレ用」「ソース用」「仕上げ用」「合わせ調味料」「漬け込み用」など、レシピに応じて自然な日本語で。用途分けが不要な材料には group を付けない。
+3. note は steps とは別に、保存方法・コツ・アレンジなど補足情報を1〜2文で書く（手順の詳細は steps 側に書く）`;
+
+
     // 消費期限間近の食材（在庫考慮OFFの場合は無効化）
     const urgentStock = useStock ? state.stock.filter(s => {
       if (!s.expiry || s.qty <= 0) return false;
@@ -4138,7 +4306,7 @@ async function generateMealPlan() {
 【提案する内訳】
 ${requirements.join('\n\n')}
 
-現在の在庫: ${stockInfo || (useStock ? "なし" : "（今回は在庫不問・まとめ買い前提）")}${stockPolicyInfo}
+現在の在庫: ${stockInfo || (useStock ? "なし" : "（今回は在庫不問・まとめ買い前提）")}${stockPolicyInfo}${structuredRecipeInfo}
 ${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}${cookingRulesInfo}${diversityHint}${exclusionInfo}
 
 登録済みレシピ（優先使用・参考）:
@@ -4171,7 +4339,7 @@ ${recipeInfo || 'なし'}
 
 スタイル: ${styleNote}
 
-現在の在庫: ${stockInfo || (useStock ? "なし" : "（今回は在庫不問・まとめ買い前提）")}${stockPolicyInfo}
+現在の在庫: ${stockInfo || (useStock ? "なし" : "（今回は在庫不問・まとめ買い前提）")}${stockPolicyInfo}${structuredRecipeInfo}
 ${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}${cookingRulesInfo}${diversityHint}${exclusionInfo}
 
 登録済みレシピ（優先使用）:
@@ -4198,7 +4366,7 @@ ${recipeInfo || 'なし'}
       // 1日分（夕食、主菜＋副菜）
       prompt = `1日分の夕食の献立を考えてください。主菜1品＋副菜1〜2品の構成で。
 
-現在の在庫: ${stockInfo || (useStock ? "なし" : "（今回は在庫不問・まとめ買い前提）")}${stockPolicyInfo}
+現在の在庫: ${stockInfo || (useStock ? "なし" : "（今回は在庫不問・まとめ買い前提）")}${stockPolicyInfo}${structuredRecipeInfo}
 ${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}${cookingRulesInfo}${diversityHint}${exclusionInfo}
 
 登録済みレシピ（優先使用）:
@@ -4224,7 +4392,7 @@ ${recipeInfo || 'なし'}
       const days = currentPlanType === 'dinner-7' ? 7 : 3;
       prompt = `${days}日分の夕食の献立を考えてください。既存のレシピを優先しつつ、足りなければ新規レシピも提案してOKです。
 
-現在の在庫: ${stockInfo || (useStock ? "なし" : "（今回は在庫不問・まとめ買い前提）")}${stockPolicyInfo}
+現在の在庫: ${stockInfo || (useStock ? "なし" : "（今回は在庫不問・まとめ買い前提）")}${stockPolicyInfo}${structuredRecipeInfo}
 ${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}${cookingRulesInfo}${diversityHint}${exclusionInfo}
 
 登録済みレシピ（優先使用）:
@@ -4306,6 +4474,34 @@ function renderMealPlan(data) {
             ? '<span class="tag" style="background:#e3f2fd; color:#0277bd;">下味冷凍</span>'
             : '<span class="tag" style="background:#fff3e0; color:#e65100;">冷蔵作り置き</span>')
         : '';
+      // 材料表示: groupごとにまとめる（group未指定の材料は「材料」グループ扱い）
+      const ingredientsGrouped = {};
+      (d.ingredients || []).forEach(ing => {
+        const grp = ing.group || '材料';
+        if (!ingredientsGrouped[grp]) ingredientsGrouped[grp] = [];
+        ingredientsGrouped[grp].push(ing);
+      });
+      const groupKeys = Object.keys(ingredientsGrouped);
+      const hasGroupedIngredients = groupKeys.some(k => k !== '材料') || groupKeys.length > 1;
+      const ingredientsHtml = hasGroupedIngredients
+        ? groupKeys.map(grp => {
+            const items = ingredientsGrouped[grp].map(i => {
+              const amt = (i.amount || i.unit) ? ` ${i.amount || ''}${i.unit || ''}` : '';
+              return `${escapeHtml(i.name)}${amt}`;
+            }).join('、');
+            return `<div class="text-sm text-muted mb-1"><span style="color: var(--shu); font-weight: 600;">［${escapeHtml(grp)}］</span> ${items}</div>`;
+          }).join('')
+        : `<div class="text-sm text-muted mb-2">材料: ${(d.ingredients || []).map(i => escapeHtml(i.name)).join('、')}</div>`;
+
+      // 手順表示: stepsが配列の場合は番号付きリスト、文字列やnoteしかない場合はそのまま
+      const stepsArr = Array.isArray(d.steps) ? d.steps : (d.steps ? [String(d.steps)] : []);
+      const stepsHtml = stepsArr.length > 0
+        ? `<details style="margin-top: 10px;"><summary style="cursor:pointer; font-size:12px; color: var(--sumi-soft); user-select:none;">▼ 手順を見る（${stepsArr.length}工程）</summary>
+            <ol style="margin: 8px 0 0 0; padding-left: 22px; font-size: 12px; line-height: 1.6;">
+              ${stepsArr.map(s => `<li style="margin-bottom: 4px;">${escapeHtml(s)}</li>`).join('')}
+            </ol>
+          </details>`
+        : '';
       return `
         <div class="card">
           <div class="flex flex-between mb-2">
@@ -4313,9 +4509,10 @@ function renderMealPlan(data) {
             ${d.isExisting ? '<span class="tag tag-matcha">既存</span>' : '<span class="tag tag-ai">新規</span>'}
           </div>
           <h3 style="font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-size: 16px; margin-bottom: 8px;">${escapeHtml(d.name)}</h3>
-          <div class="text-sm text-muted mb-2">材料: ${(d.ingredients || []).map(i => escapeHtml(i.name)).join('、')}</div>
-          ${d.proteinPerServing ? `<div class="text-sm">タンパク質: 約${Math.round(d.proteinPerServing)}g/人${d.saltPerServing ? ` ・ 塩分: 約${(Math.round(d.saltPerServing * 10) / 10).toFixed(1)}g/人` : ''}</div>` : (d.saltPerServing ? `<div class="text-sm">塩分: 約${(Math.round(d.saltPerServing * 10) / 10).toFixed(1)}g/人</div>` : '')}
+          ${ingredientsHtml}
+          ${d.proteinPerServing ? `<div class="text-sm" style="margin-top: 6px;">タンパク質: 約${Math.round(d.proteinPerServing)}g/人${d.saltPerServing ? ` ・ 塩分: 約${(Math.round(d.saltPerServing * 10) / 10).toFixed(1)}g/人` : ''}</div>` : (d.saltPerServing ? `<div class="text-sm" style="margin-top: 6px;">塩分: 約${(Math.round(d.saltPerServing * 10) / 10).toFixed(1)}g/人</div>` : '')}
           ${d.storageNote ? `<div class="text-sm" style="color: var(--shu); margin-top: 6px;">📦 ${escapeHtml(d.storageNote)}</div>` : ''}
+          ${stepsHtml}
           ${d.note ? `<div class="text-sm text-muted mt-3">${escapeHtml(d.note)}</div>` : ''}
           ${!d.isExisting ? (
             d._savedRecipeId && state.recipes.some(r => r.id === d._savedRecipeId)
@@ -4329,23 +4526,54 @@ function renderMealPlan(data) {
   }
   // 複数日プラン
   else if (data.days && Array.isArray(data.days)) {
-    mainHtml = data.days.map(d => `
+    mainHtml = data.days.map(d => {
+      const dn = d.dinner;
+      // 材料グループ化
+      const ingredientsGrouped = {};
+      (dn.ingredients || []).forEach(ing => {
+        const grp = ing.group || '材料';
+        if (!ingredientsGrouped[grp]) ingredientsGrouped[grp] = [];
+        ingredientsGrouped[grp].push(ing);
+      });
+      const groupKeys = Object.keys(ingredientsGrouped);
+      const hasGroupedIngredients = groupKeys.some(k => k !== '材料') || groupKeys.length > 1;
+      const ingredientsHtml = hasGroupedIngredients
+        ? groupKeys.map(grp => {
+            const items = ingredientsGrouped[grp].map(i => {
+              const amt = (i.amount || i.unit) ? ` ${i.amount || ''}${i.unit || ''}` : '';
+              return `${escapeHtml(i.name)}${amt}`;
+            }).join('、');
+            return `<div class="text-sm text-muted mb-1"><span style="color: var(--shu); font-weight: 600;">［${escapeHtml(grp)}］</span> ${items}</div>`;
+          }).join('')
+        : `<div class="text-sm text-muted mb-2">材料: ${(dn.ingredients || []).map(i => escapeHtml(i.name)).join('、')}</div>`;
+
+      const stepsArr = Array.isArray(dn.steps) ? dn.steps : (dn.steps ? [String(dn.steps)] : []);
+      const stepsHtml = stepsArr.length > 0
+        ? `<details style="margin-top: 10px;"><summary style="cursor:pointer; font-size:12px; color: var(--sumi-soft); user-select:none;">▼ 手順を見る（${stepsArr.length}工程）</summary>
+            <ol style="margin: 8px 0 0 0; padding-left: 22px; font-size: 12px; line-height: 1.6;">
+              ${stepsArr.map(s => `<li style="margin-bottom: 4px;">${escapeHtml(s)}</li>`).join('')}
+            </ol>
+          </details>`
+        : '';
+      return `
       <div class="card">
         <div class="flex flex-between mb-2">
           <div class="form-label">${d.day}日目</div>
-          ${d.dinner.isExisting ? '<span class="tag tag-matcha">既存</span>' : '<span class="tag tag-ai">新規</span>'}
+          ${dn.isExisting ? '<span class="tag tag-matcha">既存</span>' : '<span class="tag tag-ai">新規</span>'}
         </div>
-        <h3 style="font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-size: 16px; margin-bottom: 8px;">${escapeHtml(d.dinner.name)}</h3>
-        <div class="text-sm text-muted mb-2">材料: ${(d.dinner.ingredients || []).map(i => escapeHtml(i.name)).join('、')}</div>
-        ${d.dinner.proteinPerServing ? `<div class="text-sm">タンパク質: 約${Math.round(d.dinner.proteinPerServing)}g/人${d.dinner.saltPerServing ? ` ・ 塩分: 約${(Math.round(d.dinner.saltPerServing * 10) / 10).toFixed(1)}g/人` : ''}</div>` : (d.dinner.saltPerServing ? `<div class="text-sm">塩分: 約${(Math.round(d.dinner.saltPerServing * 10) / 10).toFixed(1)}g/人</div>` : '')}
-        ${d.dinner.note ? `<div class="text-sm text-muted mt-3">${escapeHtml(d.dinner.note)}</div>` : ''}
-        ${!d.dinner.isExisting ? (
-          d.dinner._savedRecipeId && state.recipes.some(r => r.id === d.dinner._savedRecipeId)
+        <h3 style="font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-size: 16px; margin-bottom: 8px;">${escapeHtml(dn.name)}</h3>
+        ${ingredientsHtml}
+        ${dn.proteinPerServing ? `<div class="text-sm" style="margin-top: 6px;">タンパク質: 約${Math.round(dn.proteinPerServing)}g/人${dn.saltPerServing ? ` ・ 塩分: 約${(Math.round(dn.saltPerServing * 10) / 10).toFixed(1)}g/人` : ''}</div>` : (dn.saltPerServing ? `<div class="text-sm" style="margin-top: 6px;">塩分: 約${(Math.round(dn.saltPerServing * 10) / 10).toFixed(1)}g/人</div>` : '')}
+        ${stepsHtml}
+        ${dn.note ? `<div class="text-sm text-muted mt-3">${escapeHtml(dn.note)}</div>` : ''}
+        ${!dn.isExisting ? (
+          dn._savedRecipeId && state.recipes.some(r => r.id === dn._savedRecipeId)
             ? `<button class="btn btn-ghost btn-sm mt-3" disabled style="opacity:0.6; background:var(--washi-dark); cursor:default;">✓ 保存済み</button>`
             : `<button class="btn btn-ghost btn-sm mt-3" onclick="savePlanRecipe(${d.day - 1})">このレシピを保存</button>`
         ) : ''}
       </div>
-    `).join('');
+      `;
+    }).join('');
   }
 
   // 買い物リスト
@@ -4396,7 +4624,7 @@ function savePlanRecipe(dayIdx) {
     cookTime: null,
     tags: ['献立提案'],
     ingredients: d.ingredients || [],
-    steps: d.note ? [d.note] : ['手順は後で追加してください'],
+    steps: (Array.isArray(d.steps) && d.steps.length > 0) ? d.steps : (d.note ? [d.note] : ['手順は後で追加してください']),
     notes: '献立提案から保存',
     createdAt: new Date().toISOString(),
     proteinPerServing: d.proteinPerServing || null,
@@ -4442,7 +4670,7 @@ function savePlanDish(dishIdx) {
     cookTime: null,
     tags: tags,
     ingredients: d.ingredients || [],
-    steps: d.note ? [d.note] : ['手順は後で追加してください'],
+    steps: (Array.isArray(d.steps) && d.steps.length > 0) ? d.steps : (d.note ? [d.note] : ['手順は後で追加してください']),
     notes: notes,
     createdAt: new Date().toISOString(),
     proteinPerServing: d.proteinPerServing || null,
