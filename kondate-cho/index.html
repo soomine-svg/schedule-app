@@ -2397,6 +2397,10 @@ const INGREDIENT_ALIASES = {
   // 焼肉のタレ
   '焼肉のタレ': ['焼肉のタレ', '焼肉のたれ', '焼き肉のタレ', '焼き肉のたれ', 'ヤキニクのタレ'],
   '焼肉のたれ': ['焼肉のタレ', '焼肉のたれ', '焼き肉のタレ', '焼き肉のたれ'],
+  // れんこん
+  'れんこん': ['れんこん', 'レンコン', '蓮根'],
+  'レンコン': ['れんこん', 'レンコン', '蓮根'],
+  '蓮根': ['れんこん', 'レンコン', '蓮根'],
   // ごま系（いりごま・すりごま：色違い・調理形態違いを相互認識）
   'ごま': ['ごま', '胡麻', '白ごま', '黒ごま', '金ごま', 'いりごま', 'すりごま', '白いりごま', '黒いりごま', '白すりごま', '黒すりごま'],
   '胡麻': ['ごま', '胡麻', '白ごま', '黒ごま', 'いりごま', 'すりごま', '白いりごま', '黒いりごま', '白すりごま', '黒すりごま'],
@@ -4516,7 +4520,7 @@ function renderMealPlan(data) {
           ${d.note ? `<div class="text-sm text-muted mt-3">${escapeHtml(d.note)}</div>` : ''}
           ${!d.isExisting ? (
             d._savedRecipeId && state.recipes.some(r => r.id === d._savedRecipeId)
-              ? `<button class="btn btn-ghost btn-sm mt-3" disabled style="opacity:0.6; background:var(--washi-dark); cursor:default;">✓ 保存済み</button>`
+              ? `<button class="btn btn-ghost btn-sm mt-3" onclick="openSavedRecipeFromPlan('${d._savedRecipeId}')" style="background:#e8f5e9; color:#2e7d32; border-color:#a5d6a7;">✓ 保存済み（タップで表示）</button>`
               : `<button class="btn btn-ghost btn-sm mt-3" onclick="savePlanDish(${idx})">このレシピを保存</button>`
           ) : ''}
         </div>
@@ -4568,7 +4572,7 @@ function renderMealPlan(data) {
         ${dn.note ? `<div class="text-sm text-muted mt-3">${escapeHtml(dn.note)}</div>` : ''}
         ${!dn.isExisting ? (
           dn._savedRecipeId && state.recipes.some(r => r.id === dn._savedRecipeId)
-            ? `<button class="btn btn-ghost btn-sm mt-3" disabled style="opacity:0.6; background:var(--washi-dark); cursor:default;">✓ 保存済み</button>`
+            ? `<button class="btn btn-ghost btn-sm mt-3" onclick="openSavedRecipeFromPlan('${dn._savedRecipeId}')" style="background:#e8f5e9; color:#2e7d32; border-color:#a5d6a7;">✓ 保存済み（タップで表示）</button>`
             : `<button class="btn btn-ghost btn-sm mt-3" onclick="savePlanRecipe(${d.day - 1})">このレシピを保存</button>`
         ) : ''}
       </div>
@@ -4637,6 +4641,17 @@ function savePlanRecipe(dayIdx) {
   showToast('レシピを保存しました');
   renderRecipes();
   renderMealPlan(state.mealPlan);
+}
+
+// 献立画面の「保存済み」ボタンから保存済みレシピの詳細を開く
+function openSavedRecipeFromPlan(recipeId) {
+  if (!recipeId) return;
+  const recipe = state.recipes.find(r => r.id === recipeId);
+  if (!recipe) {
+    showToast('レシピが見つかりません（削除された可能性があります）');
+    return;
+  }
+  openRecipeDetail(recipeId);
 }
 
 function savePlanDish(dishIdx) {
