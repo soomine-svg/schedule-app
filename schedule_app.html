@@ -304,7 +304,7 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
           <input id="sstart" type="time" value="08:30" style="font-size:.95rem;width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:7px">
           <div style="font-size:.73rem;color:#a0aec0;margin-top:2px">今からモード時は現在時刻を自動使用</div>
         </div>
-        <div class="fg"><label>平均時速（km/h）</label><input id="sspd" type="number" value="40" min="20" max="100" step="10"></div>
+        <div class="fg"><label>平均時速（km/h）</label><input id="sspd" type="number" value="30" min="20" max="100" step="10"></div>
       </div>
       <div class="btn-row">
         <!-- Googleカレンダー連携 -->
@@ -323,6 +323,10 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
       <label id="fast-mode-label" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem;padding:8px 14px;border-radius:8px;border:1.5px solid #e2e8f0;background:#f7fafc;user-select:none;transition:all .2s" title="全案件をできるだけ早く消化するモード。帰路バイアスをゼロにし、2-opt改善で移動距離を最小化します。">
         <input type="checkbox" id="fast-mode-chk" onchange="window._fastMode=this.checked;document.getElementById('fast-mode-label').style.background=this.checked?'#fef3c7':'#f7fafc';document.getElementById('fast-mode-label').style.borderColor=this.checked?'#f59e0b':'#e2e8f0';" style="accent-color:#f59e0b;width:15px;height:15px">
         <span>🚀 最速完了モード</span>
+      </label>
+      <label id="far-first-label" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem;padding:8px 14px;border-radius:8px;border:1.5px solid #e2e8f0;background:#f7fafc;user-select:none;transition:all .2s" title="自宅から直線距離25km以上の案件があれば、最遠地から訪問を開始します。往路高速代が経費精算できる調査業務向け。最速完了モードと併用時は最速完了モードが優先されます。">
+        <input type="checkbox" id="far-first-chk" onchange="window._farFirst=this.checked;document.getElementById('far-first-label').style.background=this.checked?'#e6fffa':'#f7fafc';document.getElementById('far-first-label').style.borderColor=this.checked?'#319795':'#e2e8f0';" style="accent-color:#319795;width:15px;height:15px">
+        <span>🛣 最遠地スタート</span>
       </label>
     </div>
       </div>
@@ -920,6 +924,7 @@ var HOME_ADR = "宮崎県都城市南鷹尾町33-11";
 var HOME_POS = {lat:31.7150, lng:131.0800}; // 自宅座標（グローバル定数）
 var DAY_START = 8*60+30; // 08:30 通常訪問開始
 window._fastMode = false; // 最速完了モード（UIチェックボックスで切り替え）
+window._farFirst = false; // 最遠地スタートモード（UIチェックボックスで切り替え）
 var GEOCODE_KEY = "AIzaSyC-bIBrdlwdoPvvNgw0miQvfv_Z17AQunM";
 
 // ===== 状態 =====
@@ -2188,9 +2193,12 @@ function addCaseToDayConfirm(){
   }
 
   // ── ② 追加した日のルートを2-optで最適化 ──
-  var FREE_DAY_END_AC = 20*60+15;
-  var optimized = twoOptImprove(ds.sched, ds.startAdr, ds.startMin, ds.spd, ds.calBlocks, ds.startMin, FREE_DAY_END_AC);
-  ds.sched = optimized;
+  // 最遠地スタートモードON時は2-optをスキップ
+  if(!(window._farFirst && !window._fastMode)){
+    var FREE_DAY_END_AC = 20*60+15;
+    var optimized = twoOptImprove(ds.sched, ds.startAdr, ds.startMin, ds.spd, ds.calBlocks, ds.startMin, FREE_DAY_END_AC);
+    ds.sched = optimized;
+  }
 
   // そのカードを再描画
   var cardId = 'day-card-'+dayIdx;
@@ -3088,6 +3096,10 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
   // 自宅座標（都城市南鷹尾町）
   var homePos = getPos(HOME_ADR, null);
 
+  // 最遠地スタートモード用：自由案件配置の初回フラグ
+  // 最速完了モードがONの場合は無効化（最速完了が優先）
+  var _farFirstPending = !!(window._farFirst && !window._fastMode);
+
   // 自由案件の最適選択（現在地からの最近傍 + 帰路方向バイアス）
   // 自由案件の最適選択（現在地からの最近傍 + 帰路方向バイアス + 納期優先）
   function pickFree(fromAdr, fromC, excludeIds){
@@ -3104,10 +3116,34 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
       : getPos(fromAdr, null);
     if(!fromPos || !fromPos.lat) return rem[0];
 
+    // ── 最遠地スタートモード：初回のみ、自宅から25km以上離れた最遠案件を強制選択 ──
+    if(_farFirstPending && homePos && homePos.lat){
+      var farthest = null, farthestD = 0;
+      rem.forEach(function(c){
+        var cPos = getPos(c.adr, c);
+        if(!cPos || !cPos.lat) return;
+        var d = km(homePos, cPos);
+        if(d > farthestD){ farthestD = d; farthest = c; }
+      });
+      _farFirstPending = false; // 初回のみ発動（以降は通常ロジック）
+      if(farthest && farthestD >= 25){
+        return farthest;
+      }
+      // 最遠地が25km未満なら通常ロジックにフォールバック（このまま下に進む）
+    }
+
     // 残り案件数に応じた帰路バイアス係数
     // 最速完了モードON時はバイアスゼロ（純粋な最近傍）
+    // 最遠地スタートモードON時は強めの固定バイアス（0.5）で序盤から自宅方向へ引き寄せる
     var total = freePool.filter(function(c){ return !placed[baseId(c.id)]; }).length;
-    var homeBias = window._fastMode ? 0 : (total <= 3 ? 0.6 : total <= 6 ? 0.35 : 0.15);
+    var homeBias;
+    if(window._fastMode){
+      homeBias = 0;
+    } else if(window._farFirst){
+      homeBias = 0.5;
+    } else {
+      homeBias = (total <= 3 ? 0.6 : total <= 6 ? 0.35 : 0.15);
+    }
 
     // 今日の日付（targetDate）
     var _now = new Date();
@@ -3429,7 +3465,8 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
 
   // ── 2-opt改善で自由案件の訪問順を最適化（常時適用） ──
   // 残存している予約ブロック（配置失敗ケース）は2-optに渡さない
-  if(sched.length >= 3){
+  // 最遠地スタートモードON時は2-optをスキップ（最遠地→近場の意図を保つため）
+  if(sched.length >= 3 && !(window._farFirst && !window._fastMode)){
     var calBlocksFor2opt = calBlocks.filter(function(b){ return !b.isReservation; });
     sched = twoOptImprove(sched, startAdr, startMin, spd, calBlocksFor2opt, FREE_START, FREE_DAY_END);
   }
@@ -4458,6 +4495,13 @@ function buildAllCore(){
       '<div style="font-weight:700;font-size:.95rem;margin-bottom:4px">🚀 最速完了モード &nbsp; '+completionDayLabel+'</div>'+
       (lastEndStr ? '<div>⏱ 最終案件: '+lastEndStr+'</div>' : '')+
       '<div style="font-size:.78rem;margin-top:4px;opacity:.8">帰路バイアスOFF・2-opt経路最適化済み</div>'+
+      '</div>';
+  } else if(window._farFirst){
+    // 最遠地スタートモード: モード通知を表示
+    summaryHtml = '<div style="margin-bottom:12px;padding:12px 16px;background:#e6fffa;border:1.5px solid #38b2ac;border-radius:10px;color:#234e52;font-size:.87rem">'+
+      '<div style="font-weight:700;font-size:.95rem;margin-bottom:4px">🛣 最遠地スタートモード</div>'+
+      '<div style="font-size:.8rem;margin-top:2px">自宅から25km以上の最遠案件から訪問開始（条件未達日は通常スケジュール）</div>'+
+      '<div style="font-size:.78rem;margin-top:4px;opacity:.8">往路高速代の経費精算を想定 / 復路は近場を回りながら一般道で帰宅</div>'+
       '</div>';
   }
 
