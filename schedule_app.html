@@ -306,6 +306,44 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
         </div>
         <div class="fg"><label>平均時速（km/h）</label><input id="sspd" type="number" value="30" min="20" max="100" step="10"></div>
       </div>
+
+      <!-- ===== 稼働時間・昼休み設定 ===== -->
+      <div style="margin-top:14px;padding:14px;background:#f0fff4;border-radius:10px;border:1.5px solid #9ae6b4">
+        <div style="font-size:.82rem;font-weight:700;color:#276749;margin-bottom:10px">⏱ 稼働時間設定（デフォルト8時間・昼休み含む）</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px">
+          <div class="fg">
+            <label style="color:#276749">🌅 1日目（時間）</label>
+            <input id="work-hours-0" type="number" value="8" min="1" max="24" step="0.5"
+              style="padding:8px;border:1.5px solid #9ae6b4;border-radius:7px;font-size:.95rem;font-weight:700;color:#276749;text-align:center"
+              oninput="saveWorkHours()">
+          </div>
+          <div class="fg">
+            <label style="color:#276749">☀️ 2日目（時間）</label>
+            <input id="work-hours-1" type="number" value="8" min="1" max="24" step="0.5"
+              style="padding:8px;border:1.5px solid #9ae6b4;border-radius:7px;font-size:.95rem;font-weight:700;color:#276749;text-align:center"
+              oninput="saveWorkHours()">
+          </div>
+          <div class="fg">
+            <label style="color:#276749">🌆 3日目（時間）</label>
+            <input id="work-hours-2" type="number" value="8" min="1" max="24" step="0.5"
+              style="padding:8px;border:1.5px solid #9ae6b4;border-radius:7px;font-size:.95rem;font-weight:700;color:#276749;text-align:center"
+              oninput="saveWorkHours()">
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <div class="fg" style="flex:0 0 auto">
+            <label style="color:#276749">🍱 昼休み（分）</label>
+            <input id="lunch-min" type="number" value="60" min="0" max="120" step="15"
+              style="width:90px;padding:7px 10px;border:1.5px solid #9ae6b4;border-radius:7px;font-size:.9rem;font-weight:700;color:#276749;text-align:center"
+              oninput="saveWorkHours()">
+          </div>
+          <div style="font-size:.75rem;color:#48bb78;align-self:flex-end;padding-bottom:4px">
+            ※ 昼休みは稼働時間に含まれます（実稼働 = 稼働時間 − 昼休み）<br>
+            ※ 稼働時間を超える日は🟡警告を表示します
+          </div>
+        </div>
+      </div>
+
       <div class="btn-row">
         <!-- Googleカレンダー連携 -->
       <div id="gcal-section" style="margin-bottom:12px;padding:12px;background:#f7fafc;border-radius:8px;border:1px solid #e2e8f0">
@@ -331,6 +369,7 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
     </div>
       </div>
     </div>
+    <div id="work-hours-alert" style="display:none;margin-top:10px"></div>
     <div id="sresult"></div>
   </div>
 
@@ -2886,6 +2925,204 @@ function invalidateGpsCache(){
 }
 
 
+// ===== 稼働時間・昼休み設定 =====
+var WORK_HOURS_KEY = 'schedule_work_hours_v1';
+
+function saveWorkHours(){
+  var wh = [
+    parseFloat(document.getElementById('work-hours-0').value)||8,
+    parseFloat(document.getElementById('work-hours-1').value)||8,
+    parseFloat(document.getElementById('work-hours-2').value)||8
+  ];
+  var lunch = parseInt(document.getElementById('lunch-min').value)||60;
+  try{ localStorage.setItem(WORK_HOURS_KEY, JSON.stringify({wh:wh, lunch:lunch})); }catch(e){}
+}
+
+function loadWorkHours(){
+  try{
+    var raw = localStorage.getItem(WORK_HOURS_KEY);
+    if(raw){
+      var d = JSON.parse(raw);
+      if(d.wh && d.wh.length===3){
+        document.getElementById('work-hours-0').value = d.wh[0];
+        document.getElementById('work-hours-1').value = d.wh[1];
+        document.getElementById('work-hours-2').value = d.wh[2];
+      }
+      if(d.lunch != null) document.getElementById('lunch-min').value = d.lunch;
+    }
+  }catch(e){}
+}
+
+function getWorkHoursMin(dayIdx){
+  var id = 'work-hours-'+dayIdx;
+  var el = document.getElementById(id);
+  return Math.round((parseFloat(el ? el.value : 8)||8) * 60);
+}
+
+function getLunchMin(){
+  var el = document.getElementById('lunch-min');
+  return parseInt(el ? el.value : 60)||60;
+}
+
+// 実稼働時間 = 稼働時間 - 昼休み
+function getEffectiveWorkMin(dayIdx){
+  return Math.max(0, getWorkHoursMin(dayIdx) - getLunchMin());
+}
+
+// ===== 納期危険アラート：案件登録時・毎朝起動時に全案件をチェック =====
+// 残り訪問可能日数 vs 残り訪問回数
+function checkDeadlineAlerts(){
+  var today = new Date();
+  var todayStr = today.getFullYear()+'-'+('0'+(today.getMonth()+1)).slice(-2)+'-'+('0'+today.getDate()).slice(-2);
+  var alerts = [];
+
+  // baseId別にグループ化
+  var byBase = {};
+  cases.forEach(function(c){
+    var b = baseId(c.id);
+    if(!byBase[b]) byBase[b] = [];
+    byBase[b].push(c);
+  });
+
+  Object.keys(byBase).forEach(function(b){
+    var arr = byBase[b];
+    var c0 = arr[0];
+    if(!c0.d2) return;
+
+    var deadline = new Date(c0.d2+'T00:00:00');
+    var daysLeft = Math.round((deadline - today) / 86400000);
+    var visitsLeft = arr.length;
+
+    // 1日に消化できる訪問数（時間指定考慮：時間指定ありは保守的に0.5回/日）
+    var avgPerDay = arr.some(function(x){ return x.tm && TM_RANGE[x.tm]; }) ? 0.5 : 1;
+    var minDaysNeeded = Math.ceil(visitsLeft / avgPerDay);
+
+    if(daysLeft < 0){
+      alerts.push({level:'red', id:b, msg:'納期超過（'+Math.abs(daysLeft)+'日超過）', visits:visitsLeft, deadline:c0.d2, daysLeft:daysLeft});
+    } else if(daysLeft < minDaysNeeded){
+      alerts.push({level:'red', id:b, msg:'納期内完了困難（残'+daysLeft+'日・残'+visitsLeft+'回訪問）', visits:visitsLeft, deadline:c0.d2, daysLeft:daysLeft});
+    } else if(daysLeft <= minDaysNeeded + 1){
+      alerts.push({level:'yellow', id:b, msg:'要注意（残'+daysLeft+'日・残'+visitsLeft+'回訪問）', visits:visitsLeft, deadline:c0.d2, daysLeft:daysLeft});
+    }
+  });
+
+  return alerts;
+}
+
+function renderDeadlineAlerts(alerts){
+  var el = document.getElementById('work-hours-alert');
+  if(!el) return;
+  if(!alerts || !alerts.length){ el.style.display='none'; return; }
+  var html = '<div style="margin-bottom:10px">';
+  var reds = alerts.filter(function(a){ return a.level==='red'; });
+  var yellows = alerts.filter(function(a){ return a.level==='yellow'; });
+  if(reds.length){
+    html += '<div style="background:#fff5f5;border:2px solid #fc8181;border-radius:10px;padding:12px;margin-bottom:8px">'
+      +'<div style="font-size:.85rem;font-weight:700;color:#c53030;margin-bottom:6px">🔴 緊急アラート（'+reds.length+'件）</div>';
+    reds.forEach(function(a){
+      html += '<div style="font-size:.8rem;color:#c53030;padding:3px 0;border-bottom:1px solid #fed7d7">⚠️ <b>'+a.id+'</b>　'+a.msg+'　<span style="color:#718096">納期:'+a.deadline+'</span></div>';
+    });
+    html += '</div>';
+  }
+  if(yellows.length){
+    html += '<div style="background:#fffbf0;border:2px solid #f6ad55;border-radius:10px;padding:12px">'
+      +'<div style="font-size:.85rem;font-weight:700;color:#744210;margin-bottom:6px">🟡 注意アラート（'+yellows.length+'件）</div>';
+    yellows.forEach(function(a){
+      html += '<div style="font-size:.8rem;color:#744210;padding:3px 0;border-bottom:1px solid #fbd38d">📌 <b>'+a.id+'</b>　'+a.msg+'　<span style="color:#718096">納期:'+a.deadline+'</span></div>';
+    });
+    html += '</div>';
+  }
+  html += '</div>';
+  el.innerHTML = html;
+  el.style.display = 'block';
+}
+
+// 待機時間から制作可能ウィンドウを抽出（30分以上の待機のみ）
+function extractCreativeWindows(sched){
+  var windows = [];
+  var THRESHOLD = 30; // 30分以上で制作可能とみなす
+  sched.forEach(function(c){
+    if(c.wait && c.wait >= THRESHOLD){
+      var wStart = c.st - c.wait;
+      windows.push({start:wStart, end:c.st, duration:c.wait});
+    }
+  });
+  return windows;
+}
+
+function renderCreativeWindows(dayIdx, sched, startMin, dStr){
+  var windows = extractCreativeWindows(sched);
+  if(!windows.length) return '';
+  var totalMin = windows.reduce(function(s,w){ return s+w.duration; }, 0);
+  var html = '<div style="margin-top:8px;padding:10px 12px;background:#faf5ff;border:1.5px solid #d6bcfa;border-radius:9px">'
+    +'<div style="font-size:.78rem;font-weight:700;color:#553c9a;margin-bottom:5px">💻 制作可能ウィンドウ（30分以上の待機時間）</div>';
+  windows.forEach(function(w){
+    html += '<div style="font-size:.78rem;color:#553c9a;padding:2px 0">🎨 '+fmt(w.start)+'〜'+fmt(w.end)+'　（'+w.duration+'分）</div>';
+  });
+  html += '<div style="font-size:.8rem;font-weight:700;color:#553c9a;margin-top:4px;border-top:1px solid #d6bcfa;padding-top:4px">合計制作可能時間：'+Math.floor(totalMin/60)+'時間'+(totalMin%60?totalMin%60+'分':'')+'</div>';
+  html += '</div>';
+  return html;
+}
+
+// ===== 稼働時間オーバー警告をrenderDayに注入 =====
+function renderWorkHoursWarning(dayIdx, sched, startMin, calBlocks){
+  var workMin = getWorkHoursMin(dayIdx);
+  var lunchMin = getLunchMin();
+  var effectiveWork = getEffectiveWorkMin(dayIdx);
+
+  if(!sched.length) return '';
+
+  // 実際の稼働終了時刻（最終案件終了）
+  var lastEnd = sched[sched.length-1].st + sched[sched.length-1].dur;
+  var actualWorkMin = lastEnd - startMin;
+
+  // 移動時間合計
+  var totalTrv = sched.reduce(function(s,c){ return s+(c.trv||0); }, 0);
+
+  // 稼働時間オーバー判定
+  if(actualWorkMin <= workMin) return ''; // 問題なし
+
+  var overMin = actualWorkMin - workMin;
+  var isHeavy = overMin > 60;
+  var color = isHeavy ? '#c53030' : '#744210';
+  var bg = isHeavy ? '#fff5f5' : '#fffbf0';
+  var border = isHeavy ? '#fc8181' : '#f6ad55';
+  var icon = isHeavy ? '🔴' : '🟡';
+
+  return '<div style="margin-top:6px;padding:9px 12px;background:'+bg+';border:1.5px solid '+border+';border-radius:8px;font-size:.8rem;color:'+color+'">'
+    +icon+' <b>稼働時間オーバー</b>　設定：'+Math.floor(workMin/60)+'時間（うち昼休み'+lunchMin+'分）　実際：'+Math.floor(actualWorkMin/60)+'時間'+(actualWorkMin%60?actualWorkMin%60+'分':'')+'　<b>+'+Math.floor(overMin/60)+'時間'+(overMin%60?overMin%60+'分':'')+'超過</b>'
+    +'<span style="color:#718096;font-size:.75rem;margin-left:8px">移動時間合計：'+totalTrv+'分</span>'
+    +'</div>';
+}
+
+// ===== スケジュール結果HTML生成後に稼働時間情報・制作ウィンドウを各カードに注入 =====
+function injectWorkHoursInfo(){
+  if(!window._dayScheds) return;
+  window._dayScheds.forEach(function(ds, dayIdx){
+    if(!ds || !ds.sched) return;
+    var cardEl = document.getElementById('day-card-'+dayIdx);
+    if(!cardEl) return;
+
+    // 制作可能ウィンドウ
+    var cwHtml = renderCreativeWindows(dayIdx, ds.sched, ds.startMin, ds.dStr);
+    // 稼働時間警告
+    var warnHtml = renderWorkHoursWarning(dayIdx, ds.sched, ds.startMin, ds.calBlocks);
+
+    if(cwHtml || warnHtml){
+      var inject = document.createElement('div');
+      inject.innerHTML = warnHtml + cwHtml;
+      inject.id = 'work-info-'+dayIdx;
+      // sum-rowの直後に挿入
+      var sumRow = cardEl.querySelector('.sum-row');
+      if(sumRow && sumRow.nextSibling){
+        cardEl.insertBefore(inject, sumRow.nextSibling);
+      } else {
+        cardEl.appendChild(inject);
+      }
+    }
+  });
+}
+
 // ===== スケジューリングエンジン =====
 
 function baseId(id){ return String(id).replace(/-\d+$/, ''); }
@@ -4506,6 +4743,13 @@ function buildAllCore(){
   }
 
   document.getElementById("sresult").innerHTML=summaryHtml+html;
+
+  // 稼働時間情報・制作可能ウィンドウをカードに注入
+  setTimeout(function(){ injectWorkHoursInfo(); }, 50);
+
+  // 納期危険アラートを更新
+  var dlAlerts = checkDeadlineAlerts();
+  renderDeadlineAlerts(dlAlerts);
 }
 
 
@@ -5037,8 +5281,20 @@ function reorderSchedDirect(dayIdx, fromIdx, toIdx){
   var card = document.getElementById('day-card-'+dayIdx);
   if(card){
     card.outerHTML = renderDay(ds.dayNum, ds.dStr, ds.sched, ds.skip, ds.spd, ds.startMin, ds.isNow, ds.calBlocks, dayIdx, ds.startAdr);
+    // 再描画後に稼働時間情報を再注入
+    setTimeout(function(){ injectWorkHoursInfo(); }, 30);
   }
 }
+
+// ===== 初期化 =====
+document.addEventListener('DOMContentLoaded', function(){
+  loadWorkHours();
+  // 起動時に納期アラートチェック（案件データ読み込み後に実行）
+  setTimeout(function(){
+    var dlAlerts = checkDeadlineAlerts();
+    renderDeadlineAlerts(dlAlerts);
+  }, 800);
+});
 
 </script>
 </body>
