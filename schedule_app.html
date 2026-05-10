@@ -102,7 +102,7 @@ document.getElementById("fav-icon").href = document.getElementById("ap-icon").hr
 // Google Maps JavaScript API（DistanceMatrixService + Geocoder用）
 function _gmapsReady(){ window._gmapsLoaded = true; }
 </script>
-<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC-bIBrdlwdoPvvNgw0miQvfv_Z17AQunM&libraries=&callback=_gmapsReady&loading=async" async defer></script>
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC-bIBrdlwdoPvvNgw0miQvfv_Z17AQunM&libraries=places&callback=_gmapsReady&loading=async" async defer></script>
 </head>
 <body>
 <header>
@@ -222,7 +222,17 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
             </div>
           </div>
         </div>
-        <div class="fg"><label>所要時間（分）</label><input id="fdur" type="number" value="10" min="5" max="240" step="5"></div>
+        <div class="fg">
+          <label>所要時間（分）</label>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <input id="fdur" type="number" value="10" min="5" max="240" step="5" style="width:90px">
+            <div style="display:flex;gap:4px">
+              <button type="button" onclick="document.getElementById('fdur').value=10" style="padding:6px 12px;border:1.5px solid #bee3f8;background:#ebf8ff;color:#2b6cb0;border-radius:7px;font-size:.82rem;font-weight:600;cursor:pointer">10</button>
+              <button type="button" onclick="document.getElementById('fdur').value=20" style="padding:6px 12px;border:1.5px solid #bee3f8;background:#ebf8ff;color:#2b6cb0;border-radius:7px;font-size:.82rem;font-weight:600;cursor:pointer">20</button>
+              <button type="button" onclick="document.getElementById('fdur').value=30" style="padding:6px 12px;border:1.5px solid #bee3f8;background:#ebf8ff;color:#2b6cb0;border-radius:7px;font-size:.82rem;font-weight:600;cursor:pointer">30</button>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="ck">
         <input type="checkbox" id="fely">
@@ -457,7 +467,17 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
           </div>
         </div>
       </div>
-      <div class="fg"><label>所要時間（分）</label><input id="eDur" type="number" min="5" max="240" step="5"></div>
+      <div class="fg">
+        <label>所要時間（分）</label>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <input id="eDur" type="number" min="5" max="240" step="5" style="width:90px">
+          <div style="display:flex;gap:4px">
+            <button type="button" onclick="document.getElementById('eDur').value=10" style="padding:6px 12px;border:1.5px solid #bee3f8;background:#ebf8ff;color:#2b6cb0;border-radius:7px;font-size:.82rem;font-weight:600;cursor:pointer">10</button>
+            <button type="button" onclick="document.getElementById('eDur').value=20" style="padding:6px 12px;border:1.5px solid #bee3f8;background:#ebf8ff;color:#2b6cb0;border-radius:7px;font-size:.82rem;font-weight:600;cursor:pointer">20</button>
+            <button type="button" onclick="document.getElementById('eDur').value=30" style="padding:6px 12px;border:1.5px solid #bee3f8;background:#ebf8ff;color:#2b6cb0;border-radius:7px;font-size:.82rem;font-weight:600;cursor:pointer">30</button>
+          </div>
+        </div>
+      </div>
     </div>
     <div class="ck" style="margin-bottom:14px">
       <input type="checkbox" id="eEly">
@@ -3095,6 +3115,227 @@ function renderWorkHoursWarning(dayIdx, sched, startMin, calBlocks){
     +'</div>';
 }
 
+// ===== 昼休み場所提案（Places API） =====
+// キャッシュ：同じ座標付近で何度もAPIを叩かないため
+var _lunchPlaceCache = {};
+
+// 11時〜14時の間で30分以上の隙間（待機時間 or 案件間ギャップ）を検出
+// 戻り値: {start, end, prevC, nextC, durationMin} or null
+function detectLunchSlot(sched){
+  if(!sched || sched.length === 0) return null;
+  var WINDOW_START = 11*60; // 11:00
+  var WINDOW_END   = 14*60; // 14:00
+  var MIN_DUR      = 30;    // 30分以上の隙間が必要
+
+  // 隙間候補：①各案件の wait（前案件終了後の待機）②案件と案件の純粋なギャップ
+  var candidates = [];
+
+  // 1件目より前のギャップ（startMinから1件目開始まで）はスキップ（昼休みになりにくい）
+
+  for(var i=0; i<sched.length; i++){
+    var c = sched[i];
+    // 待機時間：c.st - c.wait 〜 c.st
+    if(c.wait && c.wait >= MIN_DUR){
+      var wStart = c.st - c.wait;
+      var wEnd = c.st;
+      // 11:00〜14:00と重なる部分
+      var overlapStart = Math.max(wStart, WINDOW_START);
+      var overlapEnd   = Math.min(wEnd, WINDOW_END);
+      if(overlapEnd - overlapStart >= MIN_DUR){
+        candidates.push({
+          start: overlapStart,
+          end: overlapEnd,
+          prevC: i>0 ? sched[i-1] : null,
+          nextC: c,
+          durationMin: overlapEnd - overlapStart
+        });
+      }
+    }
+    // 案件間の純粋なギャップ（c終了 〜 次案件開始 - 移動時間）
+    if(i < sched.length-1){
+      var nextC = sched[i+1];
+      var cEnd = c.st + c.dur;
+      var nextStart = nextC.st - (nextC.trv||0); // 次案件への出発時刻
+      var gap = nextStart - cEnd;
+      if(gap >= MIN_DUR){
+        var gOverlapStart = Math.max(cEnd, WINDOW_START);
+        var gOverlapEnd   = Math.min(nextStart, WINDOW_END);
+        if(gOverlapEnd - gOverlapStart >= MIN_DUR){
+          // 既に同じ範囲を待機時間で拾っていれば重複追加しない（startが同じならスキップ）
+          var dup = candidates.some(function(x){ return Math.abs(x.start - gOverlapStart) < 5; });
+          if(!dup){
+            candidates.push({
+              start: gOverlapStart,
+              end: gOverlapEnd,
+              prevC: c,
+              nextC: nextC,
+              durationMin: gOverlapEnd - gOverlapStart
+            });
+          }
+        }
+      }
+    }
+  }
+
+  if(!candidates.length) return null;
+
+  // 12:00に最も近い候補を選ぶ（理想は12時前後）
+  candidates.sort(function(a,b){
+    var aMid = (a.start + a.end) / 2;
+    var bMid = (b.start + b.end) / 2;
+    return Math.abs(aMid - 12*60) - Math.abs(bMid - 12*60);
+  });
+  return candidates[0];
+}
+
+// Places APIで昼休み場所を検索（5km以内・優先順位順）
+// callback: function(place|null)  place = {name, address, distance, lat, lng, type}
+function findLunchPlace(centerLat, centerLng, callback){
+  if(!centerLat || !centerLng){ callback(null); return; }
+  // キャッシュキー（小数点3桁＝約100m精度で丸める）
+  var cacheKey = centerLat.toFixed(3) + ',' + centerLng.toFixed(3);
+  if(_lunchPlaceCache[cacheKey] !== undefined){
+    callback(_lunchPlaceCache[cacheKey]);
+    return;
+  }
+
+  // Maps JS API ロード待機
+  var _waitMs = 0;
+  function _doFind(){
+    if(!window._gmapsLoaded || !window.google || !window.google.maps || !window.google.maps.places){
+      _waitMs += 200;
+      if(_waitMs > 5000){ callback(null); return; }
+      setTimeout(_doFind, 200);
+      return;
+    }
+
+    // 検索する種別（優先順）
+    // Places APIのtype指定で検索 → 5km以内のみ採用
+    var SEARCH_PRIORITIES = [
+      {type:null, keyword:'道の駅', label:'道の駅'},
+      {type:'park', keyword:null, label:'公園'},
+      {type:'drugstore', keyword:null, label:'ドラッグストア'},
+      {type:'electronics_store', keyword:null, label:'家電量販店'},
+      {type:'supermarket', keyword:null, label:'スーパー'},
+      {type:'convenience_store', keyword:null, label:'コンビニ'}
+    ];
+
+    var center = new google.maps.LatLng(centerLat, centerLng);
+    // PlacesService は 'div' 要素を要求する（実際には描画されない）
+    var dummyDiv = document.createElement('div');
+    var svc = new google.maps.places.PlacesService(dummyDiv);
+
+    var idx = 0;
+    function tryNext(){
+      if(idx >= SEARCH_PRIORITIES.length){
+        // 全カテゴリで見つからなかった
+        _lunchPlaceCache[cacheKey] = null;
+        callback(null);
+        return;
+      }
+      var p = SEARCH_PRIORITIES[idx++];
+      var req = {
+        location: center,
+        radius: 5000, // 5km
+        rankBy: google.maps.places.RankBy.PROMINENCE
+      };
+      if(p.type) req.type = p.type;
+      if(p.keyword) req.keyword = p.keyword;
+
+      svc.nearbySearch(req, function(results, status){
+        if(status === google.maps.places.PlacesServiceStatus.OK && results && results.length){
+          // 5km以内かつ営業中（permanentlyClosed==falseまたは未指定）のものを採用
+          var valid = results.filter(function(r){
+            if(r.business_status && r.business_status !== 'OPERATIONAL') return false;
+            if(!r.geometry || !r.geometry.location) return false;
+            var dKm = km({lat:centerLat, lng:centerLng}, {lat:r.geometry.location.lat(), lng:r.geometry.location.lng()});
+            return dKm <= 5;
+          });
+          if(valid.length){
+            // 評価（rating）と距離のバランスで上位を選ぶ
+            valid.sort(function(a,b){
+              var dA = km({lat:centerLat,lng:centerLng}, {lat:a.geometry.location.lat(),lng:a.geometry.location.lng()});
+              var dB = km({lat:centerLat,lng:centerLng}, {lat:b.geometry.location.lat(),lng:b.geometry.location.lng()});
+              // 距離優先（評価は補助）
+              var scoreA = dA - (a.rating ? a.rating*0.1 : 0);
+              var scoreB = dB - (b.rating ? b.rating*0.1 : 0);
+              return scoreA - scoreB;
+            });
+            var pick = valid[0];
+            var pickLat = pick.geometry.location.lat();
+            var pickLng = pick.geometry.location.lng();
+            var pickKm = km({lat:centerLat,lng:centerLng}, {lat:pickLat,lng:pickLng});
+            var place = {
+              name: pick.name,
+              address: pick.vicinity || '',
+              distance: pickKm,
+              lat: pickLat,
+              lng: pickLng,
+              type: p.label,
+              rating: pick.rating || null
+            };
+            _lunchPlaceCache[cacheKey] = place;
+            callback(place);
+            return;
+          }
+        }
+        // 見つからなかった → 次のカテゴリ
+        tryNext();
+      });
+    }
+    tryNext();
+  }
+  _doFind();
+}
+
+// 昼休み情報をHTMLとして生成
+function renderLunchSuggestion(dayIdx, sched, ds){
+  var slot = detectLunchSlot(sched);
+  if(!slot){
+    return '<div style="margin-top:6px;padding:9px 12px;background:#fffbf0;border:1.5px solid #fbd38d;border-radius:8px;font-size:.78rem;color:#744210">'
+      +'🍱 11:00〜14:00の間に30分以上の隙間がありませんでした。昼休みは案件の合間で調整してください。'
+      +'</div>';
+  }
+
+  var slotInfo = '🍱 <b>昼休み候補</b>　'+fmt(slot.start)+'〜'+fmt(slot.end)+'　（'+slot.durationMin+'分）';
+  var prevInfo = slot.prevC ? '　<span style="color:#718096;font-size:.74rem">直前: '+slot.prevC.id+'</span>' : '';
+
+  // 検索の起点座標（直前案件の場所、なければ次案件、なければ自宅）
+  var centerLat=null, centerLng=null;
+  if(slot.prevC && slot.prevC.lat && slot.prevC.lng){
+    centerLat = slot.prevC.lat; centerLng = slot.prevC.lng;
+  } else if(slot.nextC && slot.nextC.lat && slot.nextC.lng){
+    centerLat = slot.nextC.lat; centerLng = slot.nextC.lng;
+  } else {
+    centerLat = 31.7150; centerLng = 131.0800; // 自宅フォールバック
+  }
+
+  var slotKey = 'lunch-'+dayIdx;
+  // 非同期で場所を検索し、結果を後から差し込む
+  setTimeout(function(){
+    findLunchPlace(centerLat, centerLng, function(place){
+      var el = document.getElementById(slotKey);
+      if(!el) return;
+      if(place){
+        var typeEmoji = {'道の駅':'🏞️','公園':'🌳','ドラッグストア':'💊','家電量販店':'🔌','スーパー':'🛒','コンビニ':'🏪'}[place.type] || '📍';
+        var rating = place.rating ? '　★'+place.rating.toFixed(1) : '';
+        var mapsUrl = 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(place.name+' '+place.address);
+        el.innerHTML = '📍 <b>'+typeEmoji+' '+place.name+'</b>'
+          +'<span style="color:#718096;font-size:.75rem">　('+place.type+'・'+place.distance.toFixed(1)+'km'+rating+')</span>'
+          +(place.address ? '<div style="font-size:.74rem;color:#718096;margin-top:2px">'+place.address+'</div>' : '')
+          +'<div style="margin-top:4px"><a href="'+mapsUrl+'" target="_blank" style="display:inline-block;padding:3px 10px;background:#4285f4;color:white;border-radius:6px;font-size:.74rem;text-decoration:none;font-weight:600">🗺️ Googleマップで開く</a></div>';
+      } else {
+        el.innerHTML = '<span style="color:#744210">📍 5km以内に適した場所が見つかりませんでした。車内休憩を推奨します。</span>';
+      }
+    });
+  }, 100);
+
+  return '<div style="margin-top:6px;padding:10px 12px;background:#fff5eb;border:1.5px solid #f6ad55;border-radius:9px;font-size:.8rem;color:#744210">'
+    +'<div>'+slotInfo+prevInfo+'</div>'
+    +'<div id="'+slotKey+'" style="margin-top:6px;padding-top:6px;border-top:1px dashed #f6ad55;color:#553c9a">⏳ 場所を検索中...</div>'
+    +'</div>';
+}
+
 // ===== スケジュール結果HTML生成後に稼働時間情報・制作ウィンドウを各カードに注入 =====
 function injectWorkHoursInfo(){
   if(!window._dayScheds) return;
@@ -3107,10 +3348,12 @@ function injectWorkHoursInfo(){
     var cwHtml = renderCreativeWindows(dayIdx, ds.sched, ds.startMin, ds.dStr);
     // 稼働時間警告
     var warnHtml = renderWorkHoursWarning(dayIdx, ds.sched, ds.startMin, ds.calBlocks);
+    // 昼休み場所提案
+    var lunchHtml = renderLunchSuggestion(dayIdx, ds.sched, ds);
 
-    if(cwHtml || warnHtml){
+    if(cwHtml || warnHtml || lunchHtml){
       var inject = document.createElement('div');
-      inject.innerHTML = warnHtml + cwHtml;
+      inject.innerHTML = warnHtml + lunchHtml + cwHtml;
       inject.id = 'work-info-'+dayIdx;
       // sum-rowの直後に挿入
       var sumRow = cardEl.querySelector('.sum-row');
