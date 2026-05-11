@@ -3350,10 +3350,12 @@ function injectWorkHoursInfo(){
     var warnHtml = renderWorkHoursWarning(dayIdx, ds.sched, ds.startMin, ds.calBlocks);
     // 昼休み場所提案
     var lunchHtml = renderLunchSuggestion(dayIdx, ds.sched, ds);
+    // 後ろ倒し通知
+    var pushBackHtml = renderPushBackInfo(dayIdx);
 
-    if(cwHtml || warnHtml || lunchHtml){
+    if(cwHtml || warnHtml || lunchHtml || pushBackHtml){
       var inject = document.createElement('div');
-      inject.innerHTML = warnHtml + lunchHtml + cwHtml;
+      inject.innerHTML = pushBackHtml + warnHtml + lunchHtml + cwHtml;
       inject.id = 'work-info-'+dayIdx;
       // sum-rowの直後に挿入
       var sumRow = cardEl.querySelector('.sum-row');
@@ -3364,6 +3366,40 @@ function injectWorkHoursInfo(){
       }
     }
   });
+}
+
+// 後ろ倒し発動時の通知バナー
+function renderPushBackInfo(dayIdx){
+  if(!window._pushBackInfo || !window._pushBackInfo[dayIdx]) return '';
+  var info = window._pushBackInfo[dayIdx];
+  if(!info.shouldPushBack) return '';
+  var freeBlockEnd = info.freeBlockEnd;
+  var origStart = info.originalStartMin;
+  var newStart = info.newStartMin;
+  var target = info.targetCase;
+  var targetStart = info.targetStart;
+  var bufferMin = info.bufferMin;
+  var totalMove = info.totalMove != null ? info.totalMove : null;
+  var freeDurSum = info.freeDurSum != null ? info.freeDurSum : null;
+  var freeCount = info.freeCount != null ? info.freeCount : null;
+
+  var breakdown = '';
+  if(totalMove != null && freeDurSum != null){
+    breakdown = '<div style="margin-top:6px;padding:6px 8px;background:#f0fdfa;border-radius:6px;font-size:.72rem;color:#234e52;line-height:1.5">'
+      +'📊 内訳：自由案件'+freeCount+'件×所要計'+freeDurSum+'分　+　実移動時間計'+totalMove+'分　+　バッファ'+bufferMin+'分'
+      +'</div>';
+  }
+
+  return '<div style="margin-top:6px;padding:10px 12px;background:#e6fffa;border:1.5px solid #4fd1c5;border-radius:9px;font-size:.82rem;color:#234e52">'
+    +'🏠 <b>後ろ倒し出発モード</b>　自宅で制作してから出発できます'
+    +'<div style="margin-top:5px;font-size:.78rem;line-height:1.5">'
+    +'　・自宅作業可能：朝〜<b>'+fmt(freeBlockEnd)+'</b>頃まで<br>'
+    +'　・推奨出発時刻：<b>'+fmt(newStart)+'</b>（元の出発：'+fmt(origStart)+'）<br>'
+    +'　・寄せ先：'+(target ? target.id : '時間指定案件')+'　'+fmt(targetStart)
+    +'</div>'
+    +breakdown
+    +'<div style="margin-top:4px;font-size:.72rem;color:#718096">※ 移動時間はDistance Matrix APIの実測値です。実際の交通状況で変動する可能性があります。</div>'
+    +'</div>';
 }
 
 // ===== スケジューリングエンジン =====
@@ -3389,6 +3425,132 @@ function canScheduleTodayCheck(c, targetDate, startMin, isNextDay){
   if(!c.tm || !TM_RANGE[c.tm]) return true; // 時間指定なし→いつでも可
   if(targetDate && !isTmAvailable(c.tm, targetDate)) return false; // 曜日不一致は翌日へ（絶対）
   return true;
+}
+
+// ===== 後ろ倒し出発時刻の計算 =====
+// 条件：10時以前(600分以前)に時間指定なし & 午後以降(=10時以降)に時間指定あり
+// → 自宅で制作してから時間指定に合わせて出発する
+//
+// 戻り値: { shouldPushBack: bool, newStartMin: 分, originalStartMin: 分,
+//          freeBlockEnd: 分(自宅作業終了目安), targetCase: 寄せ先案件 }
+var PUSH_BACK_BUFFER = 60; // バッファ時間（分）
+var PUSH_BACK_THRESHOLD_MIN = 600; // 10:00 = 600分（これより早い時間指定があれば後ろ倒ししない）
+
+// 2地点間の移動時間(分)を取得（厳密計算優先）
+// 1. dmCache(Distance Matrix API実測値) → 2. trvMin(直線距離×係数のフォールバック)
+function _pbTrv(fromAdr, fromC, toAdr, toC, spd){
+  if(!fromAdr || !toAdr) return 0;
+  if(fromAdr === toAdr) return 0;
+  // Distance Matrix キャッシュから取得
+  var dm = dmGet(fromAdr, toAdr);
+  if(dm != null) return dm;
+  // フォールバック：直線距離 × 道路係数
+  return trvMin(fromAdr, toAdr, spd, fromC, toC);
+}
+
+// 自由案件の最適訪問順を求めて移動時間合計を返す
+// 出発地 → 自由案件群 → 時間指定案件 の最短ルート（最近傍法）
+function _pbCalcRoute(startAdr, freeCases, targetCase, spd){
+  // 自由案件0件 → 出発地→targetの移動のみ
+  if(freeCases.length === 0){
+    return {
+      totalMove: _pbTrv(startAdr, null, targetCase.adr, targetCase, spd),
+      route: [targetCase]
+    };
+  }
+
+  // 最近傍法で訪問順を決定（自由案件数が少ない前提、最大10件くらいまで現実的）
+  var remaining = freeCases.slice();
+  var currentAdr = startAdr;
+  var currentC = null;
+  var route = [];
+  var totalMove = 0;
+
+  while(remaining.length){
+    var bestIdx = 0;
+    var bestT = Infinity;
+    for(var i=0; i<remaining.length; i++){
+      var t = _pbTrv(currentAdr, currentC, remaining[i].adr, remaining[i], spd);
+      if(t < bestT){ bestT = t; bestIdx = i; }
+    }
+    var nextC = remaining.splice(bestIdx, 1)[0];
+    totalMove += bestT;
+    route.push(nextC);
+    currentAdr = nextC.adr;
+    currentC = nextC;
+  }
+
+  // 最終自由案件 → 時間指定案件
+  totalMove += _pbTrv(currentAdr, currentC, targetCase.adr, targetCase, spd);
+  route.push(targetCase);
+
+  return { totalMove: totalMove, route: route };
+}
+
+function calcPushBackStart(remaining, dStr, originalStartMin, startAdr, spd, dayIdx){
+  var result = { shouldPushBack:false, newStartMin:originalStartMin, originalStartMin:originalStartMin };
+
+  // この日に配置可能な案件を抽出（曜日・pinDate判定）
+  var targetDate = new Date(dStr+'T00:00:00');
+  var dayPool = remaining.filter(function(c){
+    return canScheduleTodayCheck(c, targetDate, originalStartMin, true);
+  });
+
+  if(!dayPool.length) return result; // 案件なし → 従来通り
+
+  // 時間指定/ピン案件を抽出して開始時刻を集める
+  var timedStarts = [];
+  dayPool.forEach(function(c){
+    if(c.pin != null){
+      // ピン案件の日付指定がない、または今日に一致するもの
+      if(!c.pinDate || c.pinDate === dStr) timedStarts.push({c:c, start:c.pin});
+    } else if(c.tm && TM_RANGE[c.tm]){
+      timedStarts.push({c:c, start:TM_RANGE[c.tm][0]});
+    }
+  });
+
+  if(!timedStarts.length) return result; // 時間指定なし → 従来通り
+
+  // 10時以前に時間指定がある → 後ろ倒ししない（朝出発）
+  var hasEarly = timedStarts.some(function(t){ return t.start < PUSH_BACK_THRESHOLD_MIN; });
+  if(hasEarly) return result;
+
+  // 寄せ先：最も早い時間指定案件
+  timedStarts.sort(function(a,b){ return a.start - b.start; });
+  var target = timedStarts[0];
+  var targetCase = target.c;
+
+  // 自由案件群（時間指定なし）
+  var freeCases = dayPool.filter(function(c){
+    return c.pin == null && (!c.tm || !TM_RANGE[c.tm]);
+  });
+
+  // 自由案件の所要時間合計
+  var freeDurSum = freeCases.reduce(function(s,c){ return s + (c.dur||10); }, 0);
+
+  // ★厳密計算★ 最近傍法で最適ルートを組み、実際の移動時間合計を取得
+  var routeResult = _pbCalcRoute(startAdr, freeCases, targetCase, spd);
+  var totalMove = routeResult.totalMove;
+
+  // 推奨出発時刻（自宅から）
+  var totalConsume = freeDurSum + totalMove + PUSH_BACK_BUFFER;
+  var proposedStart = target.start - totalConsume;
+
+  // 出発時刻が現在のstartMinより遅い場合のみ採用（後ろ倒し）
+  // かつ proposedStart が現実的範囲内（4:00以降）であること
+  if(proposedStart > originalStartMin && proposedStart >= 240){
+    result.shouldPushBack = true;
+    result.newStartMin = proposedStart;
+    result.freeBlockEnd = proposedStart; // 自宅作業はこの時刻まで可能
+    result.targetCase = targetCase;
+    result.targetStart = target.start;
+    result.bufferMin = PUSH_BACK_BUFFER;
+    result.freeCount = freeCases.length;
+    result.totalMove = totalMove; // 実移動時間合計（参考表示用）
+    result.freeDurSum = freeDurSum;
+  }
+
+  return result;
 }
 
 function fmt(m){
@@ -4614,6 +4776,21 @@ function buildAllCore(){
     var dStr     = localDateStr(date);
     var startMin = d===0 ? day1Min : sstartMin;
     var startAdr = d===0 ? day1Adr : HOME_ADR; // 2日目以降は自宅から
+
+    // ===== 後ろ倒し出発時刻の計算（翌日モードのみ） =====
+    // 条件: 10時以前に時間指定なし & 午後以降に時間指定あり
+    // → 自宅で制作してから時間指定に合わせて出発
+    if(!isNow){
+      var pushBackResult = calcPushBackStart(remaining, dStr, startMin, startAdr, spd, d);
+      if(pushBackResult.shouldPushBack){
+        startMin = pushBackResult.newStartMin;
+        if(window._pushBackInfo == null) window._pushBackInfo = {};
+        window._pushBackInfo[d] = pushBackResult;
+      } else {
+        if(window._pushBackInfo == null) window._pushBackInfo = {};
+        window._pushBackInfo[d] = null;
+      }
+    }
 
     if(!remaining.length){
       html+='<div class="card"><h2>'+['🌅 1日目','☀️ 2日目','🌆 3日目'][d]+'　'+dStr+
