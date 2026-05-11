@@ -3880,11 +3880,23 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
         var dFrom = km(fromPos, cPos);
         var dHome = homePos ? km(cPos, homePos) : 0;
         score = dFrom + dHome * homeBias - deadlineBonus;
+
+        // 改修3: 寄せ先案件への方向バイアス
+        // 現在 fillFree が「次の時間指定案件」のために自由案件を埋めている場合、
+        // その寄せ先に近い案件を優先することで、最終的に寄せ先まで自然に到達できる
+        if(_pickFreeTarget && _pickFreeTarget.lat){
+          var dToTarget = km(cPos, _pickFreeTarget);
+          // バイアス係数 0.4 = 寄せ先まで10km近い案件は4km分のボーナス相当
+          score += dToTarget * 0.4;
+        }
       }
       if(score < bestScore){ bestScore=score; best=c; }
     });
     return best || rem[0];
   }
+
+  // 寄せ先座標（fillFree内で一時的に設定される、pickFreeで参照）
+  var _pickFreeTarget = null;
 
 
   // deadline まで自由案件を詰める（FREE_START以降のみ・カレンダーブロックをまたぐ）
@@ -4023,8 +4035,24 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
   calBlocks.sort(function(a,b){ return a.start - b.start; });
 
   // ── メインループ：時間指定案件を処理 ──
-  timedAvail.forEach(function(tc){
+  timedAvail.forEach(function(tc, _tcIdx){
     if(placed[tc.id] || placed[baseId(tc.id)]) return;
+
+    // 改修1サポート: 次の時間指定案件の窓開始時刻（後続を圧迫しないための上限）
+    var _nextTimedStart = null;
+    for(var _ni = _tcIdx + 1; _ni < timedAvail.length; _ni++){
+      var _ntc = timedAvail[_ni];
+      if(placed[_ntc.id] || placed[baseId(_ntc.id)]) continue;
+      if(_ntc.pin != null){ _nextTimedStart = _ntc.pin; break; }
+      if(_ntc.tm && TM_RANGE[_ntc.tm]){
+        var _nws = TM_RANGE[_ntc.tm][0], _nwe = TM_RANGE[_ntc.tm][1];
+        // 全日窓・夜間窓はスキップ（fillFreeの邪魔をしない）
+        if(_nws <= DAY_START && _nwe >= 20*60+15) continue;
+        if(_nws >= 20*60) continue;
+        _nextTimedStart = _nws;
+        break;
+      }
+    }
 
     // ── 区分③夜間（wStart >= 20:00）→後で処理 ──
     if(tc.pin == null && tc.tm && TM_RANGE[tc.tm] && TM_RANGE[tc.tm][0] >= 20*60) return;
@@ -4036,7 +4064,19 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
       var stPin = (arrive <= tc.pin) ? tc.pin : arrive;
       if(arrive < tc.pin){
         var latestDepart = tc.pin - trvToPin;
-        if(latestDepart > cur && latestDepart > FREE_START) fillFree(latestDepart);
+        // ピン案件は絶対時刻なので拡張せず元のロジックのまま
+        // ただし後続の時間指定案件があれば制限
+        if(_nextTimedStart != null){
+          var _capByNextP = _nextTimedStart - tc.dur - 15;
+          if(_capByNextP < latestDepart) latestDepart = _capByNextP;
+        }
+        if(latestDepart > cur && latestDepart > FREE_START){
+          // 改修3: 寄せ先案件の座標をpickFreeに伝える
+          var _pinPos = getPos(tc.adr, tc);
+          if(_pinPos && _pinPos.lat) _pickFreeTarget = _pinPos;
+          fillFree(latestDepart);
+          _pickFreeTarget = null;
+        }
         trvToPin = trv(prev, prevC, tc.adr, tc);
         arrive = cur + trvToPin;
         stPin = (arrive <= tc.pin) ? tc.pin : arrive;
@@ -4100,9 +4140,23 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
       return;
     }
     if(arriveAt < wStart){
-      var latestDepart = wStart - trvToTc;
+      // 改修1: fillFreeのdeadlineを「窓終了に間に合う最遅出発時刻」に拡張
+      // 従来は窓開始ぴったり(wStart - trvToTc)を目標としていたが、
+      // 時間指定窓は wStart〜wEnd の幅があるので、wEnd までに着けば良い
+      // → 待機時間を埋める自由案件を多く配置できるようになる
+      // ただし後続の時間指定案件があれば、その窓開始までに収めるよう制限
+      var latestDepart = wLatestArrival - trvToTc;
+      if(_nextTimedStart != null){
+        // 後続の時間指定案件への移動余裕を持たせるため、最低15分のバッファ
+        var _capByNext = _nextTimedStart - tc.dur - 15;
+        if(_capByNext < latestDepart) latestDepart = _capByNext;
+      }
       if(latestDepart > Math.max(cur, FREE_START)){
+        // 改修3: 寄せ先案件の座標をpickFreeに伝える
+        var _tcPos = getPos(tc.adr, tc);
+        if(_tcPos && _tcPos.lat) _pickFreeTarget = _tcPos;
         fillFree(latestDepart);
+        _pickFreeTarget = null; // 解除
         trvToTc = trv(prev, prevC, tc.adr, tc);
         arriveAt = cur + trvToTc;
       }
@@ -4232,8 +4286,19 @@ function twoOptImprove(sched, startAdr, startMin, spd, calBlocks, freeStart, fre
     return out;
   }
 
-  // 総移動時間（分）
-  function totalTrv(s){ return s.reduce(function(sum,c){ return sum+c.trv; },0); }
+  // 自宅住所（評価関数で帰宅時間を含めるため）
+  var _homeAdrForEval = (typeof HOME_ADR !== 'undefined') ? HOME_ADR : startAdr;
+
+  // 評価関数：自宅着時刻（最終案件終了時刻 + 帰宅までの移動時間）
+  // 距離が伸びても全体の業務終了が早ければ採用する
+  // → 待機時間の縮小・南→北→南のような経路も総時間が短ければOK
+  function totalElapsed(s){
+    if(!s || s.length === 0) return startMin;
+    var last = s[s.length-1];
+    var endOfLast = last.st + last.dur;
+    var homeT = trvH(last.adr, last, _homeAdrForEval, null);
+    return endOfLast + homeT;
+  }
 
   // 自由案件インデックス（タイムド・ピン以外）
   var freeIdx = [];
@@ -4243,7 +4308,7 @@ function twoOptImprove(sched, startAdr, startMin, spd, calBlocks, freeStart, fre
   if(freeIdx.length < 2) return sched;
 
   var best = sched;
-  var bestTrv = totalTrv(sched);
+  var bestElapsed = totalElapsed(sched);
   var improved = true;
   var maxIter = 120;
 
@@ -4258,10 +4323,10 @@ function twoOptImprove(sched, startAdr, startMin, spd, calBlocks, freeStart, fre
         var tmp = trial[ia]; trial[ia] = trial[ib]; trial[ib] = tmp;
         var rec = recompute(trial);
         if(rec){
-          var tv = totalTrv(rec);
-          if(tv < bestTrv - 0.01){
+          var tv = totalElapsed(rec);
+          if(tv < bestElapsed - 0.01){
             best = rec;
-            bestTrv = tv;
+            bestElapsed = tv;
             improved = true;
           }
         }
@@ -4286,10 +4351,10 @@ function twoOptImprove(sched, startAdr, startMin, spd, calBlocks, freeStart, fre
         trial2.splice(insertAt, 0, item);   // 挿入
         var rec2 = recompute(trial2);
         if(rec2){
-          var tv2 = totalTrv(rec2);
-          if(tv2 < bestTrv - 0.01){
+          var tv2 = totalElapsed(rec2);
+          if(tv2 < bestElapsed - 0.01){
             best = rec2;
-            bestTrv = tv2;
+            bestElapsed = tv2;
             improved = true;
             break; // 改善したら次のfiへ
           }
