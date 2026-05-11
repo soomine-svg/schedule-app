@@ -195,6 +195,7 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
             <option value="平日7-8">平日7〜8時</option>
             <option value="平日6-8">平日6〜8時</option>
             <option value="平日8-10">平日8〜10時</option>
+            <option value="平日10-12">平日10〜12時</option>
             <option value="平日12-14">平日12〜14時</option>
             <option value="平日12-17">平日12〜17時</option>
             <option value="平日14-16">平日14〜16時</option>
@@ -441,6 +442,7 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
           <option value="平日7-8">平日7〜8時</option>
           <option value="平日6-8">平日6〜8時</option>
           <option value="平日8-10">平日8〜10時</option>
+          <option value="平日10-12">平日10〜12時</option>
           <option value="平日12-14">平日12〜14時</option>
           <option value="平日12-17">平日12〜17時</option>
           <option value="平日14-16">平日14〜16時</option>
@@ -515,7 +517,7 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
 // ===== 時間指定テーブル（分単位）=====
 var TM_RANGE={
   "平日":[510,1215],"平日6-7":[360,420],"平日7-8":[420,480],
-  "平日6-8":[360,480],"平日8-10":[480,600],"平日12-14":[720,840],
+  "平日6-8":[360,480],"平日8-10":[480,600],"平日10-12":[600,720],"平日12-14":[720,840],
   "平日12-17":[720,1020],"平日14-16":[840,960],"平日16-18":[960,1080],"平日17-20":[1020,1200],
   "平日18-20":[1080,1200],"平日20-22":[1200,1320],
   "休日":[510,1215],"休日6-7":[360,420],"休日8-10":[480,600],"休日9-12":[540,720],"休日12-17":[720,1020],"休日17-20":[1020,1200]
@@ -528,8 +530,8 @@ function tmColorTheme(tm){
   if(tm==='平日6-7'||tm==='平日7-8'||tm==='平日6-8'||tm==='休日6-7')
     return {row:'background:#ebf8ff;border-left:3px solid #4299e1;padding-left:6px;border-radius:4px;',
             dot:'#4299e1', badge:'background:#bee3f8;color:#2b6cb0;'};
-  // 午前（8-10、9-12）: 緑
-  if(tm==='平日8-10'||tm==='休日8-10'||tm==='休日9-12')
+  // 午前（8-10、9-12、10-12）: 緑
+  if(tm==='平日8-10'||tm==='平日10-12'||tm==='休日8-10'||tm==='休日9-12')
     return {row:'background:#f0fff4;border-left:3px solid #48bb78;padding-left:6px;border-radius:4px;',
             dot:'#48bb78', badge:'background:#c6f6d5;color:#276749;'};
   // 昼（12〜16）: 黄
@@ -3121,73 +3123,90 @@ function renderWorkHoursWarning(dayIdx, sched, startMin, calBlocks){
 // キャッシュ：同じ座標付近で何度もAPIを叩かないため
 var _lunchPlaceCache = {};
 
-// 11時〜14時の間で30分以上の隙間（待機時間 or 案件間ギャップ）を検出
-// 戻り値: {start, end, prevC, nextC, durationMin} or null
+// 11時〜14時の間で昼休みポイントを必ず決定する
+// （稼働時間8時間には昼休み60分が含まれており、案件途中のどこかで昼休みを取る前提）
+// 戻り値: {start, end, prevC, nextC, durationMin, isForced} or null
+// - isForced=false: 11-14時範囲の最初に現れる案件と案件の境目に挟む
+// - isForced=true:  境目が11-14時にない場合、11時以降最初の案件の前後に強制配置
 function detectLunchSlot(sched){
   if(!sched || sched.length === 0) return null;
   var WINDOW_START = 11*60; // 11:00
   var WINDOW_END   = 14*60; // 14:00
-  var MIN_DUR      = 30;    // 30分以上の隙間が必要
+  var LUNCH_DUR    = 60;    // 昼休みは60分想定（場所提案目的なので長さは参考値）
 
-  // 隙間候補：①各案件の wait（前案件終了後の待機）②案件と案件の純粋なギャップ
-  var candidates = [];
-
-  // 1件目より前のギャップ（startMinから1件目開始まで）はスキップ（昼休みになりにくい）
-
-  for(var i=0; i<sched.length; i++){
-    var c = sched[i];
-    // 待機時間：c.st - c.wait 〜 c.st
-    if(c.wait && c.wait >= MIN_DUR){
-      var wStart = c.st - c.wait;
-      var wEnd = c.st;
-      // 11:00〜14:00と重なる部分
-      var overlapStart = Math.max(wStart, WINDOW_START);
-      var overlapEnd   = Math.min(wEnd, WINDOW_END);
-      if(overlapEnd - overlapStart >= MIN_DUR){
-        candidates.push({
-          start: overlapStart,
-          end: overlapEnd,
-          prevC: i>0 ? sched[i-1] : null,
-          nextC: c,
-          durationMin: overlapEnd - overlapStart
-        });
-      }
-    }
-    // 案件間の純粋なギャップ（c終了 〜 次案件開始 - 移動時間）
-    if(i < sched.length-1){
-      var nextC = sched[i+1];
-      var cEnd = c.st + c.dur;
-      var nextStart = nextC.st - (nextC.trv||0); // 次案件への出発時刻
-      var gap = nextStart - cEnd;
-      if(gap >= MIN_DUR){
-        var gOverlapStart = Math.max(cEnd, WINDOW_START);
-        var gOverlapEnd   = Math.min(nextStart, WINDOW_END);
-        if(gOverlapEnd - gOverlapStart >= MIN_DUR){
-          // 既に同じ範囲を待機時間で拾っていれば重複追加しない（startが同じならスキップ）
-          var dup = candidates.some(function(x){ return Math.abs(x.start - gOverlapStart) < 5; });
-          if(!dup){
-            candidates.push({
-              start: gOverlapStart,
-              end: gOverlapEnd,
-              prevC: c,
-              nextC: nextC,
-              durationMin: gOverlapEnd - gOverlapStart
-            });
-          }
-        }
-      }
+  // ① 11:00〜14:00 の範囲で「案件と案件の境目」をすべて列挙する
+  //   境目 = 案件i終了 〜 案件i+1開始（移動時間込み）の間
+  //   ただし境目位置の代表として「案件i終了時刻」を採用
+  var boundaries = [];
+  for(var i=0; i<sched.length-1; i++){
+    var c     = sched[i];
+    var nextC = sched[i+1];
+    var cEnd  = c.st + c.dur; // 案件i終了
+    // この境目が11-14時の範囲に重なるかチェック
+    // (案件i終了 が WINDOW_END 以前 && 案件i+1開始 が WINDOW_START 以降)
+    if(cEnd <= WINDOW_END && nextC.st >= WINDOW_START){
+      // 境目の代表時刻：案件i終了時刻を11-14時範囲にクリップ
+      var pivot = Math.max(WINDOW_START, Math.min(WINDOW_END, cEnd));
+      boundaries.push({
+        pivot: pivot,
+        prevC: c,
+        nextC: nextC,
+        cEnd:  cEnd,
+        nextStart: nextC.st - (nextC.trv||0)
+      });
     }
   }
 
-  if(!candidates.length) return null;
+  // ② 11-14時範囲に境目があれば、最初に現れた境目を採用
+  //   （車の停めやすさは境目選択に依存しないので、最もシンプルに早い順で選ぶ）
+  if(boundaries.length > 0){
+    boundaries.sort(function(a,b){ return a.pivot - b.pivot; });
+    var b0 = boundaries[0];
+    // 表示用の開始/終了時刻：案件i終了 〜 案件i+1出発（移動開始）
+    var dispStart = Math.max(WINDOW_START, b0.cEnd);
+    var dispEnd   = Math.min(WINDOW_END, b0.nextStart);
+    if(dispEnd <= dispStart) dispEnd = dispStart + LUNCH_DUR; // 隙間ゼロでも表示用に確保
+    return {
+      start: dispStart,
+      end: dispEnd,
+      prevC: b0.prevC,
+      nextC: b0.nextC,
+      durationMin: Math.max(0, dispEnd - dispStart),
+      isForced: false
+    };
+  }
 
-  // 12:00に最も近い候補を選ぶ（理想は12時前後）
-  candidates.sort(function(a,b){
-    var aMid = (a.start + a.end) / 2;
-    var bMid = (b.start + b.end) / 2;
-    return Math.abs(aMid - 12*60) - Math.abs(bMid - 12*60);
-  });
-  return candidates[0];
+  // ③ 11-14時範囲に境目が一つもない場合（早朝のみで終わる日・夕方からの日など）
+  //   11:00以降に最初に登場する案件を見つけて、その前後に強制配置
+  //   （11:00以降が無い場合は、最後の案件の直後）
+  var nearestIdx = -1;
+  for(var j=0; j<sched.length; j++){
+    if(sched[j].st >= WINDOW_START){ nearestIdx = j; break; }
+  }
+  // 11時以降の案件が無ければ最後の案件を採用
+  if(nearestIdx < 0) nearestIdx = sched.length - 1;
+  var nc = sched[nearestIdx];
+  // この案件が11時より後に始まる → 案件の前に昼休み
+  // この案件が11時より前に終わる → 案件のあとに昼休み
+  if(nc.st >= WINDOW_START){
+    return {
+      start: Math.max(WINDOW_START, nc.st - LUNCH_DUR),
+      end:   nc.st,
+      prevC: sched[nearestIdx-1] || null,
+      nextC: nc,
+      durationMin: LUNCH_DUR,
+      isForced: true
+    };
+  } else {
+    return {
+      start: nc.st + nc.dur,
+      end:   nc.st + nc.dur + LUNCH_DUR,
+      prevC: nc,
+      nextC: sched[nearestIdx+1] || null,
+      durationMin: LUNCH_DUR,
+      isForced: true
+    };
+  }
 }
 
 // Places APIで昼休み場所を検索（5km以内・優先順位順）
@@ -3294,12 +3313,12 @@ function findLunchPlace(centerLat, centerLng, callback){
 function renderLunchSuggestion(dayIdx, sched, ds){
   var slot = detectLunchSlot(sched);
   if(!slot){
-    return '<div style="margin-top:6px;padding:9px 12px;background:#fffbf0;border:1.5px solid #fbd38d;border-radius:8px;font-size:.78rem;color:#744210">'
-      +'🍱 11:00〜14:00の間に30分以上の隙間がありませんでした。昼休みは案件の合間で調整してください。'
-      +'</div>';
+    // sched が空（その日に案件なし）→ 昼休み表示不要
+    return '';
   }
 
-  var slotInfo = '🍱 <b>昼休み候補</b>　'+fmt(slot.start)+'〜'+fmt(slot.end)+'　（'+slot.durationMin+'分）';
+  var forcedNote = slot.isForced ? '<span style="color:#9b6f00;font-size:.72rem">　※ 11-14時に案件の境目がないため最寄り案件付近で提案</span>' : '';
+  var slotInfo = '🍱 <b>昼休みポイント</b>　'+fmt(slot.start)+'〜'+fmt(slot.end)+forcedNote;
   var prevInfo = slot.prevC ? '　<span style="color:#718096;font-size:.74rem">直前: '+slot.prevC.id+'</span>' : '';
 
   // 検索の起点座標（直前案件の場所、なければ次案件、なければ自宅）
