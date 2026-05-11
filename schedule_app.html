@@ -4742,6 +4742,8 @@ function buildAllCore(){
     return;
   }
   _buildAllWaitCount = 0; // リセット
+  // 前回実行の後ろ倒し情報をリセット
+  window._pushBackInfo = {};
   if(!cases.length){
     document.getElementById("sresult").innerHTML='<div class="al al-y">案件がありません</div>';
     return;
@@ -4802,24 +4804,9 @@ function buildAllCore(){
     var startMin = d===0 ? day1Min : sstartMin;
     var startAdr = d===0 ? day1Adr : HOME_ADR; // 2日目以降は自宅から
 
-    // ===== 後ろ倒し出発時刻の計算（翌日モードのみ） =====
-    // 条件: 10時以前に時間指定なし & 午後以降に時間指定あり
-    // → 自宅で制作してから時間指定に合わせて出発
-    if(!isNow){
-      var pushBackResult = calcPushBackStart(remaining, dStr, startMin, startAdr, spd, d);
-      console.log('[PushBack] Day'+d+' '+dStr+' result:', JSON.stringify({
-        shouldPushBack: pushBackResult.shouldPushBack,
-        newStartMin: pushBackResult.newStartMin,
-        originalStartMin: pushBackResult.originalStartMin,
-        debugReason: pushBackResult.debugReason
-      }));
-      if(window._pushBackInfo == null) window._pushBackInfo = {};
-      // 発動有無に関わらず情報を保存（デバッグ表示のため）
-      window._pushBackInfo[d] = pushBackResult;
-      if(pushBackResult.shouldPushBack){
-        startMin = pushBackResult.newStartMin;
-      }
-    } else {
+    // ===== 後ろ倒し出発時刻の計算は todayPool 確定後に行う =====
+    // （旧位置で remaining 全件を見ていたため誤判定が発生していたため移動）
+    if(isNow){
       console.log('[PushBack] Day'+d+' '+dStr+': isNow=true (今からモードのため後ろ倒し対象外)');
       if(window._pushBackInfo == null) window._pushBackInfo = {};
       window._pushBackInfo[d] = { shouldPushBack:false, debugReason:'今からモードのため対象外' };
@@ -5101,6 +5088,33 @@ function buildAllCore(){
       // 重複排除
       var rm2={}; remaining=remaining.filter(function(c){ return rm2[c.id]?false:(rm2[c.id]=true); });
       continue;
+    }
+
+    // ===== 後ろ倒し出発時刻の計算（翌日モードのみ・todayPool確定後）=====
+    // 条件: 10時以前に時間指定なし & 午後以降に時間指定あり & 自宅出発
+    // → 自宅で制作してから時間指定に合わせて出発
+    if(!isNow){
+      // 自宅出発でない日（午前にカレンダー予定があり外出地から始まる等）は対象外
+      var _pbStartIsHome = (effectiveStartAdr === HOME_ADR);
+      if(!_pbStartIsHome){
+        if(window._pushBackInfo == null) window._pushBackInfo = {};
+        window._pushBackInfo[d] = { shouldPushBack:false, debugReason:'自宅出発でない日のため対象外（出発地='+(effectiveStartAdr||'未設定')+'）' };
+        console.log('[PushBack] Day'+d+' '+dStr+': 自宅出発でないためスキップ ('+effectiveStartAdr+')');
+      } else {
+        var pushBackResult = calcPushBackStart(todayPool, dStr, effectiveStartMin, effectiveStartAdr, spd, d);
+        console.log('[PushBack] Day'+d+' '+dStr+' result:', JSON.stringify({
+          shouldPushBack: pushBackResult.shouldPushBack,
+          newStartMin: pushBackResult.newStartMin,
+          originalStartMin: pushBackResult.originalStartMin,
+          debugReason: pushBackResult.debugReason,
+          poolIds: todayPool.map(function(c){return c.id;})
+        }));
+        if(window._pushBackInfo == null) window._pushBackInfo = {};
+        window._pushBackInfo[d] = pushBackResult;
+        if(pushBackResult.shouldPushBack){
+          effectiveStartMin = pushBackResult.newStartMin;
+        }
+      }
     }
 
     var result = scheduleDay(todayPool, effectiveStartMin, effectiveStartAdr, spd, date, calBlocksExt, effectiveDayEnd, !isNow && d===0);
