@@ -5158,6 +5158,101 @@ function buildAllCore(){
     var consumed = result.consumedIds;
     var notAvail = result.notAvailTimed||[];
 
+    // ===== 実走ベースの後ろ倒し再計算（翌日モードのみ・自宅出発のみ） =====
+    // 1回目スケジュール内に大きな wait が発生していたら、その分だけ出発を後ろ倒して再計算
+    // 同日訪問不可ルール等で繰越が出る日でも、実態に基づいた正確な後ろ倒しを行うため
+    if(!isNow && effectiveStartAdr === HOME_ADR && todaySch && todaySch.length > 0){
+      var PB_BUFFER = 60; // バッファ60分（calcPushBackStart内のPUSH_BACK_BUFFERと同じ）
+      // 寄せ先 = 最も早い時間指定/ピン案件で、かつ wait が PB_BUFFER 超のもの
+      var maxUsableWait = 0;
+      var targetSch = null;
+      todaySch.forEach(function(sc){
+        var isTimed = (sc.pin != null) || (sc.tm && TM_RANGE[sc.tm] && !(TM_RANGE[sc.tm][0] <= 8*60+30 && TM_RANGE[sc.tm][1] >= 20*60+15));
+        if(isTimed && sc.wait && sc.wait > PB_BUFFER){
+          // この時間指定案件の前に発生している待機を後ろ倒しに転用できる
+          if(sc.wait > maxUsableWait){ maxUsableWait = sc.wait; targetSch = sc; }
+        }
+      });
+
+      if(maxUsableWait > PB_BUFFER){
+        // 後ろ倒し可能分 = wait - バッファ
+        var pushBackMin = maxUsableWait - PB_BUFFER;
+        var newStartMin = effectiveStartMin + pushBackMin;
+
+        console.log('[PushBack2nd] Day'+(d+1)+' '+dStr+' 実走後検出: target='+targetSch.id+' wait='+maxUsableWait+'分 → 後ろ倒し候補='+pushBackMin+'分（'+Math.floor(effectiveStartMin/60)+':'+(('0'+(effectiveStartMin%60)).slice(-2))+' → '+Math.floor(newStartMin/60)+':'+(('0'+(newStartMin%60)).slice(-2))+'）');
+
+        // 2回目スケジューラ実行
+        var result2 = scheduleDay(todayPool, newStartMin, effectiveStartAdr, spd, date, calBlocksExt, effectiveDayEnd, !isNow && d===0);
+
+        // ガード判定：2回目の繰越が1回目より増えていないこと
+        var sched1Count = (result.sched||[]).length;
+        var sched2Count = (result2.sched||[]).length;
+        // 繰越件数 = todayPool件数 - 実配置件数
+        var carriedOverCount1 = todayPool.length - sched1Count;
+        var carriedOverCount2 = todayPool.length - sched2Count;
+
+        // 採用条件: ①繰越が増えていない（=配置件数が減っていない） ②2回目スケジュールが空でない
+        var adopt = (carriedOverCount2 <= carriedOverCount1) && (sched2Count > 0);
+
+        console.log('[PushBack2nd] Day'+(d+1)+' 採否: '+(adopt?'採用':'不採用')+' (1回目: 配置'+sched1Count+'件・繰越'+carriedOverCount1+'件 / 2回目: 配置'+sched2Count+'件・繰越'+carriedOverCount2+'件)');
+
+        if(adopt){
+          // 採用前に元の出発時刻を保存
+          var origStartBeforePB = effectiveStartMin;
+
+          // 採用：結果を上書き
+          result = result2;
+          todaySch = result.sched;
+          consumed = result.consumedIds;
+          notAvail = result.notAvailTimed||[];
+          effectiveStartMin = newStartMin;
+
+          // _pushBackInfo を実走ベースの値で更新
+          // 寄せ先案件と自由案件群を実スケジュールから抽出
+          // totalMove は「自宅出発〜寄せ先案件到着まで」の移動時間合計（帰路や後続案件の移動は含まない）
+          var pbTargetCase = null;
+          var pbFreeCases = [];
+          var pbTotalMove = 0;
+          var pbTargetReached = false;
+          todaySch.forEach(function(sc){
+            if(pbTargetReached) return;
+            var isTimedS = (sc.pin != null) || (sc.tm && TM_RANGE[sc.tm] && !(TM_RANGE[sc.tm][0] <= 8*60+30 && TM_RANGE[sc.tm][1] >= 20*60+15));
+            pbTotalMove += (sc.trv||0);
+            if(isTimedS){
+              pbTargetCase = sc;
+              pbTargetReached = true; // 寄せ先まで到達したので集計終了
+            } else {
+              pbFreeCases.push(sc);
+            }
+          });
+          var pbFreeDurSum = pbFreeCases.reduce(function(s,c){ return s + (c.dur||10); }, 0);
+          var pbTargetStart = pbTargetCase ? pbTargetCase.st : null;
+
+          window._pushBackInfo[d] = {
+            shouldPushBack: true,
+            newStartMin: newStartMin,
+            originalStartMin: origStartBeforePB,
+            freeBlockEnd: newStartMin,
+            targetCase: pbTargetCase,
+            targetStart: pbTargetStart,
+            bufferMin: PB_BUFFER,
+            freeCount: pbFreeCases.length,
+            totalMove: pbTotalMove,
+            freeDurSum: pbFreeDurSum,
+            debugReason: '実走再計算: wait='+maxUsableWait+'分→後ろ倒し'+pushBackMin+'分',
+            isSecondPass: true
+          };
+        } else {
+          // 不採用：1回目結果のままだが、debugReasonに不採用理由を残す
+          if(window._pushBackInfo && window._pushBackInfo[d]){
+            window._pushBackInfo[d].debugReason = (window._pushBackInfo[d].debugReason||'') + ' / 実走再計算は不採用(配置'+sched2Count+'/繰越'+carriedOverCount2+')';
+          }
+        }
+      } else {
+        console.log('[PushBack2nd] Day'+(d+1)+' '+dStr+': 60分超の待機なし（最大wait='+maxUsableWait+'分）');
+      }
+    }
+
     // 今日消化できなかった案件
     var notDone = todayPool.filter(function(c){ return !consumed[c.id]; }); // 完全IDで判定
     // notAvailはnotDoneに含まれているので重複排除
