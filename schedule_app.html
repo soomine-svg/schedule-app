@@ -3370,9 +3370,31 @@ function injectWorkHoursInfo(){
 
 // 後ろ倒し発動時の通知バナー
 function renderPushBackInfo(dayIdx){
-  if(!window._pushBackInfo || !window._pushBackInfo[dayIdx]) return '';
+  // _pushBackInfoがnullの場合も、デバッグ情報があれば表示
+  if(!window._pushBackInfo) return '';
   var info = window._pushBackInfo[dayIdx];
-  if(!info.shouldPushBack) return '';
+
+  // デバッグ情報を常に表示（発動有無に関わらず）
+  if(!info){
+    // null = 未発動だが計算は行われた
+    var dbg = window._pushBackDebug && window._pushBackDebug[dayIdx];
+    if(dbg && dbg.debugReason){
+      return '<div style="margin-top:6px;padding:8px 12px;background:#f7fafc;border:1px solid #cbd5e0;border-radius:8px;font-size:.72rem;color:#4a5568">'
+        +'🔍 後ろ倒し判定: '+dbg.debugReason
+        +'</div>';
+    }
+    return '';
+  }
+
+  if(!info.shouldPushBack){
+    if(info.debugReason){
+      return '<div style="margin-top:6px;padding:8px 12px;background:#f7fafc;border:1px solid #cbd5e0;border-radius:8px;font-size:.72rem;color:#4a5568">'
+        +'🔍 後ろ倒し判定: '+info.debugReason
+        +'</div>';
+    }
+    return '';
+  }
+
   var freeBlockEnd = info.freeBlockEnd;
   var origStart = info.originalStartMin;
   var newStart = info.newStartMin;
@@ -3496,7 +3518,7 @@ function calcPushBackStart(remaining, dStr, originalStartMin, startAdr, spd, day
     return canScheduleTodayCheck(c, targetDate, originalStartMin, true);
   });
 
-  if(!dayPool.length) return result; // 案件なし → 従来通り
+  if(!dayPool.length){ result.debugReason='配置可能な案件なし'; return result; }
 
   // 時間指定/ピン案件を抽出して開始時刻を集める
   var timedStarts = [];
@@ -3509,11 +3531,11 @@ function calcPushBackStart(remaining, dStr, originalStartMin, startAdr, spd, day
     }
   });
 
-  if(!timedStarts.length) return result; // 時間指定なし → 従来通り
+  if(!timedStarts.length){ result.debugReason='時間指定案件なし（dayPool='+dayPool.length+'件）'; return result; }
 
   // 10時以前に時間指定がある → 後ろ倒ししない（朝出発）
   var hasEarly = timedStarts.some(function(t){ return t.start < PUSH_BACK_THRESHOLD_MIN; });
-  if(hasEarly) return result;
+  if(hasEarly){ result.debugReason='10時以前に時間指定あり'; return result; }
 
   // 寄せ先：最も早い時間指定案件
   timedStarts.sort(function(a,b){ return a.start - b.start; });
@@ -3548,6 +3570,9 @@ function calcPushBackStart(remaining, dStr, originalStartMin, startAdr, spd, day
     result.freeCount = freeCases.length;
     result.totalMove = totalMove; // 実移動時間合計（参考表示用）
     result.freeDurSum = freeDurSum;
+    result.debugReason='発動: proposed='+proposedStart+' > orig='+originalStartMin;
+  } else {
+    result.debugReason='発動せず: proposed='+proposedStart+' vs orig='+originalStartMin+' (move='+totalMove+', dur='+freeDurSum+', buffer='+PUSH_BACK_BUFFER+', target='+target.start+')';
   }
 
   return result;
@@ -4782,14 +4807,22 @@ function buildAllCore(){
     // → 自宅で制作してから時間指定に合わせて出発
     if(!isNow){
       var pushBackResult = calcPushBackStart(remaining, dStr, startMin, startAdr, spd, d);
+      console.log('[PushBack] Day'+d+' '+dStr+' result:', JSON.stringify({
+        shouldPushBack: pushBackResult.shouldPushBack,
+        newStartMin: pushBackResult.newStartMin,
+        originalStartMin: pushBackResult.originalStartMin,
+        debugReason: pushBackResult.debugReason
+      }));
+      if(window._pushBackInfo == null) window._pushBackInfo = {};
+      // 発動有無に関わらず情報を保存（デバッグ表示のため）
+      window._pushBackInfo[d] = pushBackResult;
       if(pushBackResult.shouldPushBack){
         startMin = pushBackResult.newStartMin;
-        if(window._pushBackInfo == null) window._pushBackInfo = {};
-        window._pushBackInfo[d] = pushBackResult;
-      } else {
-        if(window._pushBackInfo == null) window._pushBackInfo = {};
-        window._pushBackInfo[d] = null;
       }
+    } else {
+      console.log('[PushBack] Day'+d+' '+dStr+': isNow=true (今からモードのため後ろ倒し対象外)');
+      if(window._pushBackInfo == null) window._pushBackInfo = {};
+      window._pushBackInfo[d] = { shouldPushBack:false, debugReason:'今からモードのため対象外' };
     }
 
     if(!remaining.length){
