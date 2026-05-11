@@ -205,6 +205,7 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
             <option value="休日">休日</option>
             <option value="休日6-7">休日6〜7時</option>
             <option value="休日8-10">休日8〜10時</option>
+            <option value="休日9-12">休日9〜12時</option>
             <option value="休日12-17">休日12〜17時</option>
             <option value="休日17-20">休日17〜20時</option>
           </select>
@@ -450,6 +451,7 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
           <option value="休日">休日</option>
           <option value="休日6-7">休日6〜7時</option>
           <option value="休日8-10">休日8〜10時</option>
+          <option value="休日9-12">休日9〜12時</option>
           <option value="休日12-17">休日12〜17時</option>
           <option value="休日17-20">休日17〜20時</option>
         </select>
@@ -516,7 +518,7 @@ var TM_RANGE={
   "平日6-8":[360,480],"平日8-10":[480,600],"平日12-14":[720,840],
   "平日12-17":[720,1020],"平日14-16":[840,960],"平日16-18":[960,1080],"平日17-20":[1020,1200],
   "平日18-20":[1080,1200],"平日20-22":[1200,1320],
-  "休日":[510,1215],"休日6-7":[360,420],"休日8-10":[480,600],"休日12-17":[720,1020],"休日17-20":[1020,1200]
+  "休日":[510,1215],"休日6-7":[360,420],"休日8-10":[480,600],"休日9-12":[540,720],"休日12-17":[720,1020],"休日17-20":[1020,1200]
 };
 
 // 時間帯別カラーテーマ（背景色・左ボーダー色・バッジ背景・バッジ文字色）
@@ -526,8 +528,8 @@ function tmColorTheme(tm){
   if(tm==='平日6-7'||tm==='平日7-8'||tm==='平日6-8'||tm==='休日6-7')
     return {row:'background:#ebf8ff;border-left:3px solid #4299e1;padding-left:6px;border-radius:4px;',
             dot:'#4299e1', badge:'background:#bee3f8;color:#2b6cb0;'};
-  // 午前（8-10）: 緑
-  if(tm==='平日8-10'||tm==='休日8-10')
+  // 午前（8-10、9-12）: 緑
+  if(tm==='平日8-10'||tm==='休日8-10'||tm==='休日9-12')
     return {row:'background:#f0fff4;border-left:3px solid #48bb78;padding-left:6px;border-radius:4px;',
             dot:'#48bb78', badge:'background:#c6f6d5;color:#276749;'};
   // 昼（12〜16）: 黄
@@ -3520,18 +3522,30 @@ function calcPushBackStart(remaining, dStr, originalStartMin, startAdr, spd, day
 
   if(!dayPool.length){ result.debugReason='配置可能な案件なし'; return result; }
 
+  // 「平日」「休日」のみ指定は曜日制約のみで時間帯指定ではない（自由案件扱い）
+  // 本体スケジューラ(L3693-3699)と同じ判定：DAY_START以前～20:15以降をカバーする「全日窓」は時間帯指定とみなさない
+  var _PB_DAY_START = 8*60+30; // 510分
+  var _PB_DAY_END   = 20*60+15; // 1215分
+  function _pbIsTimedTm(tm){
+    if(!tm || !TM_RANGE[tm]) return false;
+    var ws = TM_RANGE[tm][0], we = TM_RANGE[tm][1];
+    // 全日窓（平日/休日のような曜日制約のみ）は時間帯指定ではない
+    if(ws <= _PB_DAY_START && we >= _PB_DAY_END) return false;
+    return true;
+  }
+
   // 時間指定/ピン案件を抽出して開始時刻を集める
   var timedStarts = [];
   dayPool.forEach(function(c){
     if(c.pin != null){
       // ピン案件の日付指定がない、または今日に一致するもの
       if(!c.pinDate || c.pinDate === dStr) timedStarts.push({c:c, start:c.pin});
-    } else if(c.tm && TM_RANGE[c.tm]){
+    } else if(_pbIsTimedTm(c.tm)){
       timedStarts.push({c:c, start:TM_RANGE[c.tm][0]});
     }
   });
 
-  if(!timedStarts.length){ result.debugReason='時間指定案件なし（dayPool='+dayPool.length+'件）'; return result; }
+  if(!timedStarts.length){ result.debugReason='時間指定案件なし（dayPool='+dayPool.length+'件、平日/休日のみ指定は自由案件扱い）'; return result; }
 
   // 10時以前に時間指定がある → 後ろ倒ししない（朝出発）
   var hasEarly = timedStarts.some(function(t){ return t.start < PUSH_BACK_THRESHOLD_MIN; });
@@ -3542,9 +3556,12 @@ function calcPushBackStart(remaining, dStr, originalStartMin, startAdr, spd, day
   var target = timedStarts[0];
   var targetCase = target.c;
 
-  // 自由案件群（時間指定なし）
+  // 自由案件群（時間指定なし、または「平日」「休日」のみの曜日制約案件）
+  // ※ 曜日制約は dayPool 構築時の canScheduleTodayCheck で既にフィルタ済み
   var freeCases = dayPool.filter(function(c){
-    return c.pin == null && (!c.tm || !TM_RANGE[c.tm]);
+    if(c === targetCase) return false; // 寄せ先は除外
+    if(c.pin != null) return false; // ピン案件は時間指定扱い
+    return !_pbIsTimedTm(c.tm); // 時間帯指定でないもの = 自由案件
   });
 
   // 自由案件の所要時間合計
