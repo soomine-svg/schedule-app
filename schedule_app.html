@@ -3422,6 +3422,18 @@ function injectWorkHoursInfo(){
     var cardEl = document.getElementById('day-card-'+dayIdx);
     if(!cardEl) return;
 
+    // 冪等性確保：既存の work-info-N があれば削除（重複挿入防止）
+    // この関数は scheduleDay の再描画タイミング等で複数回呼ばれる可能性があるため
+    var existing = document.getElementById('work-info-'+dayIdx);
+    if(existing && existing.parentNode){
+      existing.parentNode.removeChild(existing);
+    }
+    // 念のためカード内の同IDも検索（DOM外で残骸が出るケースを排除）
+    var existingInCard = cardEl.querySelector('#work-info-'+dayIdx);
+    if(existingInCard && existingInCard.parentNode){
+      existingInCard.parentNode.removeChild(existingInCard);
+    }
+
     // 制作可能ウィンドウ
     var cwHtml = renderCreativeWindows(dayIdx, ds.sched, ds.startMin, ds.dStr);
     // 稼働時間警告
