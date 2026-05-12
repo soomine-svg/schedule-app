@@ -2995,9 +2995,19 @@ function getEffectiveWorkMin(dayIdx){
 
 // ===== 納期危険アラート：案件登録時・毎朝起動時に全案件をチェック =====
 // 残り訪問可能日数 vs 残り訪問回数
-function checkDeadlineAlerts(){
-  var today = new Date();
-  var todayStr = today.getFullYear()+'-'+('0'+(today.getMonth()+1)).slice(-2)+'-'+('0'+today.getDate()).slice(-2);
+function checkDeadlineAlerts(baseDateStr){
+  // 基準日：スケジュール1日目の日付（バッジ表示と完全に整合させる）
+  // 引数省略時は今日をフォールバックとする
+  function _localDateStr(d){
+    var y=d.getFullYear();
+    var m=('0'+(d.getMonth()+1)).slice(-2);
+    var day=('0'+d.getDate()).slice(-2);
+    return y+'-'+m+'-'+day;
+  }
+  if(!baseDateStr){
+    baseDateStr = _localDateStr(new Date());
+  }
+  var baseDate = new Date(baseDateStr+'T00:00:00');
   var alerts = [];
 
   // baseId別にグループ化
@@ -3014,19 +3024,44 @@ function checkDeadlineAlerts(){
     if(!c0.d2) return;
 
     var deadline = new Date(c0.d2+'T00:00:00');
-    var daysLeft = Math.round((deadline - today) / 86400000);
+    // 両端とも00:00ベースなので Math.round は不要、整数になる
+    var daysLeft = Math.round((deadline - baseDate) / 86400000);
     var visitsLeft = arr.length;
 
     // 1日に消化できる訪問数（時間指定考慮：時間指定ありは保守的に0.5回/日）
     var avgPerDay = arr.some(function(x){ return x.tm && TM_RANGE[x.tm]; }) ? 0.5 : 1;
     var minDaysNeeded = Math.ceil(visitsLeft / avgPerDay);
 
+    // 表示用：daysLeft を分かりやすい言葉に変換
+    // 基準は「スケジュール1日目」なので、daysLeft=0 は「本日納期(1日目納期)」
+    var dayLabel;
+    if(daysLeft < 0)       dayLabel = Math.abs(daysLeft)+'日超過';
+    else if(daysLeft === 0) dayLabel = '本日納期';
+    else if(daysLeft === 1) dayLabel = '明日納期';
+    else if(daysLeft === 2) dayLabel = '明後日納期';
+    else                    dayLabel = '残'+daysLeft+'日';
+
+    // 配置済み判定：1日目のスケジュールに当該baseIdが含まれているか
+    var placedTodayFlag = false;
+    var placedDayIdx = -1;
+    if(window._dayScheds){
+      for(var di=0; di<3; di++){
+        var dsX = window._dayScheds[di];
+        if(dsX && dsX.sched && dsX.sched.some(function(c){ return baseId(c.id) === b; })){
+          if(placedDayIdx === -1) placedDayIdx = di;
+          if(di === 0) placedTodayFlag = true;
+        }
+      }
+    }
+
+    var visitsLabel = 'あと'+visitsLeft+'回訪問';
+
     if(daysLeft < 0){
-      alerts.push({level:'red', id:b, msg:'納期超過（'+Math.abs(daysLeft)+'日超過）', visits:visitsLeft, deadline:c0.d2, daysLeft:daysLeft});
+      alerts.push({level:'red', id:b, dayLabel:dayLabel, visitsLabel:visitsLabel, visits:visitsLeft, deadline:c0.d2, daysLeft:daysLeft, placedToday:placedTodayFlag, placedDayIdx:placedDayIdx});
     } else if(daysLeft < minDaysNeeded){
-      alerts.push({level:'red', id:b, msg:'納期内完了困難（残'+daysLeft+'日・残'+visitsLeft+'回訪問）', visits:visitsLeft, deadline:c0.d2, daysLeft:daysLeft});
+      alerts.push({level:'red', id:b, dayLabel:dayLabel, visitsLabel:visitsLabel, visits:visitsLeft, deadline:c0.d2, daysLeft:daysLeft, placedToday:placedTodayFlag, placedDayIdx:placedDayIdx});
     } else if(daysLeft <= minDaysNeeded + 1){
-      alerts.push({level:'yellow', id:b, msg:'要注意（残'+daysLeft+'日・残'+visitsLeft+'回訪問）', visits:visitsLeft, deadline:c0.d2, daysLeft:daysLeft});
+      alerts.push({level:'yellow', id:b, dayLabel:dayLabel, visitsLabel:visitsLabel, visits:visitsLeft, deadline:c0.d2, daysLeft:daysLeft, placedToday:placedTodayFlag, placedDayIdx:placedDayIdx});
     }
   });
 
@@ -3037,28 +3072,50 @@ function renderDeadlineAlerts(alerts){
   var el = document.getElementById('work-hours-alert');
   if(!el) return;
   if(!alerts || !alerts.length){ el.style.display='none'; return; }
+  el.style.display = 'block';
+
+  // 行のレンダリング（配置済み/未配置で視覚差別化）
+  function _renderRow(a, baseColor, borderColor){
+    var isPlaced = !!a.placedToday;
+    var dayLabelText = (a.placedDayIdx >= 0 && a.placedDayIdx <= 2)
+      ? ['1日目','2日目','3日目'][a.placedDayIdx]
+      : '';
+    var stateBadge, rowOpacity, fontWeight;
+    if(isPlaced){
+      stateBadge = '<span style="display:inline-block;background:#e6fffa;color:#234e52;border:1px solid #38b2ac;border-radius:4px;padding:1px 6px;font-size:.7rem;margin-left:4px">✅本日配置済</span>';
+      rowOpacity = '0.65';
+      fontWeight = '400';
+    } else if(a.placedDayIdx > 0){
+      stateBadge = '<span style="display:inline-block;background:#fefcbf;color:#744210;border:1px solid #d69e2e;border-radius:4px;padding:1px 6px;font-size:.7rem;margin-left:4px">📅'+dayLabelText+'配置</span>';
+      rowOpacity = '0.85';
+      fontWeight = '500';
+    } else {
+      stateBadge = '<span style="display:inline-block;background:#fff5f5;color:#c53030;border:1px solid #fc8181;border-radius:4px;padding:1px 6px;font-size:.7rem;margin-left:4px">⚠️未配置</span>';
+      rowOpacity = '1';
+      fontWeight = '700';
+    }
+    return '<div style="font-size:.8rem;color:'+baseColor+';padding:4px 0;border-bottom:1px solid '+borderColor+';opacity:'+rowOpacity+';font-weight:'+fontWeight+'">'
+      +'⚠️ <b>'+a.id+'</b>　'+a.dayLabel+' ・ '+a.visitsLabel+stateBadge
+      +'　<span style="color:#718096;font-weight:400">納期:'+a.deadline+'</span></div>';
+  }
+
   var html = '<div style="margin-bottom:10px">';
   var reds = alerts.filter(function(a){ return a.level==='red'; });
   var yellows = alerts.filter(function(a){ return a.level==='yellow'; });
   if(reds.length){
     html += '<div style="background:#fff5f5;border:2px solid #fc8181;border-radius:10px;padding:12px;margin-bottom:8px">'
       +'<div style="font-size:.85rem;font-weight:700;color:#c53030;margin-bottom:6px">🔴 緊急アラート（'+reds.length+'件）</div>';
-    reds.forEach(function(a){
-      html += '<div style="font-size:.8rem;color:#c53030;padding:3px 0;border-bottom:1px solid #fed7d7">⚠️ <b>'+a.id+'</b>　'+a.msg+'　<span style="color:#718096">納期:'+a.deadline+'</span></div>';
-    });
+    reds.forEach(function(a){ html += _renderRow(a, '#c53030', '#fed7d7'); });
     html += '</div>';
   }
   if(yellows.length){
     html += '<div style="background:#fffbf0;border:2px solid #f6ad55;border-radius:10px;padding:12px">'
       +'<div style="font-size:.85rem;font-weight:700;color:#744210;margin-bottom:6px">🟡 注意アラート（'+yellows.length+'件）</div>';
-    yellows.forEach(function(a){
-      html += '<div style="font-size:.8rem;color:#744210;padding:3px 0;border-bottom:1px solid #fbd38d">📌 <b>'+a.id+'</b>　'+a.msg+'　<span style="color:#718096">納期:'+a.deadline+'</span></div>';
-    });
+    yellows.forEach(function(a){ html += _renderRow(a, '#744210', '#fbd38d'); });
     html += '</div>';
   }
   html += '</div>';
   el.innerHTML = html;
-  el.style.display = 'block';
 }
 
 // 待機時間から制作可能ウィンドウを抽出（30分以上の待機のみ）
@@ -5410,8 +5467,8 @@ function buildAllCore(){
   // 稼働時間情報・制作可能ウィンドウをカードに注入
   setTimeout(function(){ injectWorkHoursInfo(); }, 50);
 
-  // 納期危険アラートを更新
-  var dlAlerts = checkDeadlineAlerts();
+  // 納期危険アラートを更新（基準日 = スケジュール1日目の日付）
+  var dlAlerts = checkDeadlineAlerts(baseDate);
   renderDeadlineAlerts(dlAlerts);
 }
 
