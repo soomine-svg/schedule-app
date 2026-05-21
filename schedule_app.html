@@ -319,9 +319,9 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
         <div class="fg"><label>平均時速（km/h）</label><input id="sspd" type="number" value="30" min="20" max="100" step="10"></div>
       </div>
 
-      <!-- ===== 稼働時間・昼休み設定 ===== -->
+      <!-- ===== 稼働時間設定 ===== -->
       <div style="margin-top:14px;padding:14px;background:#f0fff4;border-radius:10px;border:1.5px solid #9ae6b4">
-        <div style="font-size:.82rem;font-weight:700;color:#276749;margin-bottom:10px">⏱ 稼働時間設定（デフォルト8時間・昼休み含む）</div>
+        <div style="font-size:.82rem;font-weight:700;color:#276749;margin-bottom:10px">⏱ 稼働時間設定（デフォルト8時間・出発時刻からの経過時間）</div>
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px">
           <div class="fg">
             <label style="color:#276749">🌅 1日目（時間）</label>
@@ -342,17 +342,10 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
               oninput="saveWorkHours()">
           </div>
         </div>
-        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-          <div class="fg" style="flex:0 0 auto">
-            <label style="color:#276749">🍱 昼休み（分）</label>
-            <input id="lunch-min" type="number" value="60" min="0" max="120" step="15"
-              style="width:90px;padding:7px 10px;border:1.5px solid #9ae6b4;border-radius:7px;font-size:.9rem;font-weight:700;color:#276749;text-align:center"
-              oninput="saveWorkHours()">
-          </div>
-          <div style="font-size:.75rem;color:#48bb78;align-self:flex-end;padding-bottom:4px">
-            ※ 昼休みは稼働時間に含まれます（実稼働 = 稼働時間 − 昼休み）<br>
-            ※ 稼働時間を超える日は🟡警告を表示します
-          </div>
+        <div style="font-size:.75rem;color:#48bb78">
+          ※ 稼働時間 = 業務時間 + 移動時間（出発時刻からの経過時間）<br>
+          ※ 通常モードは「稼働時間+1時間」までに帰宅できるルートを生成します（最大20:15）<br>
+          ※ 本日納期超過の恐れがある場合は📛納期優先モードをご使用ください
         </div>
       </div>
 
@@ -371,12 +364,16 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
       <button class="btn bb" onclick="buildAll()">🗓 スケジュール作成（3日分）</button>
       <button class="btn bt" onclick="dmCacheClear();alert('道路距離キャッシュをクリアしました。次回スケジュール作成時に再取得します。');" title="道路距離キャッシュをクリア（再取得）" style="font-size:.78rem;padding:5px 10px">🗑️ 距離キャッシュ</button>
       <label id="fast-mode-label" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem;padding:8px 14px;border-radius:8px;border:1.5px solid #e2e8f0;background:#f7fafc;user-select:none;transition:all .2s" title="全案件をできるだけ早く消化するモード。帰路バイアスをゼロにし、2-opt改善で移動距離を最小化します。">
-        <input type="checkbox" id="fast-mode-chk" onchange="window._fastMode=this.checked;document.getElementById('fast-mode-label').style.background=this.checked?'#fef3c7':'#f7fafc';document.getElementById('fast-mode-label').style.borderColor=this.checked?'#f59e0b':'#e2e8f0';" style="accent-color:#f59e0b;width:15px;height:15px">
+        <input type="checkbox" id="fast-mode-chk" onchange="setExclusiveMode('fast', this.checked)" style="accent-color:#f59e0b;width:15px;height:15px">
         <span>🚀 最速完了モード</span>
       </label>
       <label id="far-first-label" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem;padding:8px 14px;border-radius:8px;border:1.5px solid #e2e8f0;background:#f7fafc;user-select:none;transition:all .2s" title="自宅から直線距離25km以上の案件があれば、最遠地から訪問を開始します。往路高速代が経費精算できる調査業務向け。最速完了モードと併用時は最速完了モードが優先されます。">
-        <input type="checkbox" id="far-first-chk" onchange="window._farFirst=this.checked;document.getElementById('far-first-label').style.background=this.checked?'#e6fffa':'#f7fafc';document.getElementById('far-first-label').style.borderColor=this.checked?'#319795':'#e2e8f0';" style="accent-color:#319795;width:15px;height:15px">
+        <input type="checkbox" id="far-first-chk" onchange="setExclusiveMode('far', this.checked)" style="accent-color:#319795;width:15px;height:15px">
         <span>🛣 最遠地スタート</span>
+      </label>
+      <label id="deadline-mode-label" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem;padding:8px 14px;border-radius:8px;border:1.5px solid #e2e8f0;background:#f7fafc;user-select:none;transition:all .2s" title="本日納期・翌日訪問必須の案件を最優先で配置するモード。訪問可能時間20:15を超えてでも配置し、稼働時間制限を無視します。該当案件内では効率ルートを優先します。">
+        <input type="checkbox" id="deadline-mode-chk" onchange="setExclusiveMode('deadline', this.checked)" style="accent-color:#e53e3e;width:15px;height:15px">
+        <span>📛 納期優先モード</span>
       </label>
     </div>
       </div>
@@ -988,6 +985,7 @@ var HOME_POS = {lat:31.7150, lng:131.0800}; // 自宅座標（グローバル定
 var DAY_START = 8*60+30; // 08:30 通常訪問開始
 window._fastMode = false; // 最速完了モード（UIチェックボックスで切り替え）
 window._farFirst = false; // 最遠地スタートモード（UIチェックボックスで切り替え）
+window._deadlineMode = false; // 納期優先モード（UIチェックボックスで切り替え）
 var GEOCODE_KEY = "AIzaSyC-bIBrdlwdoPvvNgw0miQvfv_Z17AQunM";
 
 // ===== 状態 =====
@@ -1101,6 +1099,14 @@ function onSlocType(){
             invalidateGpsCache();
           }
         }
+        // ── 取得位置をlocalStorageに保存（次回失敗時のフォールバック用） ──
+        try{
+          localStorage.setItem('_lastGpsPos', JSON.stringify({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            ts: Date.now()
+          }));
+        }catch(e){}
         window._gpsLoading = false;
         var ageSec = pos.timestamp ? Math.round((Date.now()-pos.timestamp)/1000) : 0;
         var ageNote = ageSec > 60 ? '（'+Math.round(ageSec/60)+'分前のキャッシュ）' : '';
@@ -1121,11 +1127,28 @@ function onSlocType(){
         var reason = err.code===1 ? '位置情報の使用が拒否されました（ブラウザ設定で許可してください）' :
                      err.code===2 ? '位置情報を取得できませんでした（電波状況を確認してください）' :
                      err.code===3 ? 'タイムアウト（'+attempts.length+'回リトライ全て失敗）' : 'エラーコード'+err.code;
+
+        // ── 前回保存したGPS位置があれば、フォールバック選択肢として提示 ──
+        var fallbackHtml = '';
+        try{
+          var raw = localStorage.getItem('_lastGpsPos');
+          if(raw){
+            var saved = JSON.parse(raw);
+            var ageMin = Math.round((Date.now() - saved.ts) / 60000);
+            var ageStr = ageMin < 60 ? ageMin+'分前' : Math.floor(ageMin/60)+'時間前';
+            fallbackHtml = '<div style="margin-top:6px;padding:6px 10px;background:#fff8dc;border:1.5px solid #f6e05e;border-radius:6px;font-size:.78rem;color:#744210">'
+              +'💾 前回取得位置（'+ageStr+'・'+saved.lat.toFixed(4)+', '+saved.lng.toFixed(4)+'）を使用しますか？'
+              +'　<button onclick="useLastGpsPos()" style="margin-left:4px;padding:3px 10px;font-size:.74rem;background:#ecc94b;color:#744210;border:none;border-radius:5px;cursor:pointer;font-weight:600">この位置を使用</button>'
+              +'</div>';
+          }
+        }catch(e){}
+
         gpsStatus.innerHTML='<span style="color:#c53030">⚠️ GPS取得失敗：'+reason+'</span>'
           +'　<button onclick="onSlocType()" style="margin-left:6px;padding:3px 10px;font-size:.75rem;'
           +'background:#ebf4ff;color:#2b6cb0;border:1.5px solid #bee3f8;border-radius:6px;cursor:pointer;font-weight:600">'
           +'🔄 再取得</button>'
-          +'<div style="font-size:.72rem;color:#a0aec0;margin-top:3px">自宅を出発地として続行するにはそのままスケジュール作成してください</div>';
+          +fallbackHtml
+          +'<div style="font-size:.72rem;color:#a0aec0;margin-top:3px">または「✏️ 住所を直接入力」に切り替えるか、このままスケジュール作成すると自宅を出発地として続行します</div>';
       }, a.opts);
     }
     tryGet();
@@ -1133,6 +1156,31 @@ function onSlocType(){
     gpsStatus.style.display="none";
     window._gpsLat=null; window._gpsLng=null;
     window._gpsLoading=false;
+  }
+}
+
+// GPS取得失敗時のフォールバック：前回保存位置を使用
+function useLastGpsPos(){
+  try{
+    var raw = localStorage.getItem('_lastGpsPos');
+    if(!raw){
+      alert('保存された位置情報がありません');
+      return;
+    }
+    var saved = JSON.parse(raw);
+    window._gpsLat = saved.lat;
+    window._gpsLng = saved.lng;
+    window._gpsFetchedAt = saved.ts;
+    window._gpsLoading = false;
+    var ageMin = Math.round((Date.now() - saved.ts) / 60000);
+    var ageStr = ageMin < 60 ? ageMin+'分前' : Math.floor(ageMin/60)+'時間前';
+    var gpsStatus = document.getElementById("sloc-gps-status");
+    if(gpsStatus){
+      gpsStatus.innerHTML='<span style="color:#744210;font-weight:600">📌 前回位置を使用中（'+ageStr+'・'+saved.lat.toFixed(4)+', '+saved.lng.toFixed(4)+'）</span>'
+        +'　<button onclick="onSlocType()" style="margin-left:6px;padding:2px 8px;font-size:.7rem;background:#f7fafc;color:#4a5568;border:1px solid #cbd5e0;border-radius:6px;cursor:pointer">🔄 新しく取得</button>';
+    }
+  }catch(e){
+    alert('位置情報の読み込みに失敗しました: '+e.message);
   }
 }
 
@@ -2949,7 +2997,7 @@ function invalidateGpsCache(){
 }
 
 
-// ===== 稼働時間・昼休み設定 =====
+// ===== 稼働時間設定 =====
 var WORK_HOURS_KEY = 'schedule_work_hours_v1';
 
 function saveWorkHours(){
@@ -2958,8 +3006,7 @@ function saveWorkHours(){
     parseFloat(document.getElementById('work-hours-1').value)||8,
     parseFloat(document.getElementById('work-hours-2').value)||8
   ];
-  var lunch = parseInt(document.getElementById('lunch-min').value)||60;
-  try{ localStorage.setItem(WORK_HOURS_KEY, JSON.stringify({wh:wh, lunch:lunch})); }catch(e){}
+  try{ localStorage.setItem(WORK_HOURS_KEY, JSON.stringify({wh:wh})); }catch(e){}
 }
 
 function loadWorkHours(){
@@ -2972,7 +3019,6 @@ function loadWorkHours(){
         document.getElementById('work-hours-1').value = d.wh[1];
         document.getElementById('work-hours-2').value = d.wh[2];
       }
-      if(d.lunch != null) document.getElementById('lunch-min').value = d.lunch;
     }
   }catch(e){}
 }
@@ -2983,14 +3029,106 @@ function getWorkHoursMin(dayIdx){
   return Math.round((parseFloat(el ? el.value : 8)||8) * 60);
 }
 
-function getLunchMin(){
-  var el = document.getElementById('lunch-min');
-  return parseInt(el ? el.value : 60)||60;
+// 稼働時間 = 業務時間 + 移動時間（出発時刻からの経過時間）
+// 昼休みは差し引かない
+function getEffectiveWorkMin(dayIdx){
+  return getWorkHoursMin(dayIdx);
 }
 
-// 実稼働時間 = 稼働時間 - 昼休み
-function getEffectiveWorkMin(dayIdx){
-  return Math.max(0, getWorkHoursMin(dayIdx) - getLunchMin());
+// ===== 3モード排他制御 =====
+// 'fast'：最速完了モード、'far'：最遠地スタート、'deadline'：納期優先モード
+function setExclusiveMode(mode, checked){
+  // チェックされた場合、他のモードを解除
+  if(checked){
+    if(mode!=='fast'){ var f=document.getElementById('fast-mode-chk'); if(f) f.checked=false; window._fastMode=false; }
+    if(mode!=='far'){ var fr=document.getElementById('far-first-chk'); if(fr) fr.checked=false; window._farFirst=false; }
+    if(mode!=='deadline'){ var dl=document.getElementById('deadline-mode-chk'); if(dl) dl.checked=false; window._deadlineMode=false; }
+  }
+  // 自モードのフラグ・スタイル更新
+  if(mode==='fast'){
+    window._fastMode = checked;
+    var lbl=document.getElementById('fast-mode-label');
+    if(lbl){ lbl.style.background=checked?'#fef3c7':'#f7fafc'; lbl.style.borderColor=checked?'#f59e0b':'#e2e8f0'; }
+  } else if(mode==='far'){
+    window._farFirst = checked;
+    var lbl2=document.getElementById('far-first-label');
+    if(lbl2){ lbl2.style.background=checked?'#e6fffa':'#f7fafc'; lbl2.style.borderColor=checked?'#319795':'#e2e8f0'; }
+  } else if(mode==='deadline'){
+    window._deadlineMode = checked;
+    var lbl3=document.getElementById('deadline-mode-label');
+    if(lbl3){ lbl3.style.background=checked?'#fff5f5':'#f7fafc'; lbl3.style.borderColor=checked?'#e53e3e':'#e2e8f0'; }
+    // 他モードのスタイルもリセット
+    if(checked){
+      var lblF=document.getElementById('fast-mode-label');
+      if(lblF){ lblF.style.background='#f7fafc'; lblF.style.borderColor='#e2e8f0'; }
+      var lblFR=document.getElementById('far-first-label');
+      if(lblFR){ lblFR.style.background='#f7fafc'; lblFR.style.borderColor='#e2e8f0'; }
+    }
+  }
+}
+
+// ===== 「特定日に訪問必須」判定 =====
+// 同baseIdの未配置枝番件数と、対象日から納期までの訪問可能日数（時間指定の曜日条件考慮）を比較
+// 残り訪問可能日数 <= 残り訪問回数 → その日に必ず訪問する必要あり
+//
+// 引数:
+//   c: 案件オブジェクト
+//   targetDateStr: 'YYYY-MM-DD' 対象日
+//   excludedIds: 配置済みID辞書（オプショナル：scheduleDay内のplaced辞書）
+// 戻り値: true=対象日に訪問必須, false=他の日でも可
+function isMustVisitOnDate(c, targetDateStr, excludedIds){
+  if(!c.d2) return false; // 納期なし → 必須ではない
+
+  // 対象日 > 納期 ならそもそも納期超過（必須以前）
+  if(targetDateStr > c.d2) return true; // 納期超過は強制配置
+
+  // 同baseIdの未配置枝番件数を数える
+  var b = baseId(c.id);
+  var remainingCount = 0;
+  cases.forEach(function(x){
+    if(baseId(x.id) !== b) return;
+    if(excludedIds && (excludedIds[x.id] || excludedIds[baseId(x.id)])) return;
+    remainingCount++;
+  });
+  if(remainingCount <= 0) return false;
+
+  // 対象日 〜 納期日 までの「訪問可能日数」を計算
+  // 訪問可能日 = 案件の曜日条件（平日/休日）を満たす日
+  // 時間指定なし or 平日休日両対応の窓は全日訪問可能
+  var targetDate = new Date(targetDateStr+'T00:00:00');
+  var deadlineDate = new Date(c.d2+'T00:00:00');
+  if(deadlineDate < targetDate) return true; // 既に納期超過
+
+  // 案件の訪問可能曜日タイプを判定
+  // 'any'=全日OK, 'weekday'=平日のみ, 'holiday'=休日のみ
+  var dayType = 'any';
+  if(c.tm && TM_RANGE[c.tm]){
+    // isTmAvailable関数を使って、平日と休日それぞれサンプル日でテスト
+    var weekdaySample = new Date('2026-01-05T00:00:00'); // 月曜
+    var holidaySample = new Date('2026-01-04T00:00:00'); // 日曜
+    var wOk = isTmAvailable(c.tm, weekdaySample);
+    var hOk = isTmAvailable(c.tm, holidaySample);
+    if(wOk && !hOk) dayType = 'weekday';
+    else if(!wOk && hOk) dayType = 'holiday';
+    // 両方OKなら'any'のまま
+  }
+
+  // 対象日から納期日まで日数を数える
+  var availableDays = 0;
+  var cursor = new Date(targetDate);
+  while(cursor <= deadlineDate){
+    var dow = cursor.getDay();
+    var isHol = (dow===0 || dow===6) || isJpHoliday(cursor);
+    var ok = false;
+    if(dayType === 'any') ok = true;
+    else if(dayType === 'weekday') ok = !isHol;
+    else if(dayType === 'holiday') ok = isHol;
+    if(ok) availableDays++;
+    cursor.setDate(cursor.getDate()+1);
+  }
+
+  // 残り訪問回数 >= 訪問可能日数 → 今日訪問必須（毎日訪問しないと納期に間に合わない）
+  return remainingCount >= availableDays;
 }
 
 // ===== 納期危険アラート：案件登録時・毎朝起動時に全案件をチェック =====
@@ -3148,8 +3286,6 @@ function renderCreativeWindows(dayIdx, sched, startMin, dStr){
 // ===== 稼働時間オーバー警告をrenderDayに注入 =====
 function renderWorkHoursWarning(dayIdx, sched, startMin, calBlocks){
   var workMin = getWorkHoursMin(dayIdx);
-  var lunchMin = getLunchMin();
-  var effectiveWork = getEffectiveWorkMin(dayIdx);
 
   if(!sched.length) return '';
 
@@ -3171,248 +3307,11 @@ function renderWorkHoursWarning(dayIdx, sched, startMin, calBlocks){
   var icon = isHeavy ? '🔴' : '🟡';
 
   return '<div style="margin-top:6px;padding:9px 12px;background:'+bg+';border:1.5px solid '+border+';border-radius:8px;font-size:.8rem;color:'+color+'">'
-    +icon+' <b>稼働時間オーバー</b>　設定：'+Math.floor(workMin/60)+'時間（うち昼休み'+lunchMin+'分）　実際：'+Math.floor(actualWorkMin/60)+'時間'+(actualWorkMin%60?actualWorkMin%60+'分':'')+'　<b>+'+Math.floor(overMin/60)+'時間'+(overMin%60?overMin%60+'分':'')+'超過</b>'
+    +icon+' <b>稼働時間オーバー</b>　設定：'+Math.floor(workMin/60)+'時間　実際：'+Math.floor(actualWorkMin/60)+'時間'+(actualWorkMin%60?actualWorkMin%60+'分':'')+'　<b>+'+Math.floor(overMin/60)+(overMin%60?'時間'+(overMin%60)+'分':'時間')+'超過</b>'
     +'<span style="color:#718096;font-size:.75rem;margin-left:8px">移動時間合計：'+totalTrv+'分</span>'
     +'</div>';
 }
 
-// ===== 昼休み場所提案（Places API） =====
-// キャッシュ：同じ座標付近で何度もAPIを叩かないため
-var _lunchPlaceCache = {};
-
-// 11時〜14時の間で昼休みポイントを必ず決定する
-// （稼働時間8時間には昼休み60分が含まれており、案件途中のどこかで昼休みを取る前提）
-// 戻り値: {start, end, prevC, nextC, durationMin, isForced} or null
-// - isForced=false: 11-14時範囲の最初に現れる案件と案件の境目に挟む
-// - isForced=true:  境目が11-14時にない場合、11時以降最初の案件の前後に強制配置
-function detectLunchSlot(sched){
-  if(!sched || sched.length === 0) return null;
-  var WINDOW_START = 11*60; // 11:00
-  var WINDOW_END   = 14*60; // 14:00
-  var LUNCH_DUR    = 60;    // 昼休みは60分想定（場所提案目的なので長さは参考値）
-
-  // ① 11:00〜14:00 の範囲で「案件と案件の境目」をすべて列挙する
-  //   境目 = 案件i終了 〜 案件i+1開始（移動時間込み）の間
-  //   ただし境目位置の代表として「案件i終了時刻」を採用
-  var boundaries = [];
-  for(var i=0; i<sched.length-1; i++){
-    var c     = sched[i];
-    var nextC = sched[i+1];
-    var cEnd  = c.st + c.dur; // 案件i終了
-    // この境目が11-14時の範囲に重なるかチェック
-    // (案件i終了 が WINDOW_END 以前 && 案件i+1開始 が WINDOW_START 以降)
-    if(cEnd <= WINDOW_END && nextC.st >= WINDOW_START){
-      // 境目の代表時刻：案件i終了時刻を11-14時範囲にクリップ
-      var pivot = Math.max(WINDOW_START, Math.min(WINDOW_END, cEnd));
-      boundaries.push({
-        pivot: pivot,
-        prevC: c,
-        nextC: nextC,
-        cEnd:  cEnd,
-        nextStart: nextC.st - (nextC.trv||0)
-      });
-    }
-  }
-
-  // ② 11-14時範囲に境目があれば、最初に現れた境目を採用
-  //   （車の停めやすさは境目選択に依存しないので、最もシンプルに早い順で選ぶ）
-  if(boundaries.length > 0){
-    boundaries.sort(function(a,b){ return a.pivot - b.pivot; });
-    var b0 = boundaries[0];
-    // 表示用の開始/終了時刻：案件i終了 〜 案件i+1出発（移動開始）
-    var dispStart = Math.max(WINDOW_START, b0.cEnd);
-    var dispEnd   = Math.min(WINDOW_END, b0.nextStart);
-    if(dispEnd <= dispStart) dispEnd = dispStart + LUNCH_DUR; // 隙間ゼロでも表示用に確保
-    return {
-      start: dispStart,
-      end: dispEnd,
-      prevC: b0.prevC,
-      nextC: b0.nextC,
-      durationMin: Math.max(0, dispEnd - dispStart),
-      isForced: false
-    };
-  }
-
-  // ③ 11-14時範囲に境目が一つもない場合（早朝のみで終わる日・夕方からの日など）
-  //   11:00以降に最初に登場する案件を見つけて、その前後に強制配置
-  //   （11:00以降が無い場合は、最後の案件の直後）
-  var nearestIdx = -1;
-  for(var j=0; j<sched.length; j++){
-    if(sched[j].st >= WINDOW_START){ nearestIdx = j; break; }
-  }
-  // 11時以降の案件が無ければ最後の案件を採用
-  if(nearestIdx < 0) nearestIdx = sched.length - 1;
-  var nc = sched[nearestIdx];
-  // この案件が11時より後に始まる → 案件の前に昼休み
-  // この案件が11時より前に終わる → 案件のあとに昼休み
-  if(nc.st >= WINDOW_START){
-    return {
-      start: Math.max(WINDOW_START, nc.st - LUNCH_DUR),
-      end:   nc.st,
-      prevC: sched[nearestIdx-1] || null,
-      nextC: nc,
-      durationMin: LUNCH_DUR,
-      isForced: true
-    };
-  } else {
-    return {
-      start: nc.st + nc.dur,
-      end:   nc.st + nc.dur + LUNCH_DUR,
-      prevC: nc,
-      nextC: sched[nearestIdx+1] || null,
-      durationMin: LUNCH_DUR,
-      isForced: true
-    };
-  }
-}
-
-// Places APIで昼休み場所を検索（5km以内・優先順位順）
-// callback: function(place|null)  place = {name, address, distance, lat, lng, type}
-function findLunchPlace(centerLat, centerLng, callback){
-  if(!centerLat || !centerLng){ callback(null); return; }
-  // キャッシュキー（小数点3桁＝約100m精度で丸める）
-  var cacheKey = centerLat.toFixed(3) + ',' + centerLng.toFixed(3);
-  if(_lunchPlaceCache[cacheKey] !== undefined){
-    callback(_lunchPlaceCache[cacheKey]);
-    return;
-  }
-
-  // Maps JS API ロード待機
-  var _waitMs = 0;
-  function _doFind(){
-    if(!window._gmapsLoaded || !window.google || !window.google.maps || !window.google.maps.places){
-      _waitMs += 200;
-      if(_waitMs > 5000){ callback(null); return; }
-      setTimeout(_doFind, 200);
-      return;
-    }
-
-    // 検索する種別（優先順）
-    // Places APIのtype指定で検索 → 5km以内のみ採用
-    var SEARCH_PRIORITIES = [
-      {type:null, keyword:'道の駅', label:'道の駅'},
-      {type:'park', keyword:null, label:'公園'},
-      {type:'drugstore', keyword:null, label:'ドラッグストア'},
-      {type:'electronics_store', keyword:null, label:'家電量販店'},
-      {type:'supermarket', keyword:null, label:'スーパー'},
-      {type:'convenience_store', keyword:null, label:'コンビニ'}
-    ];
-
-    var center = new google.maps.LatLng(centerLat, centerLng);
-    // PlacesService は 'div' 要素を要求する（実際には描画されない）
-    var dummyDiv = document.createElement('div');
-    var svc = new google.maps.places.PlacesService(dummyDiv);
-
-    var idx = 0;
-    function tryNext(){
-      if(idx >= SEARCH_PRIORITIES.length){
-        // 全カテゴリで見つからなかった
-        _lunchPlaceCache[cacheKey] = null;
-        callback(null);
-        return;
-      }
-      var p = SEARCH_PRIORITIES[idx++];
-      var req = {
-        location: center,
-        radius: 5000, // 5km
-        rankBy: google.maps.places.RankBy.PROMINENCE
-      };
-      if(p.type) req.type = p.type;
-      if(p.keyword) req.keyword = p.keyword;
-
-      svc.nearbySearch(req, function(results, status){
-        if(status === google.maps.places.PlacesServiceStatus.OK && results && results.length){
-          // 5km以内かつ営業中（permanentlyClosed==falseまたは未指定）のものを採用
-          var valid = results.filter(function(r){
-            if(r.business_status && r.business_status !== 'OPERATIONAL') return false;
-            if(!r.geometry || !r.geometry.location) return false;
-            var dKm = km({lat:centerLat, lng:centerLng}, {lat:r.geometry.location.lat(), lng:r.geometry.location.lng()});
-            return dKm <= 5;
-          });
-          if(valid.length){
-            // 評価（rating）と距離のバランスで上位を選ぶ
-            valid.sort(function(a,b){
-              var dA = km({lat:centerLat,lng:centerLng}, {lat:a.geometry.location.lat(),lng:a.geometry.location.lng()});
-              var dB = km({lat:centerLat,lng:centerLng}, {lat:b.geometry.location.lat(),lng:b.geometry.location.lng()});
-              // 距離優先（評価は補助）
-              var scoreA = dA - (a.rating ? a.rating*0.1 : 0);
-              var scoreB = dB - (b.rating ? b.rating*0.1 : 0);
-              return scoreA - scoreB;
-            });
-            var pick = valid[0];
-            var pickLat = pick.geometry.location.lat();
-            var pickLng = pick.geometry.location.lng();
-            var pickKm = km({lat:centerLat,lng:centerLng}, {lat:pickLat,lng:pickLng});
-            var place = {
-              name: pick.name,
-              address: pick.vicinity || '',
-              distance: pickKm,
-              lat: pickLat,
-              lng: pickLng,
-              type: p.label,
-              rating: pick.rating || null
-            };
-            _lunchPlaceCache[cacheKey] = place;
-            callback(place);
-            return;
-          }
-        }
-        // 見つからなかった → 次のカテゴリ
-        tryNext();
-      });
-    }
-    tryNext();
-  }
-  _doFind();
-}
-
-// 昼休み情報をHTMLとして生成
-function renderLunchSuggestion(dayIdx, sched, ds){
-  var slot = detectLunchSlot(sched);
-  if(!slot){
-    // sched が空（その日に案件なし）→ 昼休み表示不要
-    return '';
-  }
-
-  var forcedNote = slot.isForced ? '<span style="color:#9b6f00;font-size:.72rem">　※ 11-14時に案件の境目がないため最寄り案件付近で提案</span>' : '';
-  var slotInfo = '🍱 <b>昼休みポイント</b>　'+fmt(slot.start)+'〜'+fmt(slot.end)+forcedNote;
-  var prevInfo = slot.prevC ? '　<span style="color:#718096;font-size:.74rem">直前: '+slot.prevC.id+'</span>' : '';
-
-  // 検索の起点座標（直前案件の場所、なければ次案件、なければ自宅）
-  var centerLat=null, centerLng=null;
-  if(slot.prevC && slot.prevC.lat && slot.prevC.lng){
-    centerLat = slot.prevC.lat; centerLng = slot.prevC.lng;
-  } else if(slot.nextC && slot.nextC.lat && slot.nextC.lng){
-    centerLat = slot.nextC.lat; centerLng = slot.nextC.lng;
-  } else {
-    centerLat = 31.7150; centerLng = 131.0800; // 自宅フォールバック
-  }
-
-  var slotKey = 'lunch-'+dayIdx;
-  // 非同期で場所を検索し、結果を後から差し込む
-  setTimeout(function(){
-    findLunchPlace(centerLat, centerLng, function(place){
-      var el = document.getElementById(slotKey);
-      if(!el) return;
-      if(place){
-        var typeEmoji = {'道の駅':'🏞️','公園':'🌳','ドラッグストア':'💊','家電量販店':'🔌','スーパー':'🛒','コンビニ':'🏪'}[place.type] || '📍';
-        var rating = place.rating ? '　★'+place.rating.toFixed(1) : '';
-        var mapsUrl = 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(place.name+' '+place.address);
-        el.innerHTML = '📍 <b>'+typeEmoji+' '+place.name+'</b>'
-          +'<span style="color:#718096;font-size:.75rem">　('+place.type+'・'+place.distance.toFixed(1)+'km'+rating+')</span>'
-          +(place.address ? '<div style="font-size:.74rem;color:#718096;margin-top:2px">'+place.address+'</div>' : '')
-          +'<div style="margin-top:4px"><a href="'+mapsUrl+'" target="_blank" style="display:inline-block;padding:3px 10px;background:#4285f4;color:white;border-radius:6px;font-size:.74rem;text-decoration:none;font-weight:600">🗺️ Googleマップで開く</a></div>';
-      } else {
-        el.innerHTML = '<span style="color:#744210">📍 5km以内に適した場所が見つかりませんでした。車内休憩を推奨します。</span>';
-      }
-    });
-  }, 100);
-
-  return '<div style="margin-top:6px;padding:10px 12px;background:#fff5eb;border:1.5px solid #f6ad55;border-radius:9px;font-size:.8rem;color:#744210">'
-    +'<div>'+slotInfo+prevInfo+'</div>'
-    +'<div id="'+slotKey+'" style="margin-top:6px;padding-top:6px;border-top:1px dashed #f6ad55;color:#553c9a">⏳ 場所を検索中...</div>'
-    +'</div>';
-}
 
 // ===== スケジュール結果HTML生成後に稼働時間情報・制作ウィンドウを各カードに注入 =====
 function injectWorkHoursInfo(){
@@ -3438,14 +3337,12 @@ function injectWorkHoursInfo(){
     var cwHtml = renderCreativeWindows(dayIdx, ds.sched, ds.startMin, ds.dStr);
     // 稼働時間警告
     var warnHtml = renderWorkHoursWarning(dayIdx, ds.sched, ds.startMin, ds.calBlocks);
-    // 昼休み場所提案
-    var lunchHtml = renderLunchSuggestion(dayIdx, ds.sched, ds);
     // 後ろ倒し通知
     var pushBackHtml = renderPushBackInfo(dayIdx);
 
-    if(cwHtml || warnHtml || lunchHtml || pushBackHtml){
+    if(cwHtml || warnHtml || pushBackHtml){
       var inject = document.createElement('div');
-      inject.innerHTML = pushBackHtml + warnHtml + lunchHtml + cwHtml;
+      inject.innerHTML = pushBackHtml + warnHtml + cwHtml;
       inject.id = 'work-info-'+dayIdx;
       // sum-rowの直後に挿入
       var sumRow = cardEl.querySelector('.sum-row');
@@ -3706,8 +3603,19 @@ function fmt(m){
 // 本日納期案件は窓を過ぎていてもtimedAvailに入れてASAP救済対象とする（当日絶対配置）
 function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effectiveDayEnd, isNextDay){
   calBlocks = calBlocks || [];
+
+  // ===== モード判定 =====
+  var isDeadlineMode = !!window._deadlineMode;
+
   var DAY_END      = 22*60+15;
-  var FREE_DAY_END = effectiveDayEnd ? Math.min(20*60+15, effectiveDayEnd) : 20*60+15;
+  // 通常モード: 訪問可能時間20:15を上限とし、稼働時間+1時間で帰宅できるよう更に制限
+  // 納期優先モード: 22:15まで延長（稼働時間・訪問可能時間を無視）
+  var FREE_DAY_END;
+  if(isDeadlineMode){
+    FREE_DAY_END = DAY_END;
+  } else {
+    FREE_DAY_END = effectiveDayEnd ? Math.min(20*60+15, effectiveDayEnd) : 20*60+15;
+  }
   var DAY_START    = 8*60+30;
   var FREE_START   = Math.max(startMin, DAY_START);
 
@@ -3716,6 +3624,20 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     ? (targetDate.getFullYear()+'-'+('0'+(targetDate.getMonth()+1)).slice(-2)+'-'+('0'+targetDate.getDate()).slice(-2))
     : null;
   function isDeadlineToday(c){ return c.d2 && _dStr && c.d2 <= _dStr; }
+
+  // ===== 納期優先モード：本日訪問必須以外の案件をプールから除外 =====
+  // 1日目: 本日訪問必須のみ（isMustVisitOnDate(c, _dStr) == true）
+  // 2日目以降: 翌日訪問必須 = isMustVisitOnDate(c, _dStr) でその日基準
+  // つまり対象日基準で「その日に訪問しないと納期遅れる案件」のみ残す
+  if(isDeadlineMode && _dStr){
+    var filteredPool = [];
+    pool.forEach(function(c){
+      if(isMustVisitOnDate(c, _dStr)){
+        filteredPool.push(c);
+      }
+    });
+    pool = filteredPool;
+  }
 
   // ── 休日判定でtimedPoolを分類 ──
   var timedAvail = [];   // 今日訪問できる時間指定案件
@@ -4246,6 +4168,9 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
 
   // ── 今日納期ASAP配置ヘルパー（時間窓を妥協してでも当日配置） ──
   // 曜日チェックは timedAvail 振り分け時点で保証済みなのでここでは省略
+  // 通常モード: 20:15 (FREE_DAY_END) を超えない範囲で配置を試みる
+  //            → 収まらなければ翌日繰越（納期超過バッジが表示される）
+  // 納期優先モード: 22:15 (DAY_END) まで延長
   function _placeASAP(tc){
     if(placed[tc.id] || placed[baseId(tc.id)]) return;
     var _t = trv(prev, prevC, tc.adr, tc);
@@ -4257,12 +4182,61 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
       if(!_hit) break;
       _st = _hit.end + 15;
     }
-    if(_st + tc.dur <= DAY_END) place(tc, _st);
+    // 上限判定：通常モードはFREE_DAY_END(20:15)、納期優先モードはDAY_END(22:15)
+    var asapLimit = isDeadlineMode ? DAY_END : FREE_DAY_END;
+    if(_st + tc.dur <= asapLimit) place(tc, _st);
   }
 
   // 残りの自由案件を最後まで詰める
   if(cur < FREE_START) cur = FREE_START;
-  fillFree(FREE_DAY_END);
+
+  // ── 【本日納期自由案件】事前時間確保 ──
+  // 本日納期の自由案件（freePool内・未配置）の所要時間と移動時間を実距離ベースで計算し、
+  // FREE_DAY_END から逆算して fillFree の deadline を早めることで、
+  // 本日納期以外の案件で20:15間際まで埋まってしまうことを防ぐ。
+  // 納期優先モードでは関係ない（filteredPoolで既に本日訪問必須のみに絞られている）。
+  var _todayDeadlineFree = isDeadlineMode ? [] : freePool.filter(function(c){
+    return !placed[c.id] && !placed[baseId(c.id)] && isDeadlineToday(c);
+  });
+  var _reservedForTodayFree = 0;
+  if(_todayDeadlineFree.length > 0){
+    // 所要時間合計
+    var _durSum = _todayDeadlineFree.reduce(function(s,c){ return s+(c.dur||10); }, 0);
+
+    // 移動時間：実距離ベース動的見積もり
+    // ① fillFree前時点の現在地(prev)から最も遠い本日納期案件までの移動
+    // ② そこから残り本日納期案件を最近傍貪欲で巡回した総移動時間
+    // この合計を「最悪ケース」として確保する
+    var _trvSum = 0;
+
+    // ステップ①：prev→最遠の本日納期案件
+    var _farthestC = null, _farthestT = 0;
+    _todayDeadlineFree.forEach(function(c){
+      var _t = trv(prev, prevC, c.adr, c);
+      if(_t > _farthestT){ _farthestT = _t; _farthestC = c; }
+    });
+    _trvSum += _farthestT;
+
+    // ステップ②：残り本日納期案件を最近傍貪欲で巡回
+    if(_todayDeadlineFree.length > 1 && _farthestC){
+      var _remain = _todayDeadlineFree.filter(function(c){ return c !== _farthestC; });
+      var _curC = _farthestC;
+      while(_remain.length > 0){
+        var _bestIdx = 0, _bestT = trv(_curC.adr, _curC, _remain[0].adr, _remain[0]);
+        for(var _ri = 1; _ri < _remain.length; _ri++){
+          var _tt = trv(_curC.adr, _curC, _remain[_ri].adr, _remain[_ri]);
+          if(_tt < _bestT){ _bestT = _tt; _bestIdx = _ri; }
+        }
+        _trvSum += _bestT;
+        _curC = _remain[_bestIdx];
+        _remain.splice(_bestIdx, 1);
+      }
+    }
+
+    _reservedForTodayFree = _durSum + _trvSum;
+  }
+  var _fillDeadline = Math.max(FREE_START, FREE_DAY_END - _reservedForTodayFree);
+  fillFree(_fillDeadline);
 
   // ── 今日納期・未配置のfreePool案件を強制配置（順序不自然でも当日配置を優先）──
   freePool.filter(function(c){
@@ -4270,6 +4244,11 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
   }).forEach(function(c){
     _placeASAP(c);
   });
+
+  // ── 本日納期配置後、まだFREE_DAY_ENDまで時間が余っていれば再度fillFreeを呼んで他案件を詰める ──
+  if(cur < FREE_DAY_END){
+    fillFree(FREE_DAY_END);
+  }
 
   // ── 区分③夜間（wStart >= 20:00）fillFree後に処理 ──
   timedAvail.filter(function(tc){
@@ -5111,6 +5090,18 @@ function buildAllCore(){
 
     // effectiveDayEnd: 夕方以降のブロックが20:15より早く始まる場合はそこで打ち切る
     var effectiveDayEnd = 20*60+15;
+
+    // ===== 通常モードの稼働時間制限 =====
+    // 通常モードでは「出発時刻 + 稼働時間 + 1時間バッファ」を超えない範囲で配置
+    // 納期優先モードでは制限なし（22:15まで延長されている）
+    if(!window._deadlineMode){
+      var workMin = getEffectiveWorkMin(d);
+      // 出発時刻 + 稼働時間 + 60分バッファ
+      var workLimitEnd = adjustedStart + workMin + 60;
+      if(workLimitEnd < effectiveDayEnd){
+        effectiveDayEnd = Math.max(workLimitEnd, 8*60+30);
+      }
+    }
     calBlocks.forEach(function(b){
       // 15:00以降に始まるブロックが終日まで続く（end>=24:00）場合
       // → ブロック開始 - 会場までの移動時間 を実質的な終業時刻にする
@@ -5471,6 +5462,18 @@ function buildAllCore(){
       '<div style="font-weight:700;font-size:.95rem;margin-bottom:4px">🛣 最遠地スタートモード</div>'+
       '<div style="font-size:.8rem;margin-top:2px">自宅から25km以上の最遠案件から訪問開始（条件未達日は通常スケジュール）</div>'+
       '<div style="font-size:.78rem;margin-top:4px;opacity:.8">往路高速代の経費精算を想定 / 復路は近場を回りながら一般道で帰宅</div>'+
+      '</div>';
+  } else if(window._deadlineMode){
+    // 納期優先モード: モード通知を表示
+    var totalScheduledDL = 0;
+    for(var ddi=0; ddi<3; ddi++){
+      var dsDL = window._dayScheds && window._dayScheds[ddi];
+      if(dsDL && dsDL.sched) totalScheduledDL += dsDL.sched.length;
+    }
+    summaryHtml = '<div style="margin-bottom:12px;padding:12px 16px;background:#fff5f5;border:1.5px solid #fc8181;border-radius:10px;color:#742a2a;font-size:.87rem">'+
+      '<div style="font-weight:700;font-size:.95rem;margin-bottom:4px">📛 納期優先モード &nbsp; '+totalScheduledDL+'件配置</div>'+
+      '<div style="font-size:.8rem;margin-top:2px">本日訪問必須・翌日訪問必須案件のみ配置（複数回訪問案件の枝番件数と訪問可能日数で判定）</div>'+
+      '<div style="font-size:.78rem;margin-top:4px;opacity:.8">⚠️ 訪問可能時間20:15・稼働時間制限を無視（22:15まで配置可）/ 該当案件内で効率ルートを優先</div>'+
       '</div>';
   }
 
