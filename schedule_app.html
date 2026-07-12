@@ -311,38 +311,46 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
           </div>
           <div id="sloc-gps-status" style="font-size:.78rem;color:#2b6cb0;margin-top:3px;min-height:16px"></div>
         </div>
-        <div class="fg">
-          <label>🌅 翌日モード 出発時刻</label>
-          <input id="sstart" type="time" value="08:30" style="font-size:.95rem;width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:7px">
-          <div style="font-size:.73rem;color:#a0aec0;margin-top:2px">今からモード時は現在時刻を自動使用</div>
-        </div>
         <div class="fg"><label>平均時速（km/h）</label><input id="sspd" type="number" value="30" min="20" max="100" step="10"></div>
       </div>
 
-      <!-- ===== 稼働時間設定 ===== -->
+      <!-- ===== 日別 出発時刻・稼働時間設定 ===== -->
       <div style="margin-top:14px;padding:14px;background:#f0fff4;border-radius:10px;border:1.5px solid #9ae6b4">
-        <div style="font-size:.82rem;font-weight:700;color:#276749;margin-bottom:10px">⏱ 稼働時間設定（デフォルト8時間・出発時刻からの経過時間）</div>
+        <div style="font-size:.82rem;font-weight:700;color:#276749;margin-bottom:10px">⏱ 日別設定（出発時刻・稼働時間）</div>
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px">
           <div class="fg">
-            <label style="color:#276749">🌅 1日目（時間）</label>
+            <label style="color:#276749">🌅 1日目 出発時刻</label>
+            <input id="depart-time-0" type="time" value="08:30"
+              style="padding:8px;border:1.5px solid #9ae6b4;border-radius:7px;font-size:.95rem;font-weight:700;color:#276749;text-align:center"
+              oninput="saveWorkHours()">
+            <label style="color:#276749;margin-top:6px">稼働時間（h）</label>
             <input id="work-hours-0" type="number" value="8" min="1" max="24" step="0.5"
               style="padding:8px;border:1.5px solid #9ae6b4;border-radius:7px;font-size:.95rem;font-weight:700;color:#276749;text-align:center"
               oninput="saveWorkHours()">
           </div>
           <div class="fg">
-            <label style="color:#276749">☀️ 2日目（時間）</label>
+            <label style="color:#276749">☀️ 2日目 出発時刻</label>
+            <input id="depart-time-1" type="time" value="08:30"
+              style="padding:8px;border:1.5px solid #9ae6b4;border-radius:7px;font-size:.95rem;font-weight:700;color:#276749;text-align:center"
+              oninput="saveWorkHours()">
+            <label style="color:#276749;margin-top:6px">稼働時間（h）</label>
             <input id="work-hours-1" type="number" value="8" min="1" max="24" step="0.5"
               style="padding:8px;border:1.5px solid #9ae6b4;border-radius:7px;font-size:.95rem;font-weight:700;color:#276749;text-align:center"
               oninput="saveWorkHours()">
           </div>
           <div class="fg">
-            <label style="color:#276749">🌆 3日目（時間）</label>
+            <label style="color:#276749">🌆 3日目 出発時刻</label>
+            <input id="depart-time-2" type="time" value="08:30"
+              style="padding:8px;border:1.5px solid #9ae6b4;border-radius:7px;font-size:.95rem;font-weight:700;color:#276749;text-align:center"
+              oninput="saveWorkHours()">
+            <label style="color:#276749;margin-top:6px">稼働時間（h）</label>
             <input id="work-hours-2" type="number" value="8" min="1" max="24" step="0.5"
               style="padding:8px;border:1.5px solid #9ae6b4;border-radius:7px;font-size:.95rem;font-weight:700;color:#276749;text-align:center"
               oninput="saveWorkHours()">
           </div>
         </div>
         <div style="font-size:.75rem;color:#48bb78">
+          ※ ⚡今からモードの1日目は現在時刻から出発します（1日目の出発時刻入力は無視）<br>
           ※ 稼働時間 = 業務時間 + 移動時間（出発時刻からの経過時間）<br>
           ※ 通常モードは「稼働時間+1時間」までに帰宅できるルートを生成します（最大20:15）<br>
           ※ 本日納期超過の恐れがある場合は📛納期優先モードをご使用ください
@@ -1110,11 +1118,28 @@ function onSlocType(){
         window._gpsLoading = false;
         var ageSec = pos.timestamp ? Math.round((Date.now()-pos.timestamp)/1000) : 0;
         var ageNote = ageSec > 60 ? '（'+Math.round(ageSec/60)+'分前のキャッシュ）' : '';
-        gpsStatus.innerHTML='<span style="color:#276749;font-weight:600">✅ 現在地取得済み（'
-          +pos.coords.latitude.toFixed(4)+', '+pos.coords.longitude.toFixed(4)+'）'+ageNote+'</span>'
-          +'　<button onclick="onSlocType()" style="margin-left:6px;padding:2px 8px;font-size:.7rem;'
-          +'background:#f7fafc;color:#4a5568;border:1px solid #cbd5e0;border-radius:6px;cursor:pointer">'
-          +'🔄 再取得</button>';
+        function _renderGpsOk(placeLabel){
+          gpsStatus.innerHTML='<span style="color:#276749;font-weight:600">✅ 現在地取得済み（'+placeLabel+'）'+ageNote+'</span>'
+            +'　<button onclick="onSlocType()" style="margin-left:6px;padding:2px 8px;font-size:.7rem;'
+            +'background:#f7fafc;color:#4a5568;border:1px solid #cbd5e0;border-radius:6px;cursor:pointer">'
+            +'🔄 再取得</button>';
+        }
+        _renderGpsOk(pos.coords.latitude.toFixed(4)+', '+pos.coords.longitude.toFixed(4));
+        // 逆ジオコーディングで現在地の住所を取得（スケジュール結果に表示するため）
+        window._gpsAdr = null;
+        if(window._gmapsLoaded && window.google && google.maps && google.maps.Geocoder){
+          try{
+            new google.maps.Geocoder().geocode(
+              {location:{lat:window._gpsLat, lng:window._gpsLng}, language:'ja'},
+              function(results, status){
+                if(status==='OK' && results && results[0]){
+                  window._gpsAdr = results[0].formatted_address
+                    .replace(/^日本、\s*/,'').replace(/〒\d{3}-\d{4}\s*/,'');
+                  _renderGpsOk('📍 '+window._gpsAdr);
+                }
+              });
+          }catch(e){}
+        }
       }, function(err){
         attemptIdx++;
         if(attemptIdx < attempts.length){
@@ -2878,6 +2903,22 @@ function fetchDistanceMatrix(origins, destinations, callback){
   // batches が0件（全ペアキャッシュ済み）なら即callback
   if(remaining2 === 0){ callback(null); return; }
 
+  // callbackの多重呼び出し防止 ＋ 30秒タイムアウト保険
+  // （APIエラー・電波不良でレスポンスが返らない場合に「取得中...」のまま固まるのを防ぐ。
+  //   タイムアウト時は直線距離フォールバックでスケジュール作成が続行される）
+  var _cbCalled = false;
+  var _origCallback = callback;
+  callback = function(err){
+    if(_cbCalled) return;
+    _cbCalled = true;
+    clearTimeout(_dmFetchTimeout);
+    _origCallback(err);
+  };
+  var _dmFetchTimeout = setTimeout(function(){
+    console.warn('[DM] 取得タイムアウト（30秒）- 直線距離フォールバックで続行');
+    callback('timeout');
+  }, 30000);
+
   var _waitMs = 0;
   function _doFetch(){
     if(!window._gmapsLoaded || !window.google || !window.google.maps){
@@ -3006,7 +3047,11 @@ function saveWorkHours(){
     parseFloat(document.getElementById('work-hours-1').value)||8,
     parseFloat(document.getElementById('work-hours-2').value)||8
   ];
-  try{ localStorage.setItem(WORK_HOURS_KEY, JSON.stringify({wh:wh})); }catch(e){}
+  var dep = [0,1,2].map(function(i){
+    var el = document.getElementById('depart-time-'+i);
+    return (el && el.value) ? el.value : '08:30';
+  });
+  try{ localStorage.setItem(WORK_HOURS_KEY, JSON.stringify({wh:wh, dep:dep})); }catch(e){}
 }
 
 function loadWorkHours(){
@@ -3019,8 +3064,23 @@ function loadWorkHours(){
         document.getElementById('work-hours-1').value = d.wh[1];
         document.getElementById('work-hours-2').value = d.wh[2];
       }
+      if(d.dep && d.dep.length===3){
+        [0,1,2].forEach(function(i){
+          var el = document.getElementById('depart-time-'+i);
+          if(el && /^\d{1,2}:\d{2}$/.test(d.dep[i])) el.value = d.dep[i];
+        });
+      }
     }
   }catch(e){}
+}
+
+// 日別の出発時刻（分）を取得。未入力・不正値は08:30
+function getDepartMin(dayIdx){
+  var el = document.getElementById('depart-time-'+dayIdx);
+  var v = (el && el.value) ? el.value : '08:30';
+  var p = v.split(':');
+  var m = parseInt(p[0],10)*60 + (parseInt(p[1],10)||0);
+  return isNaN(m) ? 8*60+30 : m;
 }
 
 function getWorkHoursMin(dayIdx){
@@ -3769,24 +3829,6 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     return null;
   }
 
-  // 夕方以降のカレンダー予定の目的地座標を取得（経路最適化用）
-  var eveningDest = null;
-  if(calBlocks && calBlocks.length > 0){
-    for(var ci2=0; ci2<calBlocks.length; ci2++){
-      var cb = calBlocks[ci2];
-      if(cb.start >= 15*60 && (cb.lat || cb.location)){
-        // 座標があればそのまま、なければARテーブルで推定
-        if(cb.lat && cb.lng){
-          eveningDest = {lat:cb.lat, lng:cb.lng, title:cb.title};
-        } else if(cb.location){
-          var ep = getPos(cb.location, null);
-          if(ep && ep.lat) eveningDest = {lat:ep.lat, lng:ep.lng, title:cb.title};
-        }
-        if(eveningDest) break;
-      }
-    }
-  }
-
   // 自宅座標（都城市南鷹尾町）
   var homePos = getPos(HOME_ADR, null);
 
@@ -3848,11 +3890,24 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     var _ry=_refDate.getFullYear(), _rm=('0'+(_refDate.getMonth()+1)).slice(-2), _rd=('0'+_refDate.getDate()).slice(-2);
     var _refStr = _ry+'-'+_rm+'-'+_rd;
 
+    // 道路距離（分）を返すヘルパー：DMキャッシュ優先、なければ直線距離から換算
+    // 山越え・川渡りで直線距離と実走時間が乖離するケースの選択ミスを防ぐ
+    var _kmToMin = 60 / spd; // 直線km→分 換算係数（従来スコアとの互換用）
+    function _roadMin(fromAdrX, fromPosX, toAdrX, toPosX){
+      var fa = (fromAdrX === '__GPS__' && window._gpsLat) ? '現在地(GPS)' : fromAdrX;
+      if(fa && toAdrX){
+        var cached = dmGet(fa, toAdrX);
+        if(cached != null) return cached;
+      }
+      if(fromPosX && fromPosX.lat && toPosX && toPosX.lat) return km(fromPosX, toPosX) * _kmToMin;
+      return null;
+    }
+
     var best=null, bestScore=Infinity;
     rem.forEach(function(c){
       var cPos = getPos(c.adr, c);
 
-      // 納期優先ボーナス（km単位に揃える）
+      // 納期優先ボーナス（分単位に換算：従来はkm単位）
       var deadlineBonus = 0;
       if(c.d2){
         var daysLeft = Math.round((new Date(c.d2+'T00:00:00') - new Date(_refStr+'T00:00:00')) / 86400000);
@@ -3861,24 +3916,29 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
         else if(daysLeft <= 3) deadlineBonus = 2.5;
         else if(daysLeft <= 7) deadlineBonus = 1;
       }
+      deadlineBonus *= _kmToMin;
 
       var score;
-      if(!cPos || !cPos.lat){
-        // 座標未取得案件: 遠距離扱い（200km相当）だが納期ボーナスは有効
+      var mFrom = _roadMin(fromAdr, fromPos, c.adr, cPos);
+      if(mFrom == null){
+        // 座標未取得・DMキャッシュなし案件: 遠距離扱い（200km相当）だが納期ボーナスは有効
         // → 他の候補がなくなれば選ばれ、急ぎ案件なら早めに選ばれる
-        score = 200 - deadlineBonus;
+        score = 200 * _kmToMin - deadlineBonus;
       } else {
-        var dFrom = km(fromPos, cPos);
-        var dHome = homePos ? km(cPos, homePos) : 0;
-        score = dFrom + dHome * homeBias - deadlineBonus;
+        var mHome = 0;
+        if(homePos){
+          var mH = _roadMin(c.adr, cPos, HOME_ADR, homePos);
+          mHome = mH != null ? mH : 0;
+        }
+        score = mFrom + mHome * homeBias - deadlineBonus;
 
         // 改修3: 寄せ先案件への方向バイアス
         // 現在 fillFree が「次の時間指定案件」のために自由案件を埋めている場合、
         // その寄せ先に近い案件を優先することで、最終的に寄せ先まで自然に到達できる
-        if(_pickFreeTarget && _pickFreeTarget.lat){
+        if(_pickFreeTarget && _pickFreeTarget.lat && cPos && cPos.lat){
           var dToTarget = km(cPos, _pickFreeTarget);
           // バイアス係数 0.4 = 寄せ先まで10km近い案件は4km分のボーナス相当
-          score += dToTarget * 0.4;
+          score += dToTarget * 0.4 * _kmToMin;
         }
       }
       if(score < bestScore){ bestScore=score; best=c; }
@@ -4349,11 +4409,14 @@ function twoOptImprove(sched, startAdr, startMin, spd, calBlocks, freeStart, fre
   }
 
   // 自由案件インデックス（タイムド・ピン以外）
-  var freeIdx = [];
-  sched.forEach(function(c,i){
-    if(c.pin == null && (!c.tm || !TM_RANGE[c.tm])) freeIdx.push(i);
-  });
-  if(freeIdx.length < 2) return sched;
+  function _freeIndices(s){
+    var idx = [];
+    s.forEach(function(c,i){
+      if(c.pin == null && (!c.tm || !TM_RANGE[c.tm])) idx.push(i);
+    });
+    return idx;
+  }
+  if(_freeIndices(sched).length < 2) return sched;
 
   var best = sched;
   var bestElapsed = totalElapsed(sched);
@@ -4362,6 +4425,8 @@ function twoOptImprove(sched, startAdr, startMin, spd, calBlocks, freeStart, fre
 
   while(improved && maxIter-- > 0){
     improved = false;
+    // 反転・挿入で位置が変わるため毎周re計算（旧実装は初回のみで2周目以降ずれていた）
+    var freeIdx = _freeIndices(best);
 
     // ── Pass 1: pairwise swap（自由案件の全ペアを入れ替え） ──
     for(var a = 0; a < freeIdx.length - 1; a++){
@@ -4375,6 +4440,30 @@ function twoOptImprove(sched, startAdr, startMin, spd, calBlocks, freeStart, fre
           if(tv < bestElapsed - 0.01){
             best = rec;
             bestElapsed = tv;
+            improved = true;
+          }
+        }
+      }
+    }
+
+    // ── Pass 1.5: 2-opt区間反転（連続する自由案件の並びを逆順にする） ──
+    // swap・or-optでは解消できない「ルートの交差」をほどく本来の2-opt。
+    // ピン・時間指定案件を含む区間は反転しない（時刻順の意図を壊さないため）
+    function _isFreeItem(c){ return c.pin == null && (!c.tm || !TM_RANGE[c.tm]); }
+    for(var ra = 0; ra < best.length - 2; ra++){
+      if(!_isFreeItem(best[ra])) continue;
+      for(var rb = ra + 2; rb < best.length; rb++){
+        if(!_isFreeItem(best[rb])) break; // 自由案件の連続区間を超えたら終了
+        // best[ra..rb] がすべて自由案件であることは走査順で保証される
+        var trialR = best.slice(0, ra)
+          .concat(best.slice(ra, rb + 1).reverse())
+          .concat(best.slice(rb + 1));
+        var recR = recompute(trialR);
+        if(recR){
+          var tvR = totalElapsed(recR);
+          if(tvR < bestElapsed - 0.01){
+            best = recR;
+            bestElapsed = tvR;
             improved = true;
           }
         }
@@ -4503,7 +4592,19 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
     }
   }
   if(isNow){
-    h+='<div class="al al-b" style="margin-bottom:10px">⚡ 現在時刻('+fmt(startMin)+')から出発</div>';
+    // 出発地（現在地）の表示：GPS出発なら住所（逆ジオコーディング済み）または座標を表示
+    var depPlaceHtml = '';
+    if(startAdr === '__GPS__'){
+      var _g = window._buildGps || {lat:window._gpsLat, lng:window._gpsLng, adr:window._gpsAdr};
+      if(_g && _g.lat){
+        var _gLabel = _g.adr ? _g.adr : (_g.lat.toFixed(4)+', '+_g.lng.toFixed(4));
+        depPlaceHtml = '<br>📍 出発地：現在地　<a href="https://maps.google.com/?q='+_g.lat+','+_g.lng+'" target="_blank" '
+          +'style="color:#2b6cb0;font-weight:600">'+_gLabel+' 🗺️</a>';
+      }
+    } else {
+      depPlaceHtml = '<br>📍 出発地：'+(startAdr || HOME_ADR);
+    }
+    h+='<div class="al al-b" style="margin-bottom:10px">⚡ 現在時刻('+fmt(startMin)+')から出発'+depPlaceHtml+'</div>';
   }
   // 出発時刻表示
   if(departureTime !== null){
@@ -4587,9 +4688,14 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
 
   // Googleマップ 全ルートボタン
   if(sched.length > 0){
-    var origin = encodeURIComponent((isNow && window._gpsLat)
-      ? (window._gpsLat+','+window._gpsLng)
-      : (startAdr || HOME_ADR));
+    var _originStr;
+    if(startAdr === '__GPS__'){
+      var _gO = window._buildGps || {lat:window._gpsLat, lng:window._gpsLng};
+      _originStr = (_gO && _gO.lat) ? (_gO.lat+','+_gO.lng) : HOME_ADR;
+    } else {
+      _originStr = startAdr || HOME_ADR;
+    }
+    var origin = encodeURIComponent(_originStr);
     var dest = encodeURIComponent(HOME_ADR);
     var waypts = sched.map(function(c){ return encodeURIComponent(c.adr); });
     // Google Maps Directions: origin/wp1/wp2/.../dest
@@ -4902,18 +5008,16 @@ function buildAllCore(){
   var now     = new Date();
   var isNow   = schedMode==='now';
 
-  // 翌日モードの出発時刻（sstart入力欄）
-  var sstartVal = document.getElementById("sstart") ? document.getElementById("sstart").value : "08:30";
-  var sstartParts = sstartVal.split(":");
-  var sstartMin = parseInt(sstartParts[0])*60+(parseInt(sstartParts[1])||0);
-
-  var day1Min = isNow ? (now.getHours()*60+now.getMinutes()) : sstartMin;
+  // 1日目の出発時刻：今からモードは現在時刻、翌日モードは日別設定（depart-time-0）
+  var day1Min = isNow ? (now.getHours()*60+now.getMinutes()) : getDepartMin(0);
 
   // 出発地の取得（3種類対応）
   var slocType = document.getElementById("sloc-type") ? document.getElementById("sloc-type").value : "home";
-  var day1Adr, day1Pos=null;
+  var day1Adr;
   if(slocType==="current" && window._gpsLat && window._gpsLng){
     day1Adr = "__GPS__"; // GPS座標を出発地として使用
+    // 作成時点のGPS情報をスナップショット（再描画時にも表示・ルートURLで使うため）
+    window._buildGps = {lat:window._gpsLat, lng:window._gpsLng, adr:window._gpsAdr||null};
   } else if(slocType==="custom"){
     day1Adr = (document.getElementById("sloc") ? document.getElementById("sloc").value.trim() : "") || HOME_ADR;
   } else {
@@ -4950,7 +5054,7 @@ function buildAllCore(){
     var date = new Date(baseDate+'T00:00:00');
     date.setDate(date.getDate()+d);
     var dStr     = localDateStr(date);
-    var startMin = d===0 ? day1Min : sstartMin;
+    var startMin = d===0 ? day1Min : getDepartMin(d); // 2日目以降は日別の出発時刻設定を使用
     var startAdr = d===0 ? day1Adr : HOME_ADR; // 2日目以降は自宅から
 
     // ===== 後ろ倒し出発時刻の計算は todayPool 確定後に行う =====
