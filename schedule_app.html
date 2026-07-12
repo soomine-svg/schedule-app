@@ -3481,6 +3481,19 @@ function getArea(adr){
   return m ? m[1] : adr.substring(3, 10);
 }
 
+// 対象日の曜日ラベル（祝日考慮）
+function dayLabelOf(date){
+  var dow = ['日','月','火','水','木','金','土'][date.getDay()];
+  return (typeof isJpHoliday === 'function' && isJpHoliday(date)) ? '祝日' : dow + '曜';
+}
+
+// canScheduleTodayCheck が false の理由を人間向けに返す（繰越理由表示用）
+function skipReasonForToday(c, date){
+  if(c.pin != null && c.pinDate) return '📌 ' + c.pinDate + ' ' + fmt(c.pin) + ' ピン指定（この日ではない）';
+  if(c.tm && TM_RANGE[c.tm] && date && !isTmAvailable(c.tm, date)) return '📅 「' + c.tm + '」指定 → この日（' + dayLabelOf(date) + '）は訪問不可';
+  return '⏱ この日に配置できず';
+}
+
 // 指定日に案件をスケジュール可能かチェック
 // startMin: その日の開始時刻（分）
 function canScheduleTodayCheck(c, targetDate, startMin, isNextDay){
@@ -3694,6 +3707,8 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     pool.forEach(function(c){
       if(isMustVisitOnDate(c, _dStr)){
         filteredPool.push(c);
+      } else {
+        c._skipReason = '📛 納期優先モード対象外（この日の訪問必須ではない）';
       }
     });
     pool = filteredPool;
@@ -3708,7 +3723,10 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
       if(c.pinDate && targetDate){
         var td=targetDate;
         var tdStr=td.getFullYear()+'-'+('0'+(td.getMonth()+1)).slice(-2)+'-'+('0'+td.getDate()).slice(-2);
-        if(tdStr !== c.pinDate){ timedNG.push(c); return; }
+        if(tdStr !== c.pinDate){
+          c._skipReason = '📌 ' + c.pinDate + ' ' + fmt(c.pin) + ' ピン指定（対象日ではない）';
+          timedNG.push(c); return;
+        }
       }
       timedAvail.push(c);
       return;
@@ -3718,6 +3736,7 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     }
     // 曜日不一致は絶対に翌日（平日指定を休日に訪問しない）
     if(targetDate && !isTmAvailable(c.tm, targetDate)){
+      c._skipReason = '📅 「' + c.tm + '」指定 → 対象日（' + dayLabelOf(targetDate) + '）は訪問不可';
       timedNG.push(c);
       return;
     }
@@ -3734,6 +3753,7 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     if(!isEarlyWindow && !isNightWindow && !isDeadlineTodayCheck){
       // 通常時間帯の窓：startMinが窓終了間際なら今日は無理
       if(startMin >= wEnd2 - Math.min(15, c.dur||10)){
+        c._skipReason = '⏰ 「' + c.tm + '」の時間帯に出発時刻（' + fmt(startMin) + '）では間に合わない';
         timedNG.push(c);
         return;
       }
@@ -4339,6 +4359,22 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
   var consumedIds = {};
   sched.forEach(function(c){ consumedIds[c.id]=true; }); // 完全IDで管理（枝番ごとに独立）
 
+  // ── 配置できなかった案件に繰越理由を付与（表示用） ──
+  // timedNG・納期優先モード対象外は振り分け時点で付与済みのためスキップ
+  pool.forEach(function(c){
+    if(consumedIds[c.id]) return;
+    if(c._skipReason) return;
+    if(placed[baseId(c.id)] && !placed[c.id]){
+      c._skipReason = '🔢 同一案件（' + baseId(c.id) + '）は1日1件まで → 翌日以降へ';
+    } else if(c.pin != null){
+      c._skipReason = '📌 ピン時刻に配置できず（22:15超過または予定と衝突）';
+    } else if(c.tm && TM_RANGE[c.tm] && !(TM_RANGE[c.tm][0] <= DAY_START && TM_RANGE[c.tm][1] >= 20*60+15)){
+      c._skipReason = '⏰ 「' + c.tm + '」の時間窓に間に合わなかった（移動・他案件との兼ね合い）';
+    } else {
+      c._skipReason = '⏱ 時間切れ：稼働時間・訪問可能時間（〜' + fmt(FREE_DAY_END) + '）内に収まらず';
+    }
+  });
+
   return { sched:sched, consumedIds:consumedIds, notAvailTimed:timedNG };
 }
 
@@ -4778,10 +4814,21 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
   }
 
   if(skip.length){
+    // 納期がこの日以前（＝繰越すと納期超過リスク）の案件を先頭に
+    var skipSorted = skip.slice().sort(function(a,b){
+      var aU = a.d2 && a.d2 <= dStr ? 0 : 1;
+      var bU = b.d2 && b.d2 <= dStr ? 0 : 1;
+      return aU - bU;
+    });
     h+='<div style="margin-top:10px;padding:10px;background:#fff5f5;border-radius:8px;font-size:.8rem">'+
-      '<b style="color:#c53030">翌日繰越（'+skip.length+'件）：</b><br>'+
-      skip.map(function(c){
-        return '<span style="display:inline-block;margin:2px 4px">'+c.id+'('+getArea(c.adr)+')</span>';
+      '<b style="color:#c53030">この日に入らなかった案件（'+skip.length+'件）と理由：</b>'+
+      skipSorted.map(function(c){
+        var urgent = c.d2 && c.d2 <= dStr;
+        return '<div style="padding:4px 0;border-bottom:1px dashed #fed7d7;line-height:1.5">'
+          +(urgent?'<span style="background:#fc8181;color:white;font-size:.7rem;padding:1px 6px;border-radius:8px;font-weight:700;margin-right:4px">⚠️ 納期'+(c.d2<dStr?'超過':'本日')+'</span>':'')
+          +'<b>'+c.id+'</b>（'+getArea(c.adr)+'）'
+          +'<br><span style="color:#718096;font-size:.76rem">'+(c._skipReason||'⏱ この日に配置できず')+'</span>'
+          +'</div>';
       }).join('')+'</div>';
   }
   // 手動追加ボタン
@@ -5125,11 +5172,17 @@ function buildAllCore(){
     // 今日の日付文字列（納期比較用）
     var todayDStr = dStr;
 
+    // 前日の評価で付いた繰越理由をクリア（この日の評価で付け直す）
+    remaining.forEach(function(c){ delete c._skipReason; });
+
     Object.keys(byBase).forEach(function(b){
       var arr=byBase[b];
       // 今日すでに同baseIdを完了済みなら全て翌日へ
       if(doneBasesToday[b]){
-        arr.forEach(function(c){ carriedOver.push(c); });
+        arr.forEach(function(c){
+          c._skipReason = '✅ 同一案件（' + b + '）を本日すでに完了済み → 翌日以降へ';
+          carriedOver.push(c);
+        });
         return;
       }
 
@@ -5142,7 +5195,10 @@ function buildAllCore(){
       if(urgentAll.length > 0){
         urgentAll.forEach(function(c){ todayPool.push(c); });
         arr.filter(function(c){ return urgentAll.indexOf(c) < 0; })
-          .forEach(function(c){ carriedOver.push(c); });
+          .forEach(function(c){
+            c._skipReason = '🔢 同一案件（' + b + '）は1日1件まで（本日納期の枝番を優先）';
+            carriedOver.push(c);
+          });
         return;
       }
 
@@ -5152,6 +5208,7 @@ function buildAllCore(){
         if(canScheduleTodayCheck(arr[0], date, startMin, _isND1)){
           todayPool.push(arr[0]);
         } else {
+          arr[0]._skipReason = skipReasonForToday(arr[0], date);
           carriedOver.push(arr[0]);
         }
         return;
@@ -5166,13 +5223,19 @@ function buildAllCore(){
 
       if(canToday.length === 0){
         // 全件今日不可 → 全件carriedOverへ（timedNGループを防ぐ）
-        arr.forEach(function(c){ carriedOver.push(c); });
+        arr.forEach(function(c){
+          c._skipReason = skipReasonForToday(c, date);
+          carriedOver.push(c);
+        });
         return;
       }
 
       // 今日可能な案件は全部todayPoolへ（scheduleDay内で時間が足りなければnotDoneに残る）
       canToday.forEach(function(c){ todayPool.push(c); });
-      cannotToday.forEach(function(c){ carriedOver.push(c); });
+      cannotToday.forEach(function(c){
+        c._skipReason = skipReasonForToday(c, date);
+        carriedOver.push(c);
+      });
     });
 
     // 早朝指定案件(06:00〜07:00等)があれば出発を前倒し
@@ -5348,7 +5411,10 @@ function buildAllCore(){
         '<div class="al al-y">📅 カレンダー予定の移動時間を考慮すると実働時間がありません。全件翌日以降に繰越します。</div></div>';
       html += html_card;
       window._dayScheds = window._dayScheds || [];
-      window._dayScheds[d] = { sched:[], skip:todayPool.concat(carriedOver), spd:spd, startMin:effectiveStartMin, startAdr:effectiveStartAdr, dStr:dStr, dayNum:d+1, isNow:isNow&&d===0, calBlocks:calBlocksExt };
+      todayPool.concat(carriedOver).forEach(function(c){
+        if(!c._skipReason) c._skipReason = '📅 カレンダー予定の移動時間を考慮すると実働時間なし';
+      });
+      window._dayScheds[d] = { sched:[], skip:todayPool.concat(carriedOver).map(function(c){ return Object.assign({}, c); }), spd:spd, startMin:effectiveStartMin, startAdr:effectiveStartAdr, dStr:dStr, dayNum:d+1, isNow:isNow&&d===0, calBlocks:calBlocksExt };
       remaining = todayPool.concat(carriedOver).concat(remaining.filter(function(c){ return todayPool.indexOf(c)<0 && carriedOver.indexOf(c)<0; }));
       // 重複排除
       var rm2={}; remaining=remaining.filter(function(c){ return rm2[c.id]?false:(rm2[c.id]=true); });
@@ -5500,11 +5566,16 @@ function buildAllCore(){
     });
     remaining = remainingNew;
 
+    // 繰越表示リスト：時間切れ等（notDone/extraNA）に加え、当日対象外（carriedOver）も理由付きで表示する。
+    // 理由(_skipReason)は翌日の評価で上書きされるためスナップショットを取る
+    var skipDisplay = notDone.concat(extraNA).concat(carriedOver)
+      .map(function(c){ return Object.assign({}, c); });
+
     // スケジュール結果をグローバルに保存（並び替え用）
     window._dayScheds = window._dayScheds || [];
     window._dayScheds[d] = {
       sched: todaySch.slice(),
-      skip: notDone.concat(extraNA),
+      skip: skipDisplay,
       spd: spd,
       startMin: effectiveStartMin,
       startAdr: effectiveStartAdr,
@@ -5514,7 +5585,7 @@ function buildAllCore(){
       calBlocks: calBlocksExt
     };
 
-    html += renderDay(d+1, dStr, todaySch, notDone.concat(extraNA), spd, effectiveStartMin, isNow&&d===0, calBlocksExt, d, effectiveStartAdr);
+    html += renderDay(d+1, dStr, todaySch, skipDisplay, spd, effectiveStartMin, isNow&&d===0, calBlocksExt, d, effectiveStartAdr);
   }
 
   if(remaining.length){
@@ -5529,7 +5600,8 @@ function buildAllCore(){
           : '';
         return '<div class="ci" style="'+(_overdue?'border-left:4px solid #fc8181;background:#fff5f5':'')+'"><div class="ci-body">'+
           '<div class="ci-name">'+_badge+c.id+'　<a href="https://maps.google.com/?q='+encodeURIComponent(c.adr)+'" target="_blank" style="color:inherit;text-decoration:none">'+c.adr+' 🗺️</a></div>'+
-          '<div class="ci-sub">納期:'+c.d2+(c.tm?'　指定:'+c.tm:'')+'</div></div></div>';
+          '<div class="ci-sub">納期:'+c.d2+(c.tm?'　指定:'+c.tm:'')+
+          (c._skipReason?'<br><span style="color:#a0aec0">3日目時点: '+c._skipReason+'</span>':'')+'</div></div></div>';
       }).join('')+'</div>';
   }
   window._remainingAll = remaining.slice(); // 手動追加用に保存
