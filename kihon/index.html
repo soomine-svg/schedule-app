@@ -1,0 +1,1198 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1c2b36">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="KIHON">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="favicon.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>KIHON — 動ける身体づくり</title>
+<style>
+:root{
+  color-scheme: light;
+  --surface-1:#fcfcfb;
+  --surface-2:#f3f1ec;
+  --surface-3:#e8e5de;
+  --line:#dedbd3;
+  --text-primary:#0b0b0b;
+  --text-secondary:#52514e;
+  --text-muted:#84827b;
+  --accent:#2a78d6;
+  --accent-soft:#e7effb;
+  --series-1:#2a78d6;
+  --series-2:#eb6834;
+  --series-3:#1baf7a;
+  --good:#1baf7a;
+  --warn:#eda100;
+  --bad:#e34948;
+  --grid:#e8e5de;
+  --radius:14px;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme: dark;
+    --surface-1:#1a1a19;
+    --surface-2:#242422;
+    --surface-3:#2f2f2c;
+    --line:#383835;
+    --text-primary:#ffffff;
+    --text-secondary:#c3c2b7;
+    --text-muted:#8f8e85;
+    --accent:#3987e5;
+    --accent-soft:#1e2c3d;
+    --series-1:#3987e5;
+    --series-2:#d95926;
+    --series-3:#199e70;
+    --good:#199e70;
+    --warn:#c98500;
+    --bad:#e66767;
+    --grid:#2f2f2c;
+  }
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  background:var(--surface-2);
+  color:var(--text-primary);
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif;
+  font-size:15px;line-height:1.6;
+  padding-bottom:calc(72px + var(--safe-b));
+  -webkit-font-smoothing:antialiased;
+}
+header{
+  position:sticky;top:0;z-index:20;
+  background:var(--surface-1);border-bottom:1px solid var(--line);
+  padding:calc(env(safe-area-inset-top,0px) + 12px) 16px 12px;
+}
+.h-row{display:flex;align-items:baseline;gap:10px}
+.h-title{font-size:17px;font-weight:700;letter-spacing:.06em}
+.h-sub{font-size:12px;color:var(--text-muted);margin-left:auto}
+main{padding:14px 14px 24px;max-width:640px;margin:0 auto}
+.view{display:none}
+.view.on{display:block}
+.card{
+  background:var(--surface-1);border:1px solid var(--line);
+  border-radius:var(--radius);padding:14px;margin-bottom:12px;
+}
+.card h2{font-size:14px;margin:0 0 10px;font-weight:700;letter-spacing:.02em}
+.card h2 .sub{font-weight:400;color:var(--text-muted);font-size:12px;margin-left:6px}
+.muted{color:var(--text-muted);font-size:12.5px}
+.sec-label{font-size:11.5px;color:var(--text-muted);letter-spacing:.08em;margin:18px 4px 8px;font-weight:600}
+.hero{font-size:15px;color:var(--text-secondary)}
+.hero b{font-size:26px;color:var(--text-primary);font-weight:700}
+button{font:inherit;color:inherit;cursor:pointer}
+.btn{
+  display:block;width:100%;border:0;border-radius:12px;padding:14px;
+  background:var(--accent);color:#fff;font-weight:700;font-size:16px;
+}
+.btn:disabled{opacity:.45}
+.btn-ghost{background:var(--surface-2);color:var(--text-primary);border:1px solid var(--line);font-weight:600;font-size:14px;padding:11px}
+.btn-danger{background:transparent;color:var(--bad);border:1px solid var(--line);font-weight:600;font-size:14px;padding:11px}
+.row{display:flex;gap:8px}
+.row>*{flex:1}
+/* --- 体調 / RPE チップ --- */
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{
+  border:1px solid var(--line);background:var(--surface-2);
+  border-radius:999px;padding:7px 12px;font-size:13px;font-weight:600;color:var(--text-secondary);
+}
+.chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.chip.sm{padding:5px 10px;font-size:12px}
+/* --- 種目カード --- */
+.ex{border-top:1px solid var(--line);padding:13px 0 11px}
+.ex:first-of-type{border-top:0;padding-top:2px}
+.ex-head{display:flex;align-items:baseline;gap:8px}
+.ex-name{font-weight:700;font-size:15px}
+.ex-cue{font-size:12px;color:var(--text-muted);margin:3px 0 9px;line-height:1.5}
+.ex-target{margin-left:auto;font-size:12px;color:var(--text-muted);white-space:nowrap;
+  background:none;border:0;padding:2px 0}
+.load{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+.load .val{font-variant-numeric:tabular-nums;font-weight:700;font-size:15px;min-width:74px;text-align:center}
+.step{
+  width:36px;height:36px;border-radius:10px;border:1px solid var(--line);
+  background:var(--surface-2);font-size:18px;font-weight:700;line-height:1;color:var(--text-secondary);
+}
+.sets{display:flex;gap:6px;flex-wrap:wrap}
+.set{
+  flex:1;min-width:64px;border:1.5px solid var(--line);background:var(--surface-1);
+  border-radius:11px;padding:9px 4px;text-align:center;font-weight:700;font-size:15px;
+  font-variant-numeric:tabular-nums;color:var(--text-secondary);
+}
+.set .lbl{display:block;font-size:10px;font-weight:600;color:var(--text-muted);letter-spacing:.06em}
+.set.done{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.rpe{margin-top:9px}
+.mini-edit{margin-top:8px;display:none;gap:6px;align-items:center}
+.mini-edit.on{display:flex;flex-wrap:wrap}
+.mini-edit input{width:56px}
+input[type="number"],input[type="date"],input[type="text"]{
+  font:inherit;background:var(--surface-2);border:1px solid var(--line);
+  border-radius:10px;padding:9px 10px;color:var(--text-primary);width:100%;
+  font-variant-numeric:tabular-nums;
+}
+label.f{display:block;margin-bottom:10px}
+label.f span{display:block;font-size:12px;color:var(--text-muted);margin-bottom:4px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+/* --- チャート --- */
+.chart{width:100%;display:block;touch-action:pan-y}
+.panel-head{display:flex;align-items:center;gap:7px;margin:10px 0 -2px;font-size:12.5px}
+.panel-head i{width:14px;height:2.5px;border-radius:2px;display:inline-block}
+.panel-head b{font-weight:700}
+.panel-head .d{margin-left:auto;color:var(--text-secondary);font-variant-numeric:tabular-nums}
+.panel-head em{font-style:normal;font-weight:700}
+.readout{font-size:12px;color:var(--text-secondary);min-height:18px;font-variant-numeric:tabular-nums}
+table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+th,td{text-align:right;padding:6px 4px;border-bottom:1px solid var(--line)}
+th:first-child,td:first-child{text-align:left}
+th{font-size:11px;color:var(--text-muted);font-weight:600}
+.tblwrap{display:none;overflow-x:auto;margin-top:8px}
+.tblwrap.on{display:block}
+.empty{color:var(--text-muted);font-size:13px;padding:18px 4px;text-align:center;line-height:1.7}
+/* --- 伴走 --- */
+.plan-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line);font-size:13.5px}
+.plan-row:first-of-type{border-top:0}
+.plan-row .nm{flex:1;min-width:0}
+.plan-row .vl{font-variant-numeric:tabular-nums;color:var(--text-secondary);white-space:nowrap;font-size:12.5px}
+.tag{font-size:11px;font-weight:700;border-radius:6px;padding:2px 7px;white-space:nowrap}
+.tag.up{background:rgba(27,175,122,.14);color:var(--good)}
+.tag.keep{background:var(--surface-3);color:var(--text-secondary)}
+.tag.down{background:rgba(237,161,0,.16);color:var(--warn)}
+.streak{display:flex;gap:5px;margin-top:8px}
+.streak i{flex:1;height:6px;border-radius:3px;background:var(--surface-3)}
+.streak i.hit{background:var(--accent)}
+/* --- タブ --- */
+nav{
+  position:fixed;left:0;right:0;bottom:0;z-index:30;
+  display:flex;background:var(--surface-1);border-top:1px solid var(--line);
+  padding-bottom:var(--safe-b);
+}
+nav button{
+  flex:1;border:0;background:none;padding:9px 0 8px;
+  font-size:10.5px;font-weight:600;color:var(--text-muted);letter-spacing:.04em;
+}
+nav button .ic{display:block;font-size:19px;line-height:1.35}
+nav button.on{color:var(--accent)}
+.toast{
+  position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + var(--safe-b));
+  background:var(--text-primary);color:var(--surface-1);padding:10px 18px;border-radius:999px;
+  font-size:13px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .22s;z-index:40;
+}
+.toast.on{opacity:1}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="h-row">
+    <div class="h-title">KIHON</div>
+    <div class="h-sub" id="hdrSub"></div>
+  </div>
+</header>
+
+<main>
+  <!-- ========== 今日 ========== -->
+  <section class="view on" id="v-today">
+    <div class="card" id="todayHead"></div>
+    <div id="sessionBody"></div>
+  </section>
+
+  <!-- ========== 記録 ========== -->
+  <section class="view" id="v-record">
+    <div class="card">
+      <h2>今日の記録<span class="sub">全部埋めなくていい</span></h2>
+      <div class="grid2">
+        <label class="f"><span>体重 (kg)</span><input type="number" step="0.1" inputmode="decimal" id="m-weight"></label>
+        <label class="f"><span>睡眠 (時間)</span><input type="number" step="0.5" inputmode="decimal" id="m-sleep"></label>
+      </div>
+      <div class="sec-label">周囲径 — 週1回、起床直後に</div>
+      <div class="grid2">
+        <label class="f"><span>ウエスト (cm)</span><input type="number" step="0.1" inputmode="decimal" id="m-waist"></label>
+        <label class="f"><span>太もも (cm)</span><input type="number" step="0.1" inputmode="decimal" id="m-thigh"></label>
+        <label class="f"><span>上腕 (cm)</span><input type="number" step="0.1" inputmode="decimal" id="m-arm"></label>
+        <label class="f"><span>ヒップ (cm)</span><input type="number" step="0.1" inputmode="decimal" id="m-hip"></label>
+      </div>
+      <button class="btn" id="saveMetrics">記録する</button>
+    </div>
+
+    <div class="card">
+      <h2>体重<span class="sub">7日移動平均。日々の点は薄く</span></h2>
+      <div class="readout" id="ro-weight"></div>
+      <svg class="chart" id="ch-weight"></svg>
+      <button class="btn-ghost" data-table="tbl-weight" style="margin-top:8px">数字で見る</button>
+      <div class="tblwrap" id="tbl-weight"></div>
+      <p class="muted" id="weightNote"></p>
+    </div>
+
+    <div class="card">
+      <h2>周囲径<span class="sub">こちらが主KPI</span></h2>
+      <div class="readout" id="ro-girth"></div>
+      <div id="girthPanels"></div>
+      <button class="btn-ghost" data-table="tbl-girth" style="margin-top:8px">数字で見る</button>
+      <div class="tblwrap" id="tbl-girth"></div>
+    </div>
+
+    <div class="card">
+      <h2>動作テスト<span class="sub">月1回でいい</span></h2>
+      <div id="testHistory"></div>
+      <button class="btn-ghost" id="toggleTest" style="margin-top:10px">テストを記録する</button>
+      <div id="testPanel" style="display:none">
+        <div id="testForm" style="margin-top:12px"></div>
+        <button class="btn" id="saveTest">この内容で記録</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== 伴走 ========== -->
+  <section class="view" id="v-coach">
+    <div class="card" id="coachSummary"></div>
+    <div class="card">
+      <h2>週の積み上げ<span class="sub">直近8週</span></h2>
+      <svg class="chart" id="ch-weeks"></svg>
+    </div>
+    <div class="card" id="coachPlan"></div>
+    <div class="card" id="coachLog"></div>
+  </section>
+
+  <!-- ========== 設定 ========== -->
+  <section class="view" id="v-settings">
+    <div class="card">
+      <h2>基本</h2>
+      <label class="f"><span>開始日</span><input type="date" id="s-start"></label>
+      <label class="f"><span>週の目標回数</span><input type="number" min="1" max="6" step="1" inputmode="numeric" id="s-target"></label>
+      <label class="f"><span>身長 (cm・任意)</span><input type="number" step="0.1" inputmode="decimal" id="s-height"></label>
+      <button class="btn" id="saveSettings">保存</button>
+    </div>
+    <div class="card">
+      <h2>データ<span class="sub">献立アプリとの連携用</span></h2>
+      <p class="muted">日付をキーにした JSON。<code>days["2026-08-16"]</code> の下に <code>metrics</code> / <code>session</code> / <code>test</code> が入ります。食事アプリは同じ日付キーの下に <code>meals</code> を足すだけで連携できます。</p>
+      <div class="row" style="margin-top:10px">
+        <button class="btn-ghost" id="exportBtn">書き出す</button>
+        <button class="btn-ghost" id="importBtn">読み込む</button>
+      </div>
+      <input type="file" id="importFile" accept="application/json,.json" style="display:none">
+    </div>
+    <div class="card">
+      <h2>やり直し</h2>
+      <p class="muted">プログラムだけを1週目に戻します（記録は消えません）。</p>
+      <button class="btn-ghost" id="resetProgram" style="margin-top:8px">プログラムを最初から</button>
+      <p class="muted" style="margin-top:16px">すべての記録を消します。取り消せません。</p>
+      <button class="btn-danger" id="wipe" style="margin-top:8px">全データを消去</button>
+    </div>
+    <p class="muted" style="text-align:center;padding:8px 12px 0">
+      医療行為ではありません。痛み・持病のある部位は医療機関の判断を優先してください。
+    </p>
+  </section>
+</main>
+
+<nav>
+  <button data-view="today" class="on"><span class="ic">●</span>今日</button>
+  <button data-view="record"><span class="ic">▲</span>記録</button>
+  <button data-view="coach"><span class="ic">■</span>伴走</button>
+  <button data-view="settings"><span class="ic">◇</span>設定</button>
+</nav>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+/* =========================================================================
+   KIHON — 動ける身体づくり
+   保存先: localStorage['kihon.v1'] / 外部通信なし / 依存ライブラリなし
+   ========================================================================= */
+
+const KEY = 'kihon.v1';
+
+/* ---------- 種目ライブラリ ---------------------------------------------
+   kind: 'load'  … 重量を伸ばす (unit kg)
+         'reps'  … 回数を伸ばす (自重・バンド)
+         'time'  … 秒を伸ばす
+         'fixed' … 伸ばさない (有酸素・モビリティ)
+   inc: 1回の増分 / start: 初期値                                          */
+const EX = {
+  mob:      {n:'モビリティ 5分', kind:'fixed', cue:'キャット&カウ10 / ヒップサークル各10 / 胸椎回旋各8 / 足首ドリル各10。これは省かない。'},
+  walk10:   {n:'トレッドミル 傾斜歩行', kind:'fixed', cue:'傾斜6〜8%・鼻呼吸できるペースで10分。息が上がるなら速度を落とす。'},
+  walk12:   {n:'トレッドミル 傾斜歩行', kind:'fixed', cue:'傾斜8%・12分。会話できる強度を守る。'},
+  interval: {n:'トレッドミル インターバル', kind:'fixed', cue:'速歩1分 / 歩行2分 を5本。走らない。息が整いきる前に次へ。'},
+
+  goblet:   {n:'ゴブレットスクワット', kind:'load', unit:'kg', inc:2,   start:6,  cue:'ダンベルを胸に抱えてしゃがむ。踵を浮かせない。深さは痛みの手前まで。'},
+  dbbench:  {n:'ダンベルベンチプレス', kind:'load', unit:'kg', inc:1,   start:4,  cue:'肩甲骨を寄せてベンチに置く。肘は45度。'},
+  bandrow:  {n:'バンドロウ (VRTX)',   kind:'reps', inc:2,   start:12, cue:'肩をすくめない。肘で引いて、みぞおちの横で止める。'},
+  deadbug:  {n:'デッドバグ',          kind:'reps', inc:2,   start:6,  cue:'腰を床に押しつけたまま。反ったら回数を減らす。左右で1回。'},
+  dbrdl:    {n:'ダンベル ルーマニアンデッドリフト', kind:'load', unit:'kg', inc:2, start:6, cue:'膝は軽く曲げたまま。股関節を後ろへ。もも裏が張るところで止める。'},
+  slidelun: {n:'スライドボード リバースランジ', kind:'reps', inc:1, start:6, cue:'後ろ足を滑らせて沈む。上体は立てる。左右で1回。'},
+  pullapart:{n:'バンド プルアパート',  kind:'reps', inc:3,   start:15, cue:'肩を下げたまま真横に開く。猫背の解毒剤。'},
+  sideplnk: {n:'サイドプランク',       kind:'time', inc:5,   start:20, cue:'骨盤を前後させない。左右それぞれ。'},
+
+  bbsquat:  {n:'バーベル スクワット',  kind:'load', unit:'kg', inc:2.5, start:20, cue:'バーのみ20kgから。フォームが崩れる手前で必ず止める。'},
+  bbrdl:    {n:'バーベル ルーマニアンデッドリフト', kind:'load', unit:'kg', inc:2.5, start:25, cue:'背中を丸めない。バーは脚に触れるくらい近く。'},
+  split:    {n:'スプリットスクワット', kind:'load', unit:'kg', inc:2,   start:0,  cue:'まず自重(0kg)から。前脚に乗る。左右それぞれ。'},
+  dbpress:  {n:'ダンベル ショルダープレス', kind:'load', unit:'kg', inc:1, start:4, cue:'肋骨を締めて、腰を反らずに真上へ。'},
+  dbrow:    {n:'ワンハンド ダンベルロウ', kind:'load', unit:'kg', inc:2, start:8, cue:'ベンチに手をつく。背中は床と平行。左右それぞれ。'},
+  hipthr:   {n:'ヒップスラスト',       kind:'load', unit:'kg', inc:2.5, start:20, cue:'ベンチに肩を乗せる。頂点で尻を締めて1秒止める。'},
+  facepull: {n:'バンド フェイスプル',  kind:'reps', inc:3,   start:15, cue:'顔の高さへ引いて、手を外に開く。肩の健康維持。'},
+  carry:    {n:'ファーマーズキャリー', kind:'time', inc:5,   start:30, cue:'ダンベルを両手に。肩を下げ、体幹を固めて歩く。'},
+  wbcarry:  {n:'ウォーターバッグ ショルダーキャリー', kind:'time', inc:5, start:30, cue:'水が動く。それに耐えるのが目的。左右で担ぎ替える。'},
+  wbclean:  {n:'ウォーターバッグ クリーン&プレス', kind:'reps', inc:1, start:5, cue:'床から肩へ、肩から頭上へ。脚で上げる。これが「動ける身体」の中心種目。'},
+  bodysaw:  {n:'スライドボード ボディソー', kind:'reps', inc:1, start:8, cue:'前腕支持で前後に滑る。腰が落ちたら終了。'},
+  lateral:  {n:'スライドボード ラテラル', kind:'time', inc:5, start:30, cue:'横方向へ滑る。膝を内に入れない。'},
+  chop:     {n:'バンド チョップ',      kind:'reps', inc:2,   start:10, cue:'斜め上から斜め下へ。腕でなく体幹の回旋で振る。左右それぞれ。'},
+  sldl:     {n:'片脚デッドリフト',     kind:'load', unit:'kg', inc:2, start:4, cue:'軸脚1本で前傾。ぐらつくのが正常。左右それぞれ。'},
+};
+
+/* ---------- プログラム ------------------------------------------------- */
+const PHASE1 = [
+  {id:'p1a', label:'再起動 A', min:25, items:[
+    {ex:'mob'}, {ex:'goblet',sets:3,reps:8}, {ex:'dbbench',sets:3,reps:8},
+    {ex:'bandrow',sets:3,reps:12}, {ex:'deadbug',sets:3,reps:6}, {ex:'walk10'},
+  ]},
+  {id:'p1b', label:'再起動 B', min:25, items:[
+    {ex:'mob'}, {ex:'dbrdl',sets:3,reps:8}, {ex:'slidelun',sets:3,reps:6},
+    {ex:'pullapart',sets:3,reps:15}, {ex:'sideplnk',sets:3,reps:20}, {ex:'walk10'},
+  ]},
+];
+const PHASE2 = [
+  {id:'p2a', label:'土台 A｜下半身と押す', min:35, items:[
+    {ex:'mob'}, {ex:'bbsquat',sets:3,reps:6}, {ex:'dbbench',sets:3,reps:8},
+    {ex:'split',sets:2,reps:8}, {ex:'dbpress',sets:2,reps:10},
+    {ex:'carry',sets:3,reps:30}, {ex:'interval'},
+  ]},
+  {id:'p2b', label:'土台 B｜引くと後面', min:35, items:[
+    {ex:'mob'}, {ex:'bbrdl',sets:3,reps:6}, {ex:'dbrow',sets:3,reps:10},
+    {ex:'hipthr',sets:3,reps:10}, {ex:'facepull',sets:3,reps:15},
+    {ex:'bodysaw',sets:3,reps:8}, {ex:'walk10'},
+  ]},
+  {id:'p2c', label:'土台 C｜動ける身体', min:35, items:[
+    {ex:'mob'}, {ex:'wbclean',sets:4,reps:5}, {ex:'goblet',sets:3,reps:10},
+    {ex:'sldl',sets:3,reps:6}, {ex:'lateral',sets:3,reps:30},
+    {ex:'chop',sets:3,reps:10}, {ex:'wbcarry',sets:3,reps:30}, {ex:'walk12'},
+  ]},
+];
+
+const TESTS = [
+  {id:'balance', n:'閉眼片脚立ち',  unit:'秒',  up:true,  cue:'目を閉じて片脚。左右の短いほうを記録'},
+  {id:'squat',   n:'ディープスクワット保持', unit:'秒', up:true, cue:'踵をつけたまましゃがんで保持'},
+  {id:'plank',   n:'プランク',      unit:'秒',  up:true,  cue:'腰が落ちるまで'},
+  {id:'reach',   n:'座位体前屈',    unit:'cm',  up:true,  cue:'つま先を0。届かなければマイナス'},
+  {id:'wall',    n:'壁ドリル',      unit:'段階', up:true, cue:'踵・尻・背・後頭部を壁につけて万歳できるか 1〜5'},
+  {id:'hrr',     n:'心拍回復',      unit:'bpm', up:true,  cue:'速歩3分の直後と1分後の差。大きいほど良い'},
+];
+
+const RPE = [
+  {v:6,  n:'楽だった'},
+  {v:7,  n:'ちょうど'},
+  {v:9,  n:'きつい'},
+  {v:10, n:'上がらなかった'},
+];
+const CONDITIONS = [
+  {v:'good', n:'よく眠れた'},
+  {v:'ok',   n:'ふつう'},
+  {v:'bad',  n:'だるい'},
+];
+
+/* ---------- 状態 -------------------------------------------------------- */
+let S = load();
+let draft = null;      // 進行中セッション
+let view = 'today';
+
+function blank(){
+  return {app:'kihon', schema:1,
+    profile:{startDate:todayKey(), heightCm:null},
+    settings:{target:2},
+    days:{}, progress:{}, rotation:{p1:0,p2:0}};
+}
+function load(){
+  try{
+    const raw = localStorage.getItem(KEY);
+    if(!raw) return blank();
+    const o = JSON.parse(raw);
+    if(!o || typeof o !== 'object' || !o.days) return blank();
+    const b = blank();
+    return Object.assign(b, o, {
+      profile:Object.assign(b.profile, o.profile||{}),
+      settings:Object.assign(b.settings, o.settings||{}),
+      rotation:Object.assign(b.rotation, o.rotation||{}),
+    });
+  }catch(e){ console.warn('load failed', e); return blank(); }
+}
+function save(){
+  try{ localStorage.setItem(KEY, JSON.stringify(S)); }
+  catch(e){ toast('保存できませんでした'); console.error(e); }
+}
+
+/* ---------- 日付ユーティリティ ------------------------------------------ */
+function todayKey(d){
+  const t = d ? new Date(d) : new Date();
+  return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0');
+}
+function parseKey(k){ const [y,m,d]=k.split('-').map(Number); return new Date(y, m-1, d); }
+function daysBetween(a,b){ return Math.round((parseKey(b)-parseKey(a))/86400000); }
+function fmtMD(k){ const d=parseKey(k); return (d.getMonth()+1)+'/'+d.getDate(); }
+function day(k, make){
+  if(!S.days[k]){ if(!make) return null; S.days[k] = {}; }
+  return S.days[k];
+}
+function weekIndex(){ return Math.floor(Math.max(0, daysBetween(S.profile.startDate, todayKey()))/7) + 1; }
+function phaseOf(w){ return w <= 4 ? 1 : 2; }
+
+/* ---------- プログレッション -------------------------------------------- */
+function targetOf(exId){
+  const e = EX[exId];
+  if(e.kind === 'fixed') return null;
+  const p = S.progress[exId];
+  return p && typeof p.value === 'number' ? p.value : e.start;
+}
+function unitOf(exId){
+  const e = EX[exId];
+  return e.kind==='load' ? 'kg' : e.kind==='time' ? '秒' : '回';
+}
+function fmtVal(exId, v){
+  if(v === null) return '';
+  const s = (Math.round(v*100)/100).toString();
+  return s + unitOf(exId);
+}
+
+/* 1種目の実施結果 → 次回の方針。
+   基準は「その日に実際に扱った値」。手で重さを変えたらそこから伸ばす（保存値には戻さない）。 */
+function grade(exId, plan, logged, rpe, current){
+  const e = EX[exId];
+  if(e.kind==='fixed') return null;
+  const doneSets = logged.filter(s=>s.done);
+  const hit = doneSets.length >= plan.sets && doneSets.every(s=>s.reps >= plan.reps);
+  const base = typeof current === 'number' ? current : ((S.progress[exId]||{}).value ?? e.start);
+  const miss0 = (S.progress[exId]||{}).miss || 0;
+  if(hit && rpe <= 7)  return {dir:'up',   value: base + e.inc, miss:0, why:'規定回数を余裕をもって達成'};
+  if(hit)              return {dir:'keep', value: base,         miss:0, why:'達成。同じ負荷で動作を固める'};
+  const miss = miss0 + 1;
+  if(miss >= 2)        return {dir:'down', value: Math.max(e.start, roundStep(base*0.9, e.inc)), miss:0, why:'2回続けて未達。1割落として立て直す'};
+  return {dir:'keep', value:base, miss, why:'未達。もう一度同じ負荷で'};
+}
+function roundStep(v, inc){ return Math.max(inc, Math.round(v/inc)*inc); }
+
+/* ---------- セッション -------------------------------------------------- */
+function planForToday(){
+  const w = weekIndex(), ph = phaseOf(w);
+  const list = ph===1 ? PHASE1 : PHASE2;
+  const rot = ph===1 ? (S.rotation.p1||0) : (S.rotation.p2||0);
+  return {plan:list[rot % list.length], phase:ph, week:w};
+}
+function lastSessionKey(){
+  const ks = Object.keys(S.days).filter(k=>S.days[k].session).sort();
+  return ks.length ? ks[ks.length-1] : null;
+}
+function sessionsThisWeek(){
+  const now = todayKey();
+  return Object.keys(S.days).filter(k=>S.days[k].session && daysBetween(k, now) < 7 && daysBetween(k, now) >= 0).length;
+}
+
+function startSession(){
+  const {plan, phase, week} = planForToday();
+  draft = {
+    planId: plan.id, phase, week, condition: 'ok',
+    items: plan.items.map(it=>{
+      const e = EX[it.ex];
+      if(e.kind==='fixed') return {ex:it.ex, fixed:true, done:false};
+      /* 重量種目は「重さ」が伸びる。自重・バンド・時間種目は「回数/秒」そのものが伸びるので、
+         プランの固定値ではなく進捗の値を今日の目標にする。 */
+      const load = e.kind === 'load';
+      const reps = load ? it.reps : targetOf(it.ex);
+      return {ex:it.ex, sets:it.sets, reps, value: load ? targetOf(it.ex) : null, rpe:null,
+              logged:Array.from({length:it.sets},()=>({done:false, reps}))};
+    })
+  };
+  renderToday();
+}
+function setsForItem(item){
+  // 「だるい」日はセットを1つ減らす（最低1）
+  return draft.condition==='bad' ? Math.max(1, item.sets-1) : item.sets;
+}
+
+function finishSession(){
+  const k = todayKey();
+  const d = day(k, true);
+  const notes = [];
+  draft.items.forEach(it=>{
+    if(it.fixed) return;
+    const plan = {sets:setsForItem(it), reps:it.reps};
+    const current = EX[it.ex].kind === 'load' ? it.value : it.reps;
+    const g = grade(it.ex, plan, it.logged.slice(0, plan.sets), it.rpe==null ? 8 : it.rpe, current);
+    if(!g) return;
+    // 体調「だるい」の日は負荷を上げない（下げ判定だけ生かす）
+    const next = (draft.condition==='bad' && g.dir==='up')
+      ? {dir:'keep', value:current, miss:0, why:'だるい日の達成。負荷は据え置き'}
+      : g;
+    S.progress[it.ex] = {value: next.value, miss: next.miss, dir: next.dir, why: next.why, at:k};
+    notes.push({ex:it.ex, dir:next.dir});
+  });
+  d.session = {
+    planId: draft.planId, phase: draft.phase, week: draft.week, condition: draft.condition,
+    items: draft.items.filter(i=>!i.fixed).map(i=>({
+      ex:i.ex, value: EX[i.ex].kind==='load' ? i.value : i.reps, targetReps:i.reps, rpe:i.rpe,
+      sets:i.logged.slice(0, setsForItem(i)).filter(s=>s.done).map(s=>({reps:s.reps}))
+    })),
+    warmupDone: draft.items.filter(i=>i.fixed).every(i=>i.done),
+  };
+  if(draft.phase===1) S.rotation.p1 = (S.rotation.p1||0)+1;
+  else                S.rotation.p2 = (S.rotation.p2||0)+1;
+  draft = null;
+  save();
+  toast('お疲れさま。記録しました');
+  renderToday(); renderCoach();
+}
+
+/* =========================================================================
+   描画 — 今日
+   ========================================================================= */
+function renderToday(){
+  const head = document.getElementById('todayHead');
+  const body = document.getElementById('sessionBody');
+  const {plan, phase, week} = planForToday();
+  const done = S.days[todayKey()] && S.days[todayKey()].session;
+  const last = lastSessionKey();
+  const gap = last ? daysBetween(last, todayKey()) : null;
+  document.getElementById('hdrSub').textContent = week + '週目 ・ ' + (phase===1?'再起動':'土台');
+
+  if(done){
+    const p = [...PHASE1,...PHASE2].find(x=>x.id===done.planId);
+    head.innerHTML = '<div class="hero"><b>今日はもう終わっています。</b></div>'
+      + '<p class="muted" style="margin:8px 0 0">' + (p?p.label:'') + '｜'
+      + done.items.reduce((a,i)=>a+i.sets.length,0) + 'セット完了。次は中1〜2日あけて。</p>';
+    body.innerHTML = '';
+    return;
+  }
+
+  if(!draft){
+    let rest = '';
+    if(gap !== null && gap === 0) rest = '';
+    else if(gap !== null && gap < 1) rest = '';
+    head.innerHTML =
+      '<div class="hero">今日は <b>' + plan.label + '</b></div>'
+      + '<p class="muted" style="margin:6px 0 12px">およそ' + plan.min + '分 ・ '
+      + plan.items.length + '種目'
+      + (gap !== null ? ' ・ 前回から' + gap + '日' : ' ・ 初回')
+      + '</p>'
+      + (gap !== null && gap < 1
+          ? '<p class="muted" style="color:var(--warn);margin:-6px 0 12px">今日はもう1本やっています。回復も練習のうち。</p>' : '')
+      + '<button class="btn" id="startBtn">はじめる</button>';
+    document.getElementById('startBtn').onclick = startSession;
+    body.innerHTML = previewCard(plan);
+    return;
+  }
+
+  /* --- セッション進行中 --- */
+  head.innerHTML =
+    '<div class="hero"><b>' + plan.label + '</b></div>'
+    + '<p class="muted" style="margin:6px 0 8px">今日の調子は？</p>'
+    + '<div class="chips" id="condChips">'
+    + CONDITIONS.map(c=>'<button class="chip'+(draft.condition===c.v?' on':'')+'" data-cond="'+c.v+'">'+c.n+'</button>').join('')
+    + '</div>'
+    + (draft.condition==='bad' ? '<p class="muted" style="margin:8px 0 0">セットを1つ減らしました。負荷も上げません。来る日に来ればいい。</p>' : '');
+  head.querySelectorAll('[data-cond]').forEach(b=>b.onclick=()=>{ draft.condition=b.dataset.cond; renderToday(); });
+
+  const card = document.createElement('div');
+  card.className = 'card';
+  draft.items.forEach((it, idx)=>card.appendChild(exCard(it, idx)));
+  body.innerHTML = '';
+  body.appendChild(card);
+
+  const btn = document.createElement('button');
+  btn.id = 'finishBtn';
+  btn.className = 'btn'; btn.textContent = '今日を終える';
+  btn.onclick = finishSession;
+  body.appendChild(btn);
+  updateFinishBtn();
+  const cancel = document.createElement('button');
+  cancel.className = 'btn-ghost'; cancel.style.marginTop = '8px';
+  cancel.textContent = 'やめる（記録しない）';
+  cancel.onclick = ()=>{ draft = null; renderToday(); };
+  body.appendChild(cancel);
+}
+
+function previewCard(plan){
+  let h = '<div class="card"><h2>内容</h2>';
+  plan.items.forEach(it=>{
+    const e = EX[it.ex];
+    const t = e.kind==='fixed' ? ''
+      : e.kind==='load' ? fmtVal(it.ex, targetOf(it.ex)) + ' × ' + it.reps + '回 × ' + it.sets + 'セット'
+      : fmtVal(it.ex, targetOf(it.ex)) + ' × ' + it.sets + 'セット';
+    h += '<div class="plan-row"><div class="nm">'+esc(e.n)+'</div><div class="vl">'+esc(t)+'</div></div>';
+  });
+  return h + '</div>';
+}
+
+function exCard(it, idx){
+  const e = EX[it.ex];
+  const wrap = document.createElement('div');
+  wrap.className = 'ex';
+
+  if(it.fixed){
+    wrap.innerHTML = '<div class="ex-head"><div class="ex-name">'+esc(e.n)+'</div></div>'
+      + '<div class="ex-cue">'+esc(e.cue)+'</div>'
+      + '<div class="sets"><button class="set" data-fx="'+idx+'">'
+      + '<span class="lbl"></span><span class="mk"></span></button></div>';
+    const b = wrap.querySelector('[data-fx]');
+    const paint = ()=>{
+      b.classList.toggle('done', it.done);
+      b.querySelector('.lbl').textContent = it.done ? 'できた' : 'タップ';
+      b.querySelector('.mk').textContent  = it.done ? '✓' : '—';
+    };
+    b.onclick = ()=>{ it.done = !it.done; paint(); updateFinishBtn(); };
+    paint();
+    return wrap;
+  }
+
+  const n = setsForItem(it);
+  const unit = e.kind==='time' ? '秒' : '回';
+  wrap.innerHTML =
+    '<div class="ex-head"><div class="ex-name">'+esc(e.n)+'</div>'
+      + '<button class="ex-target" data-edit="1">'+ it.reps + unit +' × '+ n +'セット ✎</button></div>'
+    + '<div class="ex-cue">'+esc(e.cue)+'</div>'
+    + (e.kind==='load'
+        ? '<div class="load"><button class="step" data-d="-1">−</button>'
+          + '<div class="val">'+ fmtVal(it.ex, it.value) +'</div>'
+          + '<button class="step" data-d="1">＋</button>'
+          + '<div class="muted" style="margin-left:4px">重さ</div></div>'
+        : '')
+    + '<div class="sets">'
+      + Array.from({length:n},(_,i)=>{
+          const s = it.logged[i];
+          return '<button class="set'+(s.done?' done':'')+'" data-s="'+i+'">'
+               + '<span class="lbl">'+(i+1)+'セット目</span>'+ s.reps + '</button>';
+        }).join('')
+    + '</div>'
+    + '<div class="mini-edit'+(it.editing?' on':'')+'" >'
+      + Array.from({length:n},(_,i)=>
+          '<span class="muted">'+(i+1)+':</span><input type="number" inputmode="numeric" data-r="'+i+'" value="'+it.logged[i].reps+'">').join('')
+    + '</div>'
+    + '<div class="rpe"><div class="chips">'
+      + RPE.map(r=>'<button class="chip sm'+(it.rpe===r.v?' on':'')+'" data-rpe="'+r.v+'">'+r.n+'</button>').join('')
+    + '</div></div>';
+
+  /* タップは該当箇所だけ更新する（全再描画するとフォーカスと位置が飛ぶ） */
+  const valEl = wrap.querySelector('.val');
+  wrap.querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>{
+    const d = Number(b.dataset.d);
+    it.value = Math.max(0, Math.round((it.value + d*e.inc)*100)/100);
+    if(valEl) valEl.textContent = fmtVal(it.ex, it.value);
+  });
+  wrap.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{
+    const s = it.logged[Number(b.dataset.s)];
+    s.done = !s.done;
+    b.classList.toggle('done', s.done);
+    updateFinishBtn();
+  });
+  const rpeBtns = wrap.querySelectorAll('[data-rpe]');
+  rpeBtns.forEach(b=>b.onclick=()=>{
+    it.rpe = Number(b.dataset.rpe);
+    rpeBtns.forEach(o=>o.classList.toggle('on', Number(o.dataset.rpe)===it.rpe));
+  });
+  const ed = wrap.querySelector('[data-edit]');
+  const mini = wrap.querySelector('.mini-edit');
+  if(ed) ed.onclick = ()=>{ it.editing = !it.editing; mini.classList.toggle('on', it.editing); };
+  wrap.querySelectorAll('[data-r]').forEach(inp=>inp.onchange=()=>{
+    const v = Number(inp.value);
+    if(!Number.isFinite(v) || v < 0){ inp.value = it.logged[Number(inp.dataset.r)].reps; return; }
+    const i = Number(inp.dataset.r);
+    it.logged[i].reps = v;
+    const chip = wrap.querySelector('[data-s="'+i+'"]');
+    if(chip) chip.lastChild.textContent = v;
+  });
+  return wrap;
+}
+
+/* 1セット以上入っていれば「今日を終える」を押せる */
+function updateFinishBtn(){
+  const btn = document.getElementById('finishBtn');
+  if(!btn || !draft) return;
+  btn.disabled = !draft.items.some(i=>i.fixed ? i.done : i.logged.some(s=>s.done));
+}
+
+/* =========================================================================
+   描画 — 記録
+   ========================================================================= */
+function renderRecord(){
+  const d = S.days[todayKey()] || {};
+  const m = d.metrics || {};
+  setVal('m-weight', m.weightKg); setVal('m-sleep', m.sleepH);
+  setVal('m-waist', m.waist); setVal('m-thigh', m.thigh);
+  setVal('m-arm', m.arm); setVal('m-hip', m.hip);
+
+  drawWeight(); drawGirth(); renderTestForm(); renderTestHistory();
+}
+function setVal(id, v){ const el=document.getElementById(id); if(el) el.value = (v==null?'':v); }
+function numOrNull(id){ const v = document.getElementById(id).value.trim(); if(v==='') return null; const n=Number(v); return Number.isFinite(n)?n:null; }
+
+function saveMetrics(){
+  const k = todayKey();
+  const d = day(k, true);
+  d.metrics = Object.assign(d.metrics||{}, {
+    weightKg:numOrNull('m-weight'), sleepH:numOrNull('m-sleep'),
+    waist:numOrNull('m-waist'), thigh:numOrNull('m-thigh'),
+    arm:numOrNull('m-arm'), hip:numOrNull('m-hip'),
+  });
+  save(); toast('記録しました'); drawWeight(); drawGirth(); renderCoach();
+}
+
+function seriesOf(field){
+  return Object.keys(S.days).sort()
+    .map(k=>({k, v:(S.days[k].metrics||{})[field]}))
+    .filter(p=>typeof p.v === 'number');
+}
+function movingAvg(pts, win){
+  return pts.map(p=>{
+    const w = pts.filter(q=>{ const g = daysBetween(q.k, p.k); return g >= 0 && g < win; });
+    return {k:p.k, v: w.reduce((a,q)=>a+q.v,0)/w.length};
+  });
+}
+
+function drawWeight(){
+  const raw = seriesOf('weightKg');
+  const note = document.getElementById('weightNote');
+  if(raw.length < 2){
+    emptyChart('ch-weight', raw.length ? '2日分たまると平均線を引きます' : 'まだ記録がありません');
+    document.getElementById('ro-weight').textContent = '';
+    note.textContent = '';
+    fillTable('tbl-weight', ['日付','体重'], raw.map(p=>[fmtMD(p.k), p.v.toFixed(1)+'kg']));
+    return;
+  }
+  const ma = movingAvg(raw, 7);
+  lineChart('ch-weight', {
+    series:[{name:'7日移動平均', color:'var(--series-1)', pts:ma, label:v=>v.toFixed(1)}],
+    scatter: raw,
+    fmt:v=>v.toFixed(1)+'kg',
+    readout:'ro-weight',
+  });
+  const first = ma[0].v, last = ma[ma.length-1].v, diff = last-first;
+  note.textContent = '平均 ' + first.toFixed(1) + ' → ' + last.toFixed(1) + 'kg（'
+    + (diff>=0?'+':'') + diff.toFixed(1) + 'kg）。'
+    + (Math.abs(diff) < 0.8 ? '筋が乗れば体重は動きません。周囲径のほうを見てください。' : '');
+  fillTable('tbl-weight', ['日付','体重','7日平均'],
+    raw.map((p,i)=>[fmtMD(p.k), p.v.toFixed(1), ma[i].v.toFixed(1)]));
+}
+
+/* up: 増えるのが目的か。腹は減らす／もも・腕は増やす。同じ「+0.4」でも意味が逆になる */
+const GIRTH = [
+  {f:'waist', n:'ウエスト', c:'var(--series-1)', up:false},
+  {f:'thigh', n:'太もも',   c:'var(--series-2)', up:true},
+  {f:'arm',   n:'上腕',     c:'var(--series-3)', up:true},
+];
+/* 3部位はcmの桁が違う（腹86・もも54・腕28）。1つの軸に載せると
+   どれも平坦な直線に見えるだけなので、部位ごとに軸を持たせて縦に並べる。 */
+function drawGirth(){
+  const box = document.getElementById('girthPanels');
+  box.innerHTML = '';
+  const panels = GIRTH.map(g=>({name:g.n, color:g.c, field:g.f, up:g.up, pts:seriesOf(g.f)}));
+  const total = panels.reduce((a,p)=>a+p.pts.length,0);
+  document.getElementById('ro-girth').textContent = '';
+
+  if(panels.every(p=>p.pts.length < 2)){
+    const d = document.createElement('div');
+    d.className = 'empty';
+    d.textContent = total ? '2回目を測ると線になります。' : 'ウエスト・太もも・上腕を週1回。ここが主KPIです。';
+    box.appendChild(d);
+    fillTable('tbl-girth', ['日付'].concat(GIRTH.map(g=>g.n)), girthRows());
+    return;
+  }
+
+  panels.forEach(p=>{
+    const head = document.createElement('div');
+    head.className = 'panel-head';
+    const first = p.pts[0], last = p.pts[p.pts.length-1];
+    const diff = p.pts.length >= 2 ? last.v - first.v : null;
+    const gain = diff===null ? null : (p.up ? diff > 0 : diff < 0);
+    head.innerHTML = '<i style="background:'+p.color+'"></i><b>'+esc(p.name)+'</b>'
+      + (p.pts.length ? '<span class="d">' + last.v.toFixed(1) + 'cm'
+          + (diff!==null ? '　<em style="color:'+(gain?'var(--good)':'var(--text-muted)')+'">'
+              + (diff>0?'+':'') + diff.toFixed(1) + '</em>' : '') + '</span>' : '');
+    box.appendChild(head);
+    const svg = el('svg', {class:'chart'});
+    box.appendChild(svg);
+    if(p.pts.length >= 2){
+      lineChart(svg, {
+        series:[{name:p.name, color:p.color, pts:p.pts, label:v=>v.toFixed(1)}],
+        fmt:v=>v.toFixed(1)+'cm', readout:'ro-girth', H:92, ticks:2,
+      });
+    }else{
+      emptyChart(svg, p.pts.length ? 'あと1回でグラフになります' : 'まだ記録がありません', 60);
+    }
+  });
+  fillTable('tbl-girth', ['日付'].concat(GIRTH.map(g=>g.n)), girthRows());
+}
+function girthRows(){
+  const keys = Object.keys(S.days).sort().filter(k=>{
+    const m = S.days[k].metrics||{};
+    return GIRTH.some(g=>typeof m[g.f]==='number');
+  });
+  return keys.map(k=>{
+    const m = S.days[k].metrics||{};
+    return [fmtMD(k)].concat(GIRTH.map(g=>typeof m[g.f]==='number' ? m[g.f].toFixed(1) : '—'));
+  });
+}
+
+/* --- 動作テスト --- */
+function renderTestForm(){
+  document.getElementById('testForm').innerHTML = TESTS.map(t=>
+    '<label class="f"><span>'+esc(t.n)+'（'+t.unit+'）— '+esc(t.cue)+'</span>'
+    + '<input type="number" step="0.1" inputmode="decimal" id="t-'+t.id+'"></label>').join('');
+}
+function saveTest(){
+  const res = {};
+  let any = false;
+  TESTS.forEach(t=>{ const v = numOrNull('t-'+t.id); if(v!==null){ res[t.id]=v; any=true; } });
+  if(!any){ toast('1つ以上入れてください'); return; }
+  const d = day(todayKey(), true);
+  d.test = res; save();
+  TESTS.forEach(t=>{ const el=document.getElementById('t-'+t.id); if(el) el.value=''; });
+  document.getElementById('testPanel').style.display = 'none';
+  document.getElementById('toggleTest').textContent = 'テストを記録する';
+  toast('テストを記録しました'); renderTestHistory(); renderCoach();
+}
+function renderTestHistory(){
+  const keys = Object.keys(S.days).filter(k=>S.days[k].test).sort();
+  const el = document.getElementById('testHistory');
+  if(!keys.length){ el.innerHTML = '<p class="muted" style="margin-top:12px">最初の1回が基準になります。今日やっておくと、以後ずっと比べられます。</p>'; return; }
+  const last = S.days[keys[keys.length-1]].test;
+  const prev = keys.length>1 ? S.days[keys[keys.length-2]].test : null;
+  el.innerHTML = '<div class="sec-label">最新 '+fmtMD(keys[keys.length-1])+(prev?'（前回 '+fmtMD(keys[keys.length-2])+' との差）':'')+'</div>'
+    + '<table><tbody>' + TESTS.filter(t=>t.id in last).map(t=>{
+        const v = last[t.id];
+        let dl = '—';
+        if(prev && t.id in prev){
+          const df = v - prev[t.id];
+          const col = df > 0 ? 'var(--good)' : df < 0 ? 'var(--warn)' : 'var(--text-muted)';
+          dl = '<span style="color:'+col+'">'+(df>0?'+':'')+ (Math.round(df*10)/10) +'</span>';
+        }
+        return '<tr><td>'+esc(t.n)+'</td><td>'+v+t.unit+'</td><td>'+dl+'</td></tr>';
+      }).join('') + '</tbody></table>';
+}
+
+/* =========================================================================
+   描画 — 伴走
+   ========================================================================= */
+function renderCoach(){
+  const w = weekIndex(), ph = phaseOf(w);
+  const doneWeek = sessionsThisWeek();
+  const target = S.settings.target || 2;
+  const total = Object.keys(S.days).filter(k=>S.days[k].session).length;
+
+  /* サマリ */
+  const sum = document.getElementById('coachSummary');
+  const streak = weekBuckets(8);
+  sum.innerHTML =
+    '<div class="hero">今週 <b>'+doneWeek+'</b> / '+target+' 回</div>'
+    + '<div class="streak">'+ streak.map(b=>'<i class="'+(b.count>0?'hit':'')+'"></i>').join('') +'</div>'
+    + '<p class="muted" style="margin:10px 0 0">'+ esc(coachLine(w, ph, doneWeek, target, total)) +'</p>';
+
+  /* 週の棒グラフ */
+  drawWeeks(streak);
+
+  /* 次回の負荷方針 */
+  const plan = document.getElementById('coachPlan');
+  const ids = Object.keys(S.progress);
+  if(!ids.length){
+    plan.innerHTML = '<h2>次回の負荷</h2><p class="muted">1回終えると、種目ごとに次の負荷が決まります。</p>';
+  }else{
+    plan.innerHTML = '<h2>次回の負荷<span class="sub">記録から自動で決めています</span></h2>'
+      + ids.filter(id=>EX[id]).sort((a,b)=>(S.progress[b].at||'').localeCompare(S.progress[a].at||'')).map(id=>{
+        const p = S.progress[id];
+        const tag = p.dir==='up' ? '<span class="tag up">上げる</span>'
+                  : p.dir==='down' ? '<span class="tag down">落とす</span>'
+                  : '<span class="tag keep">据え置き</span>';
+        return '<div class="plan-row"><div class="nm">'+esc(EX[id].n)
+             + '<div class="muted" style="font-size:11.5px">'+esc(p.why||'')+'</div></div>'
+             + '<div class="vl">'+ fmtVal(id, p.value) +'</div>'+ tag +'</div>';
+      }).join('');
+  }
+
+  /* 直近の実施ログ */
+  const log = document.getElementById('coachLog');
+  const keys = Object.keys(S.days).filter(k=>S.days[k].session).sort().reverse().slice(0,10);
+  log.innerHTML = '<h2>直近の記録</h2>' + (keys.length ? keys.map(k=>{
+    const s = S.days[k].session;
+    const p = [...PHASE1,...PHASE2].find(x=>x.id===s.planId);
+    const sets = s.items.reduce((a,i)=>a+i.sets.length,0);
+    const cond = (CONDITIONS.find(c=>c.v===s.condition)||{}).n||'';
+    return '<div class="plan-row"><div class="nm">'+fmtMD(k)+'　'+esc(p?p.label:s.planId)+'</div>'
+         + '<div class="vl">'+sets+'セット・'+esc(cond)+'</div></div>';
+  }).join('') : '<p class="muted">まだありません。</p>');
+}
+
+function weekBuckets(n){
+  const out = [];
+  const now = todayKey();
+  for(let i=n-1; i>=0; i--){
+    const count = Object.keys(S.days).filter(k=>{
+      if(!S.days[k].session) return false;
+      const g = daysBetween(k, now);
+      return g >= i*7 && g < (i+1)*7;
+    }).length;
+    out.push({i, count});
+  }
+  return out;
+}
+
+function coachLine(w, ph, doneWeek, target, total){
+  if(total === 0) return '最初の1回が、いちばん重い1回です。25分だけ。';
+  if(ph===1 && w<=4){
+    if(doneWeek >= target) return w+'週目、今週のぶんは終わっています。ここで増やさないのが4週目まで残るコツです。';
+    return w+'週目。再起動の期間は、強度より「また来ること」だけを見ています。';
+  }
+  if(w===5) return '今週からバーベルが入ります。重さは上げず、まず動きを覚える週。';
+  if(doneWeek >= target) return '今週のぶんは終わり。回復も練習のうちです。';
+  if(doneWeek === 0) return '今週はまだ0回。1種目だけでも触っておくと、次が軽くなります。';
+  return 'あと'+(target-doneWeek)+'回。積み上がっています。';
+}
+
+/* =========================================================================
+   チャート（インラインSVG・依存なし）
+   ========================================================================= */
+const NS = 'http://www.w3.org/2000/svg';
+function el(tag, attrs){
+  const n = document.createElementNS(NS, tag);
+  for(const k in attrs) n.setAttribute(k, attrs[k]);
+  return n;
+}
+function node(t){ return typeof t === 'string' ? document.getElementById(t) : t; }
+
+function emptyChart(target, msg, h){
+  const svg = node(target);
+  const H = h || 120;
+  svg.innerHTML = '';
+  svg.setAttribute('viewBox','0 0 320 '+H);
+  svg.style.height = H+'px';
+  const t = el('text',{x:160,y:H/2+4,'text-anchor':'middle','font-size':12,fill:'var(--text-muted)'});
+  t.textContent = msg;
+  svg.appendChild(t);
+}
+
+/* 折れ線：series[{name,color,pts:[{k,v}],label}] / scatter:[{k,v}] 生データ
+   目盛りは左、直接ラベルは右。同じ側に置くと端の値と重なって読めなくなる。 */
+function lineChart(target, opt){
+  const svg = node(target);
+  svg.innerHTML = '';
+  const W = 320, H = opt.H || 170, L = 34, R = 46, T = 12, B = 20;
+  const ticks = opt.ticks === 2 ? [0,1] : [0,0.5,1];
+  svg.setAttribute('viewBox', '0 0 '+W+' '+H);
+  svg.style.height = H + 'px';
+
+  const all = opt.series.flatMap(s=>s.pts).concat(opt.scatter||[]);
+  const keys = [...new Set(all.map(p=>p.k))].sort();
+  const x0 = parseKey(keys[0]), x1 = parseKey(keys[keys.length-1]);
+  const span = Math.max(1, (x1-x0)/86400000);
+  let lo = Math.min(...all.map(p=>p.v)), hi = Math.max(...all.map(p=>p.v));
+  const pad = Math.max((hi-lo)*0.18, Math.abs(hi)*0.01, 0.5);
+  lo -= pad; hi += pad;
+
+  const X = k => L + ((parseKey(k)-x0)/86400000/span) * (W-L-R);
+  const Y = v => T + (1-(v-lo)/(hi-lo)) * (H-T-B);
+
+  /* グリッド（1px 実線・控えめ）— 目盛りの文字は左の余白に */
+  ticks.forEach(f=>{
+    const y = T + f*(H-T-B);
+    svg.appendChild(el('line',{x1:L,x2:W-R,y1:y,y2:y,stroke:'var(--grid)','stroke-width':1}));
+    const t = el('text',{x:L-6,y:y+3.5,'font-size':10,fill:'var(--text-muted)','text-anchor':'end'});
+    t.textContent = (lo + (1-f)*(hi-lo)).toFixed(1);
+    svg.appendChild(t);
+  });
+  /* 端の日付 */
+  [[keys[0], 'start'], [keys[keys.length-1], 'end']].forEach(([k, anchor], i)=>{
+    if(i===1 && keys.length===1) return;
+    const t = el('text',{x: i? W-R : L, y:H-5,'font-size':10,fill:'var(--text-muted)','text-anchor':anchor});
+    t.textContent = fmtMD(k);
+    svg.appendChild(t);
+  });
+
+  /* 生データの点（薄く） */
+  (opt.scatter||[]).forEach(p=>{
+    svg.appendChild(el('circle',{cx:X(p.k),cy:Y(p.v),r:2.5,fill:'var(--series-1)','fill-opacity':0.22}));
+  });
+
+  /* 線 + 端点 + 直接ラベル */
+  opt.series.forEach(s=>{
+    if(s.pts.length < 2) return;
+    const d = s.pts.map((p,i)=>(i?'L':'M')+X(p.k).toFixed(1)+' '+Y(p.v).toFixed(1)).join(' ');
+    svg.appendChild(el('path',{d, fill:'none', stroke:s.color, 'stroke-width':2,
+      'stroke-linejoin':'round','stroke-linecap':'round'}));
+    const last = s.pts[s.pts.length-1];
+    svg.appendChild(el('circle',{cx:X(last.k),cy:Y(last.v),r:4,fill:s.color,
+      stroke:'var(--surface-1)','stroke-width':2}));
+    const t = el('text',{x:X(last.k)+8, y:Y(last.v)+3.5,'font-size':11,
+      fill:'var(--text-secondary)','font-weight':600});
+    t.textContent = s.label ? s.label(last.v) : last.v;
+    svg.appendChild(t);
+  });
+
+  /* ホバー / タッチ */
+  const hair = el('line',{y1:T,y2:H-B,stroke:'var(--text-muted)','stroke-width':1,opacity:0});
+  svg.appendChild(hair);
+  const ro = opt.readout ? document.getElementById(opt.readout) : null;
+  const hit = el('rect',{x:0,y:0,width:W,height:H,fill:'transparent'});
+  svg.appendChild(hit);
+  function at(evt){
+    const r = svg.getBoundingClientRect();
+    const cx = ((evt.touches ? evt.touches[0].clientX : evt.clientX) - r.left) / r.width * W;
+    let best = keys[0], bd = Infinity;
+    keys.forEach(k=>{ const d = Math.abs(X(k)-cx); if(d<bd){bd=d;best=k;} });
+    hair.setAttribute('x1', X(best)); hair.setAttribute('x2', X(best));
+    hair.setAttribute('opacity', 0.35);
+    if(ro){
+      const parts = opt.series.map(s=>{
+        const p = s.pts.find(q=>q.k===best);
+        return p ? s.name + ' ' + opt.fmt(p.v) : null;
+      }).filter(Boolean);
+      const rawp = (opt.scatter||[]).find(q=>q.k===best);
+      if(rawp) parts.push('実測 ' + opt.fmt(rawp.v));
+      ro.textContent = fmtMD(best) + '　' + parts.join(' ・ ');
+    }
+  }
+  ['mousemove','touchstart','touchmove'].forEach(ev=>svg.addEventListener(ev, at, {passive:true}));
+  ['mouseleave','touchend'].forEach(ev=>svg.addEventListener(ev, ()=>{
+    hair.setAttribute('opacity',0); if(ro) ro.textContent='';
+  }, {passive:true}));
+}
+
+/* 週の実施回数（縦棒） */
+function drawWeeks(buckets){
+  const svg = document.getElementById('ch-weeks');
+  svg.innerHTML = '';
+  const W = 320, H = 120, T = 10, B = 20;
+  svg.setAttribute('viewBox','0 0 '+W+' '+H);
+  svg.style.height = H+'px';
+  const max = Math.max(1, S.settings.target||2, ...buckets.map(b=>b.count));
+  const band = W / buckets.length;
+  const bw = Math.min(24, band - 10);
+  /* 目標ライン */
+  const gy = T + (1-(S.settings.target||2)/max)*(H-T-B);
+  svg.appendChild(el('line',{x1:0,x2:W,y1:gy,y2:gy,stroke:'var(--grid)','stroke-width':1}));
+  const gt = el('text',{x:W-2,y:gy-4,'font-size':10,fill:'var(--text-muted)','text-anchor':'end'});
+  gt.textContent = '目標 '+(S.settings.target||2);
+  svg.appendChild(gt);
+
+  buckets.forEach((b, i)=>{
+    const h = (b.count/max)*(H-T-B);
+    const x = i*band + (band-bw)/2;
+    const y = H-B-h;
+    if(h > 0){
+      svg.appendChild(el('rect',{x, y, width:bw, height:h, rx:4, fill:'var(--series-1)'}));
+      /* 角丸を上端だけに見せるため、底を四角で塗り足す */
+      svg.appendChild(el('rect',{x, y:Math.max(y, H-B-Math.min(h,4)), width:bw, height:Math.min(h,4), fill:'var(--series-1)'}));
+      const t = el('text',{x:x+bw/2, y:y-4,'font-size':10,fill:'var(--text-secondary)','text-anchor':'middle'});
+      t.textContent = b.count;
+      svg.appendChild(t);
+    }
+    const lb = el('text',{x:x+bw/2, y:H-6,'font-size':9.5,fill:'var(--text-muted)','text-anchor':'middle'});
+    lb.textContent = b.i===0 ? '今週' : '-'+b.i;
+    svg.appendChild(lb);
+  });
+  svg.appendChild(el('line',{x1:0,x2:W,y1:H-B,y2:H-B,stroke:'var(--line)','stroke-width':1}));
+}
+
+function fillTable(id, head, rows){
+  const wrap = document.getElementById(id);
+  if(!rows.length){ wrap.innerHTML = '<p class="muted">まだデータがありません。</p>'; return; }
+  wrap.innerHTML = '<table><thead><tr>'+head.map(h=>'<th>'+esc(h)+'</th>').join('')+'</tr></thead>'
+    + '<tbody>'+rows.map(r=>'<tr>'+r.map(c=>'<td>'+esc(String(c))+'</td>').join('')+'</tr>').join('')+'</tbody></table>';
+}
+
+/* =========================================================================
+   設定・入出力
+   ========================================================================= */
+function renderSettings(){
+  document.getElementById('s-start').value = S.profile.startDate;
+  document.getElementById('s-target').value = S.settings.target;
+  document.getElementById('s-height').value = S.profile.heightCm==null ? '' : S.profile.heightCm;
+}
+function exportData(){
+  const out = Object.assign({}, S, {exportedAt:new Date().toISOString()});
+  const blob = new Blob([JSON.stringify(out, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'kihon-' + todayKey() + '.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
+}
+function importData(file){
+  const rd = new FileReader();
+  rd.onload = ()=>{
+    try{
+      const o = JSON.parse(rd.result);
+      if(!o || !o.days) throw new Error('形式が違います');
+      if(!confirm('読み込むと今のデータは置き換わります。よろしいですか？')) return;
+      S = Object.assign(blank(), o);
+      save(); renderAll(); toast('読み込みました');
+    }catch(e){ toast('読み込めませんでした'); console.error(e); }
+  };
+  rd.readAsText(file);
+}
+
+/* =========================================================================
+   共通
+   ========================================================================= */
+function esc(s){ return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+let toastT;
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('on');
+  clearTimeout(toastT); toastT = setTimeout(()=>t.classList.remove('on'), 1900);
+}
+function show(v){
+  view = v;
+  document.querySelectorAll('.view').forEach(s=>s.classList.toggle('on', s.id === 'v-'+v));
+  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on', b.dataset.view===v));
+  if(v==='record') renderRecord();
+  if(v==='coach') renderCoach();
+  if(v==='settings') renderSettings();
+  window.scrollTo(0,0);
+}
+function renderAll(){ renderToday(); renderRecord(); renderCoach(); renderSettings(); }
+
+/* --- 配線 --- */
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>show(b.dataset.view));
+document.querySelectorAll('[data-table]').forEach(b=>b.onclick=()=>{
+  const w = document.getElementById(b.dataset.table);
+  w.classList.toggle('on');
+  b.textContent = w.classList.contains('on') ? '数字を閉じる' : '数字で見る';
+});
+document.getElementById('saveMetrics').onclick = saveMetrics;
+document.getElementById('saveTest').onclick = saveTest;
+document.getElementById('toggleTest').onclick = e=>{
+  const p = document.getElementById('testPanel');
+  const open = p.style.display === 'none';
+  p.style.display = open ? 'block' : 'none';
+  e.currentTarget.textContent = open ? '閉じる' : 'テストを記録する';
+};
+document.getElementById('saveSettings').onclick = ()=>{
+  const sd = document.getElementById('s-start').value;
+  if(sd) S.profile.startDate = sd;
+  const t = Number(document.getElementById('s-target').value);
+  if(Number.isFinite(t) && t>=1 && t<=6) S.settings.target = t;
+  const h = document.getElementById('s-height').value.trim();
+  S.profile.heightCm = h==='' ? null : Number(h);
+  save(); toast('保存しました'); renderAll();
+};
+document.getElementById('exportBtn').onclick = exportData;
+document.getElementById('importBtn').onclick = ()=>document.getElementById('importFile').click();
+document.getElementById('importFile').onchange = e=>{ if(e.target.files[0]) importData(e.target.files[0]); e.target.value=''; };
+document.getElementById('resetProgram').onclick = ()=>{
+  if(!confirm('プログラムを1週目に戻します。記録は残ります。')) return;
+  S.profile.startDate = todayKey(); S.progress = {}; S.rotation = {p1:0,p2:0};
+  save(); renderAll(); toast('1週目に戻しました');
+};
+document.getElementById('wipe').onclick = ()=>{
+  if(!confirm('すべての記録を消します。取り消せません。')) return;
+  if(!confirm('本当に消してよいですか？')) return;
+  S = blank(); save(); renderAll(); toast('消去しました');
+};
+
+renderAll();
+show('today');
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
+}
+</script>
+</body>
+</html>

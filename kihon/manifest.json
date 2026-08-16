@@ -1,0 +1,16 @@
+{
+  "name": "KIHON — 動ける身体づくり",
+  "short_name": "KIHON",
+  "description": "週2から始める、動ける身体づくりの伴走アプリ。記録は端末内のみ。",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1c2b36",
+  "theme_color": "#1c2b36",
+  "lang": "ja",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
