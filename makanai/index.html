@@ -125,6 +125,7 @@ label.f span{display:block;font-size:12px;color:var(--text-muted);margin-bottom:
 .meal .n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .meal .v{font-size:12.5px;color:var(--text-muted);font-variant-numeric:tabular-nums}
 .meal .x{border:0;background:transparent;color:var(--text-muted);padding:2px 6px;font-size:16px;line-height:1}
+.prep-row{border-top:1px solid var(--line);padding:9px 0}
 .add{border:1px dashed var(--line);background:transparent;color:var(--text-secondary);
   border-radius:10px;padding:8px;width:100%;font-size:13px;font-weight:600}
 .tag{display:inline-block;font-size:10.5px;font-weight:700;padding:1px 6px;border-radius:99px;
@@ -505,7 +506,7 @@ function renderToday(){
     h += `<div class="card"><h2>Prepで作ったもの<span class="sub">1人分として取り込む</span></h2>`;
     cooked.forEach(c=>{
       const nm = c.h.recipeName || (c.recipe && c.recipe.name) || '料理';
-      h += `<div style="border-top:1px solid var(--line);padding:9px 0">
+      h += `<div class="prep-row">
               <div style="font-size:14px;font-weight:600;margin-bottom:6px">${esc(nm)}</div>
               <div class="chips">`;
       SLOTS.forEach(s=>{
@@ -560,12 +561,18 @@ function openSheet(html){
   document.getElementById('sheet').innerHTML = html;
   document.getElementById('ov').classList.add('on');
 }
-function closeSheet(){ document.getElementById('ov').classList.remove('on'); }
+function closeSheet(){
+  document.getElementById('ov').classList.remove('on');
+  pendingPrepId = null;
+  renderToday();
+}
 document.getElementById('ov').addEventListener('click', e=>{ if(e.target.id==='ov') closeSheet(); });
 
 let addSlot = 'breakfast';
+let pendingPrepId = null;   // 栄養が分からず手入力にまわした Prep 履歴id
 function openAdd(slot){
   addSlot = slot;
+  pendingPrepId = null;
   renderAdd('fav');
 }
 function renderAdd(tab){
@@ -622,7 +629,9 @@ function renderAdd(tab){
 }
 function addFav(id){
   const f = S.favorites.find(x=>x.id===id); if(!f) return;
-  logMeal(cursor, addSlot, {name:f.name, kcal:num(f.kcal), protein:num(f.protein), salt:num(f.salt), source:'fav'});
+  const o = {name:f.name, kcal:num(f.kcal), protein:num(f.protein), salt:num(f.salt), source:'fav'};
+  if(pendingPrepId){ o.prepHistoryId = pendingPrepId; S.imported = (S.imported||[]).concat([pendingPrepId]); }
+  logMeal(cursor, addSlot, o);
   closeSheet(); renderToday(); toast('記録しました');
 }
 function addManual(){
@@ -634,6 +643,11 @@ function addManual(){
     salt:num(document.getElementById('m-salt').value), source:'manual' };
   if(document.getElementById('m-fav').checked){
     S.favorites.push({id:uid(), name, slot:addSlot, kcal:o.kcal, protein:o.protein, salt:o.salt});
+  }
+  if(pendingPrepId){
+    o.source = 'prep'; o.prepHistoryId = pendingPrepId;
+    S.imported = (S.imported||[]).concat([pendingPrepId]);
+    pendingPrepId = null;
   }
   logMeal(cursor, addSlot, o);
   closeSheet(); renderToday(); toast('記録しました');
@@ -665,9 +679,9 @@ async function importPrep(historyId, slot){
     }catch(e){ toast('計算できませんでした：'+e.message, 4000); }
   }
   if(!n){
-    /* API が使えない／レシピが消えている場合は手入力にまわす */
-    S.imported = (S.imported||[]).concat([historyId]);
-    save();
+    /* API が使えない／レシピが消えている場合は手入力にまわす。
+       取り込み済みにするのは実際に記録できたときだけ（途中でやめたら一覧に残す） */
+    pendingPrepId = historyId;
     addSlot = slot;
     renderAdd('manual');
     setTimeout(()=>{ const el=document.getElementById('m-name'); if(el) el.value = name; }, 0);
