@@ -322,7 +322,20 @@ function toast(msg, ms){
 }
 
 /* ---------- 保存 ---------- */
+/* KIHON など他アプリが読むための今日ぶんの要約。
+   目標値の計算式をよそに複製させないため、算出済みの数字をここに置く */
+function updateSummary(){
+  try{
+    const k = todayKey(), t = targetsFor(k), tot = totals(k);
+    S.summary = { date:k,
+      kcal:Math.round(tot.kcal), kcalTarget:t.kcal,
+      protein:Math.round(tot.protein), proteinTarget:t.protein,
+      salt:Math.round(tot.salt*10)/10, saltMax:SALT_MAX,
+      at:new Date().toISOString() };
+  }catch(e){ /* 要約は付随物なので、失敗しても保存は続ける */ }
+}
 function save(){
+  updateSummary();
   try{ localStorage.setItem(KEY, JSON.stringify(S)); }
   catch(e){ toast('保存に失敗しました'); console.error(e); }
 }
@@ -499,6 +512,16 @@ function isTrainingDay(k){
   const kh = kihonRead();
   return !!(kh && kh.days && kh.days[k] && kh.days[k].session);
 }
+/* その日の体重。MAKANAI に入れた値が優先、無ければ KIHON で測った値を使う。
+   トレ後に KIHON で乗るのが自然なので、二重入力させない */
+function weightOn(k){
+  const own = S.days[k] && S.days[k].weightKg;
+  if(typeof own === 'number' && own > 0) return own;
+  const kh = kihonRead();
+  const w = kh && kh.days && kh.days[k] && kh.days[k].metrics && kh.days[k].metrics.weightKg;
+  return (typeof w === 'number' && w > 0) ? w : null;
+}
+function trainDaysIn(keys){ return keys.filter(isTrainingDay).length; }
 
 /* ==========================================================================
    目標値の計算（Mifflin-St Jeor・女性）
@@ -603,12 +626,16 @@ function renderToday(){
   }
 
   /* --- 体重 --- */
+  const kw = weightOn(k), ownW = day(k).weightKg;
   h += `<div class="card"><h2>体重<span class="sub">任意・空欄でよい</span></h2>
     <div class="row">
-      <input type="number" step="0.1" inputmode="decimal" id="w-in" placeholder="kg"
-             value="${day(k).weightKg!=null?day(k).weightKg:''}" onchange="setWeight(this.value)">
-      <button class="btn btn-ghost" onclick="pullKihonWeight()">KIHONから</button>
-    </div></div>`;
+      <input type="number" step="0.1" inputmode="decimal" id="w-in" placeholder="${kw!=null&&ownW==null?kw+'（KIHON）':'kg'}"
+             value="${ownW!=null?ownW:''}" onchange="setWeight(this.value)">
+      <button class="btn btn-ghost" onclick="pullKihonWeight()">KIHONの平均</button>
+    </div>
+    ${kw!=null&&ownW==null?`<div class="muted" style="margin-top:8px">
+      この日は KIHON で ${kw}kg を測っています。グラフはこの値を使うので、入れ直さなくて大丈夫です。</div>`:''}
+    </div>`;
 
   el.innerHTML = h;
   updateSub();
@@ -982,6 +1009,74 @@ function pushShopping(){
 }
 
 /* ==========================================================================
+   ふりかえり — 「食べた量」と「体重の動き」を突き合わせて、次の一手を出す
+   ここが KIHON 連携のいちばんの目的。体重は KIHON、食事は MAKANAI にあるので、
+   両方が揃って初めて「今の食べ方で合っているか」が言える。
+   ========================================================================== */
+function review(keys){
+  const t = targetsFor(todayKey());
+  const wpts = keys.map((k,i)=>({i, v:weightOn(k)})).filter(p=>p.v!=null);
+  const eaten = keys.filter(k=>totals(k).kcal > 0);
+  const avgKcal = eaten.length ? eaten.reduce((a,k)=>a+totals(k).kcal,0)/eaten.length : null;
+  const avgPro  = eaten.length ? eaten.reduce((a,k)=>a+totals(k).protein,0)/eaten.length : null;
+  const trains  = trainDaysIn(keys);
+
+  /* 最小二乗法で体重の傾き（kg/日）を出す。点が少ないうちは出さない */
+  let slope = null, span = 0;
+  if(wpts.length >= 4){
+    span = wpts[wpts.length-1].i - wpts[0].i;
+    if(span >= 6){
+      const n = wpts.length;
+      const mx = wpts.reduce((a,p)=>a+p.i,0)/n;
+      const my = wpts.reduce((a,p)=>a+p.v,0)/n;
+      let num=0, den=0;
+      wpts.forEach(p=>{ num += (p.i-mx)*(p.v-my); den += (p.i-mx)*(p.i-mx); });
+      if(den > 0) slope = num/den;
+    }
+  }
+  const wNow = wpts.length ? wpts[wpts.length-1].v : (S.profile.weightKg || null);
+  const perWeek = slope!=null ? slope*7 : null;
+  const pct = (perWeek!=null && wNow) ? perWeek/wNow*100 : null;
+
+  /* 判定。根拠のない断定はしない */
+  let band = 'unknown', head = '', advice = '';
+  if(pct == null){
+    band = 'unknown';
+    const need = Math.max(0, 4 - wpts.length);
+    head = 'まだ傾向は出せません';
+    advice = wpts.length < 4
+      ? `体重の記録があと${need}日ぶん貯まると、増減のペースを出します。KIHONで測った体重も自動で拾います。`
+      : '記録の期間が短いので、あと数日ぶん様子を見ます。';
+  }else if(pct <= -0.8){
+    band='fast';  head = '落ちるのが速すぎます';
+    advice = 'この速さは筋肉も一緒に減ります。1日あたり150〜200kcal 増やして、週0.3〜0.5%に落としてください。';
+  }else if(pct <= -0.15){
+    band='good';  head = '狙いどおりのペースです';
+    advice = 'このまま続けてください。数字をいじる必要はありません。';
+  }else if(pct < 0.15){
+    band='flat';  head = '体重は横ばいです';
+    advice = (avgKcal!=null && t.kcal && avgKcal <= t.kcal + 50)
+      ? '目標どおり食べているのに減っていません。目標カロリーが実態より高い可能性があります。150kcal 下げて2週間みてください。'
+      : '目標を超えて食べている日が多いようです。まず目標に寄せるところからです。';
+  }else{
+    band='up';    head = '体重は増えています';
+    advice = (avgKcal!=null && t.kcal && avgKcal > t.kcal)
+      ? `平均で目標を ${fmt(avgKcal - t.kcal)}kcal 超えています。まずここを埋めてください。`
+      : '記録されていない食事があるかもしれません。間食と飲み物を入れてみてください。';
+  }
+
+  /* たんぱく質。減量中にここが落ちると筋肉が減る */
+  let proWarn = '';
+  if(avgPro != null && t.protein && avgPro < t.protein*0.85){
+    proWarn = `たんぱく質が平均 ${avgPro.toFixed(0)}g で、目標 ${t.protein}g に届いていません。`
+            + `減らしている最中にここが不足すると筋肉から落ちます。あと ${Math.ceil(t.protein-avgPro)}g、`
+            + `卵1個＋ヨーグルト、またはサラダチキン1個ぶんです。`;
+  }
+  return { band, head, advice, proWarn, perWeek, pct, avgKcal, avgPro, trains,
+           recorded: eaten.length, wCount: wpts.length, target:t };
+}
+
+/* ==========================================================================
    画面：記録
    ========================================================================== */
 function renderLog(){
@@ -992,22 +1087,43 @@ function renderLog(){
 
   const kcalData = days.map(k=>({k, v: totals(k).kcal}));
   const proData  = days.map(k=>({k, v: totals(k).protein}));
-  const wData    = days.map(k=>({k, v: (S.days[k] && S.days[k].weightKg) || null}));
+  const wData    = days.map(k=>({k, v: weightOn(k)}));
 
   const rec = days.filter(k=>totals(k).kcal>0);
   const avg7 = (arr)=>{ const a=arr.slice(-7).filter(x=>x.v); return a.length? a.reduce((s,x)=>s+x.v,0)/a.length : null; };
   const a7k = avg7(kcalData), a7p = avg7(proData);
+  const R = review(days);
 
-  let h = `<div class="card"><h2>この2週間</h2>
-    <div class="kv"><span>記録した日</span><b>${rec.length} / 14 日</b></div>
-    <div class="kv"><span>7日平均 カロリー</span><b>${a7k?fmt(a7k)+' kcal':'—'}</b></div>
-    <div class="kv"><span>7日平均 たんぱく質</span><b>${a7p?a7p.toFixed(0)+' g':'—'}</b></div>
+  /* --- ふりかえり（この画面の主役） --- */
+  let h = '';
+  const tone = {fast:'var(--warn)', good:'var(--good)', flat:'var(--warn)', up:'var(--bad)', unknown:'var(--text-muted)'}[R.band];
+  h += `<div class="card"><h2>ふりかえり<span class="sub">この2週間</span></h2>
+    <div style="font-size:17px;font-weight:700;color:${tone};margin-bottom:6px">${esc(R.head)}</div>`;
+  if(R.perWeek != null){
+    const sign = R.perWeek < 0 ? '−' : '＋';
+    h += `<div class="hero" style="margin-bottom:8px">
+            <b>${sign}${Math.abs(R.perWeek).toFixed(2)}</b><span class="u">kg / 週（${R.pct.toFixed(2)}%）</span></div>`;
+  }
+  h += `<div style="font-size:14px;color:var(--text-secondary)">${esc(R.advice)}</div>`;
+  if(R.proWarn) h += `<div style="font-size:14px;color:var(--text-secondary);margin-top:10px;
+                        border-top:1px solid var(--line);padding-top:10px">${esc(R.proWarn)}</div>`;
+  h += `<div class="kv" style="margin-top:12px"><span>食事を記録した日</span><b>${R.recorded} / 14 日</b></div>
+    <div class="kv"><span>体重を測った日</span><b>${R.wCount} / 14 日${R.wCount?'（KIHONぶんを含む）':''}</b></div>
+    <div class="kv"><span>トレーニングした日</span><b>${R.trains} 日</b></div>`;
+  if(R.recorded < 7) h += `<div class="muted" style="margin-top:8px">
+    記録した日が少ないと平均が当てになりません。まずは1週間、抜けなく記録してみてください。</div>`;
+  h += `<div class="muted" style="margin-top:8px">
+    体重は水分で1日1kgほど動きます。ここでは日々の値ではなく<b>2週間の傾き</b>を見ています。</div></div>`;
+
+  h += `<div class="card"><h2>この2週間の平均</h2>
+    <div class="kv"><span>7日平均 カロリー</span><b>${a7k?fmt(a7k)+' kcal':'—'}${t.kcal&&a7k?`　<span class="muted">目標 ${fmt(t.kcal)}</span>`:''}</b></div>
+    <div class="kv"><span>7日平均 たんぱく質</span><b>${a7p?a7p.toFixed(0)+' g':'—'}${t.protein&&a7p?`　<span class="muted">目標 ${t.protein}</span>`:''}</b></div>
   </div>`;
 
   h += `<div class="card"><h2>カロリー<span class="sub">${t.kcal?'点線が目標':''}</span></h2>
     <div id="c-kcal"></div></div>`;
   h += `<div class="card"><h2>たんぱく質</h2><div id="c-pro"></div></div>`;
-  h += `<div class="card"><h2>体重</h2><div id="c-w"></div></div>`;
+  h += `<div class="card"><h2>体重<span class="sub">KIHONの記録も拾います</span></h2><div id="c-w"></div></div>`;
 
   const withMeals = days.slice().reverse().filter(k=>day(k).meals.length);
   h += `<div class="card"><h2>記録の一覧</h2>`;

@@ -227,6 +227,7 @@ nav button.on{color:var(--accent)}
   <section class="view on" id="v-today">
     <div class="card" id="todayHead"></div>
     <div id="sessionBody"></div>
+    <div id="mealCard"></div>
   </section>
 
   <!-- ========== 記録 ========== -->
@@ -936,7 +937,7 @@ function finishSession(){
   draft = null;
   save();
   toast('お疲れさま。記録しました');
-  renderToday(); renderCoach();
+  renderToday(); renderMeal(); renderCoach();
 }
 
 /* =========================================================================
@@ -1596,7 +1597,47 @@ function show(v){
   if(v==='settings') renderSettings();
   window.scrollTo(0,0);
 }
-function renderAll(){ renderToday(); renderRecord(); renderCoach(); renderSettings(); }
+/* MAKANAI（食事アプリ）が置いた今日ぶんの要約を読んで表示する。読むだけ。
+   目標カロリーの計算式はあちらにあるので、こちらでは計算しない。
+   トレした日にたんぱく質が足りているかは、ここで気づけると効く。 */
+function renderMeal(){
+  const host = document.getElementById('mealCard');
+  if(!host) return;
+  let m = null;
+  try{
+    const raw = localStorage.getItem('makanai.v1');
+    if(raw) m = (JSON.parse(raw) || {}).summary || null;
+  }catch(e){ m = null; }
+  if(!m || m.date !== todayKey() || !m.kcalTarget){ host.innerHTML = ''; return; }
+
+  const leftK = m.kcalTarget - m.kcal;
+  const leftP = (m.proteinTarget || 0) - m.protein;
+  const trained = !!(S.days[todayKey()] && S.days[todayKey()].session);
+  const pOK = leftP <= 0;
+
+  let note = '';
+  if(trained && !pOK){
+    note = 'トレした日です。たんぱく質があと' + Math.ceil(leftP) + 'g。ここが足りないと、せっかくの1本が身になりません。';
+  }else if(trained && pOK){
+    note = 'トレした日で、たんぱく質も足りています。今日はこれでいい。';
+  }else if(!pOK){
+    note = 'たんぱく質があと' + Math.ceil(leftP) + 'g。卵1個とヨーグルトでだいたい足ります。';
+  }else{
+    note = 'たんぱく質は足りています。';
+  }
+
+  host.innerHTML =
+    '<div class="card"><h2>今日の食事<span class="sub">MAKANAIより</span></h2>'
+    + '<div class="kv" style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0">'
+    +   '<span>カロリー</span><b>' + m.kcal.toLocaleString('ja-JP') + ' / ' + m.kcalTarget.toLocaleString('ja-JP') + ' kcal</b></div>'
+    + '<div class="kv" style="display:flex;justify-content:space-between;font-size:13px;padding:3px 0">'
+    +   '<span>たんぱく質</span><b style="color:' + (pOK?'var(--good)':'var(--warn)') + '">'
+    +   m.protein + ' / ' + m.proteinTarget + ' g</b></div>'
+    + '<p class="muted" style="margin:8px 0 10px">' + note + '</p>'
+    + '<a class="btn-ghost" href="../makanai/" style="text-decoration:none;text-align:center;display:block">MAKANAIを開く</a>'
+    + '</div>';
+}
+function renderAll(){ renderToday(); renderMeal(); renderRecord(); renderCoach(); renderSettings(); }
 
 /* --- 配線 --- */
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>show(b.dataset.view));
