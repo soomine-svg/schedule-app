@@ -1,0 +1,1277 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#3a2a20">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="MAKANAI">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="favicon.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>MAKANAI — 賄い</title>
+<style>
+:root{
+  color-scheme: light;
+  --surface-1:#fcfcfb;
+  --surface-2:#f4f1ea;
+  --surface-3:#e9e5db;
+  --line:#ded9cd;
+  --text-primary:#0b0b0b;
+  --text-secondary:#52514e;
+  --text-muted:#84827b;
+  --accent:#c2552b;
+  --accent-soft:#fbeee7;
+  --series-1:#2a78d6;
+  --series-2:#eb6834;
+  --series-3:#1baf7a;
+  --good:#1baf7a;
+  --warn:#eda100;
+  --bad:#e34948;
+  --grid:#e8e5de;
+  --radius:14px;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme: dark;
+    --surface-1:#1a1a19;
+    --surface-2:#242422;
+    --surface-3:#2f2f2c;
+    --line:#383835;
+    --text-primary:#ffffff;
+    --text-secondary:#c3c2b7;
+    --text-muted:#8f8e85;
+    --accent:#d9683c;
+    --accent-soft:#33221a;
+    --series-1:#3987e5;
+    --series-2:#d95926;
+    --series-3:#199e70;
+    --good:#199e70;
+    --warn:#c98500;
+    --bad:#e66767;
+    --grid:#2f2f2c;
+  }
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  background:var(--surface-2);
+  color:var(--text-primary);
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif;
+  font-size:15px;line-height:1.6;
+  padding-bottom:calc(72px + var(--safe-b));
+  -webkit-font-smoothing:antialiased;
+}
+header{
+  position:sticky;top:0;z-index:20;
+  background:var(--surface-1);border-bottom:1px solid var(--line);
+  padding:calc(env(safe-area-inset-top,0px) + 12px) 16px 12px;
+}
+.h-row{display:flex;align-items:baseline;gap:10px}
+.h-title{font-size:17px;font-weight:700;letter-spacing:.08em}
+.h-sub{font-size:12px;color:var(--text-muted);margin-left:auto}
+main{padding:14px 14px 24px;max-width:640px;margin:0 auto}
+.view{display:none}
+.view.on{display:block}
+.card{
+  background:var(--surface-1);border:1px solid var(--line);
+  border-radius:var(--radius);padding:14px;margin-bottom:12px;
+}
+.card h2{font-size:14px;margin:0 0 10px;font-weight:700;letter-spacing:.02em}
+.card h2 .sub{font-weight:400;color:var(--text-muted);font-size:12px;margin-left:6px}
+.muted{color:var(--text-muted);font-size:12.5px}
+.sec-label{font-size:11.5px;color:var(--text-muted);letter-spacing:.08em;margin:18px 4px 8px;font-weight:600}
+button{font:inherit;color:inherit;cursor:pointer}
+.btn{
+  display:block;width:100%;border:0;border-radius:12px;padding:14px;
+  background:var(--accent);color:#fff;font-weight:700;font-size:16px;
+}
+.btn:disabled{opacity:.45}
+.btn-ghost{background:var(--surface-2);color:var(--text-primary);border:1px solid var(--line);font-weight:600;font-size:14px;padding:11px}
+.btn-danger{background:transparent;color:var(--bad);border:1px solid var(--line);font-weight:600;font-size:14px;padding:11px}
+.btn-sm{padding:8px 12px;font-size:13px;border-radius:10px;width:auto;display:inline-block}
+.row{display:flex;gap:8px}
+.row>*{flex:1}
+input,select,textarea{
+  font:inherit;width:100%;padding:10px 12px;border-radius:10px;
+  border:1px solid var(--line);background:var(--surface-1);color:var(--text-primary);
+}
+textarea{resize:vertical;min-height:60px}
+label.f{display:block;margin-bottom:10px}
+label.f span{display:block;font-size:12px;color:var(--text-muted);margin-bottom:4px}
+/* --- 日付ヘッダ --- */
+.datebar{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.datebar .d{flex:1;text-align:center;font-weight:700;font-size:15px}
+.datebar button{border:1px solid var(--line);background:var(--surface-1);border-radius:10px;width:38px;height:34px;color:var(--text-secondary)}
+/* --- 数値サマリ --- */
+.hero{display:flex;align-items:baseline;gap:6px}
+.hero b{font-size:30px;font-weight:700;letter-spacing:-.01em}
+.hero .u{font-size:13px;color:var(--text-muted)}
+.bar{height:8px;border-radius:99px;background:var(--surface-3);overflow:hidden;margin:8px 0 4px}
+.bar i{display:block;height:100%;border-radius:99px;background:var(--accent);transition:width .25s}
+.bar i.over{background:var(--bad)}
+.bar i.ok{background:var(--good)}
+.kv{display:flex;justify-content:space-between;font-size:12.5px;color:var(--text-secondary);padding:3px 0}
+.kv b{font-weight:700;color:var(--text-primary)}
+/* --- 食事スロット --- */
+.slot{border-top:1px solid var(--line);padding:11px 0 9px}
+.slot:first-of-type{border-top:0;padding-top:2px}
+.slot-head{display:flex;align-items:baseline;gap:8px;margin-bottom:6px}
+.slot-name{font-weight:700;font-size:14px}
+.slot-kcal{margin-left:auto;font-size:12.5px;color:var(--text-muted)}
+.meal{display:flex;align-items:center;gap:8px;padding:6px 0;font-size:14px}
+.meal .n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.meal .v{font-size:12.5px;color:var(--text-muted);font-variant-numeric:tabular-nums}
+.meal .x{border:0;background:transparent;color:var(--text-muted);padding:2px 6px;font-size:16px;line-height:1}
+.add{border:1px dashed var(--line);background:transparent;color:var(--text-secondary);
+  border-radius:10px;padding:8px;width:100%;font-size:13px;font-weight:600}
+.tag{display:inline-block;font-size:10.5px;font-weight:700;padding:1px 6px;border-radius:99px;
+  background:var(--accent-soft);color:var(--accent);margin-left:6px;vertical-align:1px}
+.tag.g{background:var(--surface-3);color:var(--text-muted)}
+/* --- チップ --- */
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:var(--surface-2);
+  border-radius:999px;padding:7px 12px;font-size:13px;font-weight:600;color:var(--text-secondary)}
+.chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.chip.sm{padding:5px 10px;font-size:12px}
+/* --- モーダル --- */
+.ov{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.45);display:none;align-items:flex-end}
+.ov.on{display:flex}
+.sheet{background:var(--surface-1);width:100%;max-width:640px;margin:0 auto;
+  border-radius:18px 18px 0 0;padding:16px 16px calc(16px + var(--safe-b));
+  max-height:88vh;overflow:auto}
+.sheet h3{margin:0 0 12px;font-size:15px;display:flex;align-items:center}
+.sheet h3 .x{margin-left:auto;border:0;background:transparent;color:var(--text-muted);font-size:20px;line-height:1}
+.pick{display:flex;align-items:center;gap:8px;width:100%;text-align:left;border:0;
+  background:transparent;border-bottom:1px solid var(--line);padding:11px 2px;font-size:14px}
+.pick .n{flex:1;min-width:0}
+.pick .v{font-size:12px;color:var(--text-muted);font-variant-numeric:tabular-nums}
+/* --- 買い物・準備リスト --- */
+.li{display:flex;gap:9px;align-items:flex-start;padding:8px 2px;border-bottom:1px solid var(--line);font-size:14px}
+.li:last-child{border-bottom:0}
+.li input[type=checkbox]{width:19px;height:19px;flex:0 0 auto;margin-top:2px;accent-color:var(--accent)}
+.li .n{flex:1}
+.li.done .n{color:var(--text-muted);text-decoration:line-through}
+/* --- グラフ --- */
+.chart{width:100%;display:block}
+.legend{font-size:11.5px;color:var(--text-muted);margin-top:2px}
+/* --- ナビ --- */
+nav{
+  position:fixed;left:0;right:0;bottom:0;z-index:30;
+  display:flex;background:var(--surface-1);border-top:1px solid var(--line);
+  padding-bottom:var(--safe-b);
+}
+nav button{flex:1;border:0;background:transparent;color:var(--text-muted);
+  padding:9px 0 11px;font-size:11px;font-weight:600}
+nav button .ic{display:block;font-size:19px;line-height:1.35}
+nav button.on{color:var(--accent)}
+/* --- トースト --- */
+.toast{position:fixed;left:50%;bottom:calc(84px + var(--safe-b));transform:translateX(-50%);
+  background:#111;color:#fff;padding:10px 16px;border-radius:99px;font-size:13px;
+  z-index:80;opacity:0;pointer-events:none;transition:opacity .25s;max-width:88vw;text-align:center}
+.toast.on{opacity:.95}
+.spin{display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,.35);
+  border-top-color:#fff;border-radius:50%;animation:sp .8s linear infinite;vertical-align:-2px;margin-right:6px}
+@keyframes sp{to{transform:rotate(360deg)}}
+.warn{background:var(--accent-soft);border:1px solid var(--line);border-radius:12px;
+  padding:11px 12px;font-size:13px;color:var(--text-secondary);margin-bottom:12px}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="h-row">
+    <div class="h-title">MAKANAI</div>
+    <div class="h-sub" id="h-sub"></div>
+  </div>
+</header>
+
+<main>
+  <!-- ============ 今日 ============ -->
+  <section id="v-today" class="view on">
+    <div class="datebar">
+      <button onclick="shiftDay(-1)">‹</button>
+      <div class="d" id="date-label"></div>
+      <button onclick="shiftDay(1)">›</button>
+    </div>
+    <div id="today-body"></div>
+  </section>
+
+  <!-- ============ 計画 ============ -->
+  <section id="v-plan" class="view">
+    <div id="plan-body"></div>
+  </section>
+
+  <!-- ============ 記録 ============ -->
+  <section id="v-log" class="view">
+    <div id="log-body"></div>
+  </section>
+
+  <!-- ============ 設定 ============ -->
+  <section id="v-set" class="view">
+    <div id="set-body"></div>
+  </section>
+</main>
+
+<nav>
+  <button data-view="today" class="on"><span class="ic">●</span>今日</button>
+  <button data-view="plan"><span class="ic">▤</span>計画</button>
+  <button data-view="log"><span class="ic">▲</span>記録</button>
+  <button data-view="set"><span class="ic">◇</span>設定</button>
+</nav>
+
+<div class="ov" id="ov"><div class="sheet" id="sheet"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+/* ==========================================================================
+   MAKANAI（賄い）— 自分ひとりの栄養とカロリーを管理する
+   ・在庫の正本は Prep（献立帳）。ここはコピーを持たず直接読み書きする
+   ・Prep のコードには一切手を入れない
+   ・栄養計算はこのアプリが行う（Prep 側の値には依存しない）
+   ========================================================================== */
+
+const KEY  = 'makanai.v1';
+const AKEY = 'makanai_api_key';
+const PREP_KEY = 'kondate_cho_v1';   // 献立帳（Prep）— 在庫と調理履歴の正本
+const KIHON_KEY = 'kihon.v1';        // KIHON — 体重とトレ日
+
+const SLOTS = [
+  {id:'breakfast', name:'朝食'},
+  {id:'lunch',     name:'昼食'},
+  {id:'dinner',    name:'夕食'},
+  {id:'snack',     name:'間食'},
+];
+const SLOT_NAME = Object.fromEntries(SLOTS.map(s=>[s.id,s.name]));
+
+/* 塩分の目標量（日本人の食事摂取基準・成人女性）。上限として扱う */
+const SALT_MAX = 6.5;
+
+/* よく食べるものの初期セット。数値はすべて目安なので、実物に合わせて設定で直す */
+const SEED_FAV = [
+  {name:'ごはん 150g',           slot:'breakfast', kcal:234, protein:3.8,  salt:0},
+  {name:'納豆 1パック',           slot:'breakfast', kcal:100, protein:8.3,  salt:0.6},
+  {name:'卵 1個',                slot:'breakfast', kcal:71,  protein:6.1,  salt:0.2},
+  {name:'味噌汁 1杯',             slot:'breakfast', kcal:40,  protein:2.2,  salt:1.2},
+  {name:'無糖ヨーグルト 100g',    slot:'breakfast', kcal:56,  protein:3.6,  salt:0.1},
+  {name:'バナナ 1本',             slot:'breakfast', kcal:86,  protein:1.1,  salt:0},
+  {name:'食パン 6枚切1枚',        slot:'breakfast', kcal:158, protein:5.6,  salt:0.7},
+  {name:'サラダチキン 1個',       slot:'lunch',     kcal:110, protein:24,   salt:1.1},
+  {name:'おにぎり 1個',           slot:'lunch',     kcal:180, protein:3.5,  salt:1.0},
+  {name:'定食（外食）',           slot:'lunch',     kcal:700, protein:28,   salt:4.0},
+  {name:'ハンバーガーセット',      slot:'lunch',     kcal:900, protein:25,   salt:3.5},
+  {name:'牛丼 並',                slot:'lunch',     kcal:635, protein:20,   salt:2.7},
+  {name:'ラーメン 1杯',           slot:'dinner',    kcal:500, protein:20,   salt:6.0},
+  {name:'プロテイン 1杯',         slot:'snack',     kcal:120, protein:20,   salt:0.2},
+  {name:'素焼きナッツ 25g',       slot:'snack',     kcal:150, protein:5,    salt:0},
+];
+
+const DEF = {
+  app:'makanai', schema:1,
+  profile:{ age:null, heightCm:null, weightKg:null, activity:1.375, goal:0.88 },
+  targets:{ manual:false, kcal:null, protein:null },
+  prefs:{ avoid:'', likes:'', model:'claude-opus-5', trainBonus:200, bento:true },
+  days:{},          // 'YYYY-MM-DD' -> {meals:[...], weightKg}
+  favorites:[],
+  plan:null,        // 直近に作った献立計画
+  nutrition:{},     // Prepレシピid -> {kcal,protein,salt,at}  ← このアプリが計算した値
+  imported:[],      // 取り込み済みの Prep 履歴id
+};
+
+let S = null;
+let apiKey = '';
+let cursor = todayKey();   // 今日タブが表示している日
+let busy = false;
+
+/* ---------- 基本ユーティリティ ---------- */
+function uid(){ return Math.random().toString(36).slice(2,10)+Date.now().toString(36); }
+function pad(n){ return String(n).padStart(2,'0'); }
+function keyOf(d){ return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); }
+function todayKey(){ return keyOf(new Date()); }
+function dateOf(k){ const [y,m,d]=k.split('-').map(Number); return new Date(y,m-1,d); }
+function addDays(k,n){ const d=dateOf(k); d.setDate(d.getDate()+n); return keyOf(d); }
+function labelOf(k){
+  const d=dateOf(k), w='日月火水木金土'[d.getDay()];
+  const rel = k===todayKey() ? '今日' : (k===addDays(todayKey(),-1) ? '昨日' : (k===addDays(todayKey(),1)?'明日':''));
+  return `${d.getMonth()+1}月${d.getDate()}日(${w})` + (rel?` ・${rel}`:'');
+}
+function num(v){ const n=Number(v); return Number.isFinite(n)?n:0; }
+function fmt(n){ return Math.round(n).toLocaleString('ja-JP'); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function normName(n){ return String(n||'').trim().toLowerCase().replace(/\s/g,''); }
+
+function toast(msg, ms){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('on');
+  clearTimeout(toast._t);
+  toast._t=setTimeout(()=>t.classList.remove('on'), ms||2400);
+}
+
+/* ---------- 保存 ---------- */
+function save(){
+  try{ localStorage.setItem(KEY, JSON.stringify(S)); }
+  catch(e){ toast('保存に失敗しました'); console.error(e); }
+}
+function load(){
+  S = JSON.parse(JSON.stringify(DEF));
+  try{
+    const raw = localStorage.getItem(KEY);
+    if(raw){
+      const o = JSON.parse(raw);
+      S = Object.assign(S, o);
+      S.profile = Object.assign({}, DEF.profile, o.profile||{});
+      S.targets = Object.assign({}, DEF.targets, o.targets||{});
+      S.prefs   = Object.assign({}, DEF.prefs,   o.prefs||{});
+    }
+  }catch(e){ console.error('load', e); }
+  if(!S.favorites || !S.favorites.length){
+    S.favorites = SEED_FAV.map(f=>Object.assign({id:uid()}, f));
+  }
+  apiKey = localStorage.getItem(AKEY) || '';
+}
+function day(k){
+  if(!S.days[k]) S.days[k] = { meals:[] };
+  if(!S.days[k].meals) S.days[k].meals = [];
+  return S.days[k];
+}
+
+/* ==========================================================================
+   Prep（献立帳）連携 — 在庫と調理履歴
+   都度 read → 変更 → write する。読み込んだまま抱えないのは、
+   Prep 側で在庫を触られたときに上書きし返す事故を減らすため。
+   ========================================================================== */
+function prepRead(){
+  try{ const raw = localStorage.getItem(PREP_KEY); return raw ? JSON.parse(raw) : null; }
+  catch(e){ return null; }
+}
+function prepWrite(o){
+  try{ localStorage.setItem(PREP_KEY, JSON.stringify(o)); return true; }
+  catch(e){ toast('在庫の保存に失敗しました'); return false; }
+}
+function prepStock(){ const p=prepRead(); return (p && Array.isArray(p.stock)) ? p.stock : []; }
+function prepAvailable(){ return prepRead() !== null; }
+
+/* 材料ぶんの在庫を減らす。Prep の completeCook と同じ規則に揃えてある */
+function consumeStock(ings){
+  const p = prepRead();
+  if(!p || !Array.isArray(p.stock)) return {ok:false, n:0};
+  let n=0;
+  (ings||[]).forEach(ing=>{
+    const it = p.stock.find(s=>normName(s.name)===normName(ing.name));
+    if(it && typeof ing.amount === 'number'){
+      it.qty = Math.max(0, it.unit===ing.unit ? it.qty - ing.amount : it.qty - 1);
+      n++;
+    }
+  });
+  return { ok: prepWrite(p), n };
+}
+
+/* 買い物したものを在庫に足す（Prep の在庫追加と同じ形） */
+function addStock(items){
+  const p = prepRead();
+  if(!p || !Array.isArray(p.stock)) return {ok:false, n:0};
+  let n=0;
+  items.forEach(it=>{
+    const ex = p.stock.find(s=>normName(s.name)===normName(it.name));
+    if(ex && ex.unit===it.unit){ ex.qty = num(ex.qty)+num(it.amount); }
+    else if(ex){ ex.qty = num(it.amount); ex.unit = it.unit; }
+    else p.stock.push({ id:uid(), name:String(it.name).trim(), category:it.category||'その他',
+                        qty:num(it.amount), unit:it.unit||'個', addedAt:new Date().toISOString() });
+    n++;
+  });
+  return { ok: prepWrite(p), n };
+}
+
+/* Prep で「作った」記録のうち、まだ取り込んでいないもの（指定日ぶん） */
+function prepCooked(dateKeyStr){
+  const p = prepRead();
+  if(!p || !Array.isArray(p.history)) return [];
+  const done = new Set(S.imported||[]);
+  return p.history
+    .filter(h => h && h.id && !done.has(h.id))
+    .filter(h => { try{ return keyOf(new Date(h.date)) === dateKeyStr; }catch(e){ return false; } })
+    .map(h => ({ h, recipe: (p.recipes||[]).find(r=>r.id===h.recipeId) || null }));
+}
+
+/* ---------- KIHON 連携（体重・トレ日） ---------- */
+function kihonRead(){
+  try{ const raw = localStorage.getItem(KIHON_KEY); return raw ? JSON.parse(raw) : null; }
+  catch(e){ return null; }
+}
+function kihonWeightAvg(){
+  const k = kihonRead(); if(!k || !k.days) return null;
+  const from = addDays(todayKey(), -6);
+  const ws = Object.keys(k.days).filter(d=>d>=from)
+    .map(d=>k.days[d] && k.days[d].metrics && k.days[d].metrics.weightKg)
+    .filter(w=>typeof w === 'number' && w>0);
+  if(!ws.length) return null;
+  return Math.round(ws.reduce((a,b)=>a+b,0)/ws.length*10)/10;
+}
+function isTrainingDay(k){
+  const kh = kihonRead();
+  return !!(kh && kh.days && kh.days[k] && kh.days[k].session);
+}
+
+/* ==========================================================================
+   目標値の計算（Mifflin-St Jeor・女性）
+   ========================================================================== */
+function targetsFor(k){
+  const p = S.profile;
+  let kcal=null, protein=null, basis='';
+  if(S.targets.manual && S.targets.kcal){
+    kcal = num(S.targets.kcal);
+    protein = num(S.targets.protein) || (p.weightKg ? Math.round(p.weightKg*1.6) : null);
+    basis = '手動設定';
+  }else if(p.age && p.heightCm && p.weightKg){
+    const bmr  = 10*p.weightKg + 6.25*p.heightCm - 5*p.age - 161;
+    const tdee = bmr * num(p.activity || 1.375);
+    kcal = Math.round(tdee * num(p.goal || 0.88) / 10) * 10;
+    protein = Math.round(p.weightKg * 1.6);
+    basis = `基礎代謝 ${fmt(bmr)} → 消費 ${fmt(tdee)}`;
+  }
+  const bonus = (kcal && isTrainingDay(k)) ? num(S.prefs.trainBonus) : 0;
+  return { kcal: kcal ? kcal + bonus : null, protein, bonus, basis };
+}
+
+function totals(k){
+  const ms = day(k).meals;
+  return ms.reduce((a,m)=>({
+    kcal:a.kcal+num(m.kcal), protein:a.protein+num(m.protein), salt:a.salt+num(m.salt)
+  }), {kcal:0, protein:0, salt:0});
+}
+
+/* ==========================================================================
+   画面：今日
+   ========================================================================== */
+function renderToday(){
+  const k = cursor;
+  document.getElementById('date-label').textContent = labelOf(k);
+  const t = targetsFor(k), tot = totals(k);
+  const el = document.getElementById('today-body');
+  let h = '';
+
+  if(!t.kcal){
+    h += `<div class="warn">まず<b>設定</b>で年齢・身長・体重を入れてください。1日の目安カロリーとたんぱく質を出します。</div>`;
+  }
+
+  /* --- サマリ --- */
+  h += `<div class="card">`;
+  if(t.kcal){
+    const left = t.kcal - tot.kcal;
+    const pct  = Math.min(100, tot.kcal / t.kcal * 100);
+    h += `<div class="hero"><b id="left-kcal">${left>=0?fmt(left):'−'+fmt(-left)}</b>
+            <span class="u">kcal ${left>=0?'あと食べられる':'オーバー'}</span></div>
+          <div class="bar"><i style="width:${pct}%" class="${tot.kcal>t.kcal?'over':''}"></i></div>
+          <div class="kv"><span>摂取 / 目標</span><b>${fmt(tot.kcal)} / ${fmt(t.kcal)} kcal</b></div>`;
+    if(t.bonus) h += `<div class="kv"><span>トレ日ぶん</span><b>+${fmt(t.bonus)} kcal</b></div>`;
+    const pp = Math.min(100, tot.protein / t.protein * 100);
+    h += `<div class="kv" style="margin-top:6px"><span>たんぱく質</span>
+            <b>${tot.protein.toFixed(0)} / ${t.protein} g</b></div>
+          <div class="bar"><i class="${tot.protein>=t.protein?'ok':''}" style="width:${pp}%"></i></div>`;
+    h += `<div class="kv"><span>塩分</span><b>${tot.salt.toFixed(1)} / ${SALT_MAX} g</b></div>
+          <div class="bar"><i class="${tot.salt>SALT_MAX?'over':''}" style="width:${Math.min(100,tot.salt/SALT_MAX*100)}%"></i></div>`;
+  }else{
+    h += `<div class="hero"><b>${fmt(tot.kcal)}</b><span class="u">kcal 摂取</span></div>
+          <div class="kv"><span>たんぱく質</span><b>${tot.protein.toFixed(0)} g</b></div>
+          <div class="kv"><span>塩分</span><b>${tot.salt.toFixed(1)} g</b></div>`;
+  }
+  h += `</div>`;
+
+  /* --- 食事スロット --- */
+  h += `<div class="card">`;
+  SLOTS.forEach(s=>{
+    const ms = day(k).meals.filter(m=>m.slot===s.id);
+    const sk = ms.reduce((a,m)=>a+num(m.kcal),0);
+    h += `<div class="slot">
+            <div class="slot-head"><span class="slot-name">${s.name}</span>
+              <span class="slot-kcal">${ms.length?fmt(sk)+' kcal':'—'}</span></div>`;
+    ms.forEach(m=>{
+      h += `<div class="meal">
+              <span class="n">${esc(m.name)}${m.source==='prep'?'<span class="tag g">Prep</span>':''}${m.bento?'<span class="tag">弁当</span>':''}</span>
+              <span class="v">${fmt(m.kcal)}k / P${num(m.protein).toFixed(0)}</span>
+              <button class="x" onclick="delMeal('${m.id}')" aria-label="削除">×</button>
+            </div>`;
+    });
+    h += `<button class="add" onclick="openAdd('${s.id}')">＋ ${s.name}を記録</button></div>`;
+  });
+  h += `</div>`;
+
+  /* --- Prep で作ったものの取り込み --- */
+  const cooked = prepCooked(k);
+  if(cooked.length){
+    h += `<div class="card"><h2>Prepで作ったもの<span class="sub">1人分として取り込む</span></h2>`;
+    cooked.forEach(c=>{
+      const nm = c.h.recipeName || (c.recipe && c.recipe.name) || '料理';
+      h += `<div style="border-top:1px solid var(--line);padding:9px 0">
+              <div style="font-size:14px;font-weight:600;margin-bottom:6px">${esc(nm)}</div>
+              <div class="chips">`;
+      SLOTS.forEach(s=>{
+        h += `<button class="chip sm" onclick="importPrep('${c.h.id}','${s.id}')">${s.name}</button>`;
+      });
+      h += `<button class="chip sm" onclick="skipPrep('${c.h.id}')">取り込まない</button>
+            </div></div>`;
+    });
+    h += `</div>`;
+  }
+
+  /* --- 体重 --- */
+  h += `<div class="card"><h2>体重<span class="sub">任意・空欄でよい</span></h2>
+    <div class="row">
+      <input type="number" step="0.1" inputmode="decimal" id="w-in" placeholder="kg"
+             value="${day(k).weightKg!=null?day(k).weightKg:''}" onchange="setWeight(this.value)">
+      <button class="btn btn-ghost" onclick="pullKihonWeight()">KIHONから</button>
+    </div></div>`;
+
+  el.innerHTML = h;
+  updateSub();
+}
+
+function shiftDay(n){ cursor = addDays(cursor, n); renderToday(); }
+function setWeight(v){
+  const n = Number(v);
+  if(v==='' || !Number.isFinite(n)) delete day(cursor).weightKg;
+  else day(cursor).weightKg = n;
+  save();
+}
+function pullKihonWeight(){
+  const w = kihonWeightAvg();
+  if(w==null){ toast('KIHONに体重の記録がありません'); return; }
+  day(cursor).weightKg = w; save(); renderToday();
+  toast(`KIHONの7日平均 ${w}kg を入れました`);
+}
+function delMeal(id){
+  const d = day(cursor);
+  const m = d.meals.find(x=>x.id===id);
+  d.meals = d.meals.filter(x=>x.id!==id);
+  if(m && m.prepHistoryId) S.imported = (S.imported||[]).filter(x=>x!==m.prepHistoryId);
+  if(m && m.planRef && S.plan) unmarkPlanDone(m.planRef);
+  save(); renderToday();
+}
+function logMeal(k, slot, o){
+  day(k).meals.push(Object.assign({ id:uid(), slot, at:new Date().toISOString() }, o));
+  save();
+}
+
+/* ---------- 追加シート ---------- */
+function openSheet(html){
+  document.getElementById('sheet').innerHTML = html;
+  document.getElementById('ov').classList.add('on');
+}
+function closeSheet(){ document.getElementById('ov').classList.remove('on'); }
+document.getElementById('ov').addEventListener('click', e=>{ if(e.target.id==='ov') closeSheet(); });
+
+let addSlot = 'breakfast';
+function openAdd(slot){
+  addSlot = slot;
+  renderAdd('fav');
+}
+function renderAdd(tab){
+  const k = cursor;
+  let h = `<h3>${SLOT_NAME[addSlot]}を記録<button class="x" onclick="closeSheet()">×</button></h3>
+    <div class="chips" style="margin-bottom:10px">
+      <button class="chip ${tab==='fav'?'on':''}" onclick="renderAdd('fav')">よく食べる</button>
+      <button class="chip ${tab==='plan'?'on':''}" onclick="renderAdd('plan')">計画から</button>
+      <button class="chip ${tab==='manual'?'on':''}" onclick="renderAdd('manual')">手入力</button>
+    </div>`;
+
+  if(tab==='fav'){
+    const fs = S.favorites.slice().sort((a,b)=>
+      (a.slot===addSlot?0:1)-(b.slot===addSlot?0:1) || a.name.localeCompare(b.name,'ja'));
+    if(!fs.length) h += `<div class="muted">まだありません。手入力から追加してください。</div>`;
+    fs.forEach(f=>{
+      h += `<button class="pick" onclick="addFav('${f.id}')">
+              <span class="n">${esc(f.name)}</span>
+              <span class="v">${fmt(f.kcal)}kcal ・ P${num(f.protein).toFixed(0)}g</span>
+            </button>`;
+    });
+    h += `<div class="muted" style="margin-top:10px">数値は目安。実物に合わせて設定で直せます。</div>`;
+  }
+
+  if(tab==='plan'){
+    const ds = (S.plan && S.plan.days) ? S.plan.days.filter(d=>d.date===k) : [];
+    const dishes = [];
+    ds.forEach((d,di)=>(d.meals||[]).forEach((m,mi)=>{ if(!m.doneAt) dishes.push({m, ref:`${di}:${mi}`}); }));
+    if(!dishes.length) h += `<div class="muted">この日の計画はありません。計画タブで作れます。</div>`;
+    dishes.forEach(x=>{
+      h += `<button class="pick" onclick="addFromPlan('${x.ref}')">
+              <span class="n">${esc(x.m.name)}<span class="tag g">${SLOT_NAME[x.m.slot]||''}</span>${x.m.bento?'<span class="tag">弁当</span>':''}</span>
+              <span class="v">${fmt(x.m.kcal)}kcal</span>
+            </button>`;
+    });
+    if(dishes.length) h += `<div class="muted" style="margin-top:10px">ここでの記録は在庫を減らしません。作ったときは計画タブの「作った」を押してください。</div>`;
+  }
+
+  if(tab==='manual'){
+    h += `<label class="f"><span>名前</span><input id="m-name" placeholder="例：豚汁"></label>
+      <div class="row">
+        <label class="f"><span>kcal</span><input id="m-kcal" type="number" inputmode="numeric"></label>
+        <label class="f"><span>たんぱく質 g</span><input id="m-pro" type="number" inputmode="decimal" step="0.1"></label>
+        <label class="f"><span>塩分 g</span><input id="m-salt" type="number" inputmode="decimal" step="0.1"></label>
+      </div>
+      <label class="f" style="display:flex;gap:8px;align-items:center">
+        <input type="checkbox" id="m-fav" style="width:19px;height:19px;accent-color:var(--accent)">
+        <span style="margin:0">よく食べるものに登録する</span></label>`;
+    if(apiKey) h += `<button class="btn btn-ghost" style="margin-bottom:8px" onclick="guessNutrition()">
+        <span id="guess-l">名前から栄養を推定する</span></button>`;
+    h += `<button class="btn" onclick="addManual()">記録する</button>`;
+  }
+  openSheet(h);
+}
+function addFav(id){
+  const f = S.favorites.find(x=>x.id===id); if(!f) return;
+  logMeal(cursor, addSlot, {name:f.name, kcal:num(f.kcal), protein:num(f.protein), salt:num(f.salt), source:'fav'});
+  closeSheet(); renderToday(); toast('記録しました');
+}
+function addManual(){
+  const name = (document.getElementById('m-name').value||'').trim();
+  if(!name){ toast('名前を入れてください'); return; }
+  const o = { name,
+    kcal:num(document.getElementById('m-kcal').value),
+    protein:num(document.getElementById('m-pro').value),
+    salt:num(document.getElementById('m-salt').value), source:'manual' };
+  if(document.getElementById('m-fav').checked){
+    S.favorites.push({id:uid(), name, slot:addSlot, kcal:o.kcal, protein:o.protein, salt:o.salt});
+  }
+  logMeal(cursor, addSlot, o);
+  closeSheet(); renderToday(); toast('記録しました');
+}
+function addFromPlan(ref){
+  const [di,mi] = ref.split(':').map(Number);
+  const m = S.plan.days[di].meals[mi];
+  logMeal(cursor, addSlot, {name:m.name, kcal:num(m.kcal), protein:num(m.protein), salt:num(m.salt),
+                            bento:!!m.bento, source:'plan', planRef:ref});
+  markPlanDone(ref);
+  closeSheet(); renderToday(); toast('記録しました');
+}
+
+/* ---------- Prep 履歴の取り込み ---------- */
+async function importPrep(historyId, slot){
+  const p = prepRead(); if(!p) return;
+  const h = (p.history||[]).find(x=>x.id===historyId); if(!h) return;
+  const recipe = (p.recipes||[]).find(r=>r.id===h.recipeId) || null;
+  const name = h.recipeName || (recipe && recipe.name) || '料理';
+
+  let n = recipe ? S.nutrition[recipe.id] : null;
+  if(!n && recipe && apiKey){
+    toast('栄養を計算しています…', 60000);
+    try{
+      n = await estimateRecipe(recipe);
+      S.nutrition[recipe.id] = Object.assign({at:new Date().toISOString()}, n);
+      save();
+      toast('計算しました');
+    }catch(e){ toast('計算できませんでした：'+e.message, 4000); }
+  }
+  if(!n){
+    /* API が使えない／レシピが消えている場合は手入力にまわす */
+    S.imported = (S.imported||[]).concat([historyId]);
+    save();
+    addSlot = slot;
+    renderAdd('manual');
+    setTimeout(()=>{ const el=document.getElementById('m-name'); if(el) el.value = name; }, 0);
+    toast('栄養が分からないので手入力にします');
+    renderToday();
+    return;
+  }
+  S.imported = (S.imported||[]).concat([historyId]);
+  logMeal(cursor, slot, {name, kcal:num(n.kcal), protein:num(n.protein), salt:num(n.salt),
+                         source:'prep', prepHistoryId:historyId});
+  renderToday();
+  toast(`${name} を1人分として記録しました`);
+}
+function skipPrep(historyId){
+  S.imported = (S.imported||[]).concat([historyId]); save(); renderToday();
+}
+
+/* ==========================================================================
+   画面：計画
+   ========================================================================== */
+let planDays = 3;
+function renderPlan(){
+  const el = document.getElementById('plan-body');
+  const t = targetsFor(todayKey());
+  let h = '';
+
+  h += `<div class="card"><h2>献立をつくる<span class="sub">在庫を先に使う</span></h2>
+    <div class="chips" style="margin-bottom:10px">
+      <button class="chip ${planDays===1?'on':''}" onclick="planDays=1;renderPlan()">1日分</button>
+      <button class="chip ${planDays===3?'on':''}" onclick="planDays=3;renderPlan()">3日分</button>
+      <button class="chip ${S.prefs.bento?'on':''}" onclick="S.prefs.bento=!S.prefs.bento;save();renderPlan()">昼はお弁当</button>
+    </div>
+    <div class="muted" style="margin-bottom:10px">
+      在庫 ${prepStock().length} 品${prepAvailable()?'':'（Prepのデータが見つかりません）'}
+      ${t.kcal?` ・ 1日 ${fmt(t.kcal)}kcal / たんぱく質 ${t.protein}g を目安に組みます`:' ・ 設定で体格を入れると目安つきで組めます'}
+    </div>
+    <button class="btn" id="plan-go" onclick="makePlan()" ${apiKey?'':'disabled'}>
+      ${apiKey?'献立をつくる':'設定でAPIキーを入れてください'}</button>
+  </div>`;
+
+  const P = S.plan;
+  if(P && P.days){
+    (P.days||[]).forEach((d,di)=>{
+      const dt = d.date===todayKey() ? '今日' : labelOf(d.date);
+      const dk = (d.meals||[]).reduce((a,m)=>a+num(m.kcal),0);
+      const dp = (d.meals||[]).reduce((a,m)=>a+num(m.protein),0);
+      h += `<div class="card"><h2>${esc(dt)}<span class="sub">${fmt(dk)}kcal ・ P${dp.toFixed(0)}g</span></h2>`;
+      (d.meals||[]).forEach((m,mi)=>{
+        h += `<div class="slot">
+          <div class="slot-head">
+            <span class="slot-name">${SLOT_NAME[m.slot]||m.slot}</span>
+            <span class="slot-kcal">${fmt(m.kcal)}kcal ・ P${num(m.protein).toFixed(0)} ・ 塩${num(m.salt).toFixed(1)}</span>
+          </div>
+          <div style="font-size:14.5px;margin-bottom:6px">${esc(m.name)}${m.bento?'<span class="tag">弁当</span>':''}${m.doneAt?'<span class="tag g">記録済</span>':''}</div>
+          <div class="row">
+            <button class="btn btn-ghost" onclick="openDish(${di},${mi})">作り方</button>
+            <button class="btn btn-ghost" onclick="cookDish(${di},${mi})" ${m.doneAt?'disabled':''}>作った</button>
+          </div>
+        </div>`;
+      });
+      h += `</div>`;
+    });
+
+    if((P.prep||[]).length){
+      h += `<div class="card"><h2>前日・まとめての準備</h2>`;
+      P.prep.forEach((s,i)=>{
+        h += `<div class="li ${s.done?'done':''}">
+                <input type="checkbox" ${s.done?'checked':''} onchange="togglePrepStep(${i})">
+                <span class="n"><b style="font-size:12px;color:var(--text-muted)">${esc(s.when)}</b><br>${esc(s.text)}</span>
+              </div>`;
+      });
+      h += `</div>`;
+    }
+
+    if((P.shopping||[]).length){
+      const left = P.shopping.filter(s=>!s.done).length;
+      h += `<div class="card"><h2>買い物リスト<span class="sub">残り ${left} 品</span></h2>`;
+      P.shopping.forEach((s,i)=>{
+        h += `<div class="li ${s.done?'done':''}">
+                <input type="checkbox" ${s.done?'checked':''} onchange="toggleShop(${i})">
+                <span class="n">${esc(s.name)} <span class="muted">${num(s.amount)?fmt(s.amount)+esc(s.unit||''):''}</span></span>
+              </div>`;
+      });
+      h += `<button class="btn btn-ghost" style="margin-top:10px" onclick="shopToStock()">
+              チェックしたものを冷蔵庫（Prep）に入れる</button></div>`;
+    }
+    if(P.note) h += `<div class="card"><h2>ひとこと</h2><div class="muted">${esc(P.note)}</div></div>`;
+  }
+  el.innerHTML = h;
+}
+function openDish(di,mi){
+  const m = S.plan.days[di].meals[mi];
+  let h = `<h3>${esc(m.name)}<button class="x" onclick="closeSheet()">×</button></h3>
+    <div class="muted" style="margin-bottom:10px">${fmt(m.kcal)}kcal ・ たんぱく質 ${num(m.protein).toFixed(0)}g ・ 塩分 ${num(m.salt).toFixed(1)}g</div>`;
+  if((m.ingredients||[]).length){
+    h += `<div class="sec-label">材料（1人分）</div>`;
+    m.ingredients.forEach(i=>{
+      h += `<div class="li"><span class="n">${esc(i.name)}</span><span class="muted">${num(i.amount)?fmt(i.amount)+esc(i.unit||''):esc(i.unit||'')}</span></div>`;
+    });
+  }
+  if((m.steps||[]).length){
+    h += `<div class="sec-label">作り方</div>`;
+    m.steps.forEach((s,i)=>{ h += `<div class="li"><span class="n"><b>${i+1}.</b> ${esc(s)}</span></div>`; });
+  }
+  if(m.memo) h += `<div class="sec-label">メモ</div><div class="muted">${esc(m.memo)}</div>`;
+  h += `<button class="btn" style="margin-top:14px" onclick="cookDish(${di},${mi});closeSheet()" ${m.doneAt?'disabled':''}>
+          ${m.doneAt?'記録済み':'作った（在庫を減らして記録）'}</button>`;
+  openSheet(h);
+}
+function cookDish(di,mi){
+  const d = S.plan.days[di], m = d.meals[mi];
+  if(m.doneAt) return;
+  const r = consumeStock(m.ingredients);
+  const k = d.date || todayKey();
+  logMeal(k, m.slot, {name:m.name, kcal:num(m.kcal), protein:num(m.protein), salt:num(m.salt),
+                      bento:!!m.bento, source:'plan', planRef:`${di}:${mi}`});
+  markPlanDone(`${di}:${mi}`);
+  renderPlan(); renderToday();
+  toast(r.ok ? `記録しました（在庫を${r.n}品減らしました）` : '記録しました（在庫は更新できませんでした）');
+}
+function markPlanDone(ref){
+  const [di,mi] = ref.split(':').map(Number);
+  if(S.plan && S.plan.days[di] && S.plan.days[di].meals[mi]){
+    S.plan.days[di].meals[mi].doneAt = new Date().toISOString();
+  }
+  save();
+}
+function unmarkPlanDone(ref){
+  const [di,mi] = ref.split(':').map(Number);
+  if(S.plan && S.plan.days[di] && S.plan.days[di].meals[mi]) delete S.plan.days[di].meals[mi].doneAt;
+}
+function togglePrepStep(i){ S.plan.prep[i].done = !S.plan.prep[i].done; save(); renderPlan(); }
+function toggleShop(i){ S.plan.shopping[i].done = !S.plan.shopping[i].done; save(); renderPlan(); }
+function shopToStock(){
+  const picked = (S.plan.shopping||[]).filter(s=>s.done && !s.stocked);
+  if(!picked.length){ toast('チェックされたものがありません'); return; }
+  const r = addStock(picked);
+  if(r.ok){ picked.forEach(s=>s.stocked=true); save(); toast(`冷蔵庫に${r.n}品入れました`); renderPlan(); }
+  else toast('Prepのデータが見つかりません');
+}
+
+/* ==========================================================================
+   画面：記録
+   ========================================================================== */
+function renderLog(){
+  const el = document.getElementById('log-body');
+  const days = [];
+  for(let i=13;i>=0;i--){ const k = addDays(todayKey(), -i); days.push(k); }
+  const t = targetsFor(todayKey());
+
+  const kcalData = days.map(k=>({k, v: totals(k).kcal}));
+  const proData  = days.map(k=>({k, v: totals(k).protein}));
+  const wData    = days.map(k=>({k, v: (S.days[k] && S.days[k].weightKg) || null}));
+
+  const rec = days.filter(k=>totals(k).kcal>0);
+  const avg7 = (arr)=>{ const a=arr.slice(-7).filter(x=>x.v); return a.length? a.reduce((s,x)=>s+x.v,0)/a.length : null; };
+  const a7k = avg7(kcalData), a7p = avg7(proData);
+
+  let h = `<div class="card"><h2>この2週間</h2>
+    <div class="kv"><span>記録した日</span><b>${rec.length} / 14 日</b></div>
+    <div class="kv"><span>7日平均 カロリー</span><b>${a7k?fmt(a7k)+' kcal':'—'}</b></div>
+    <div class="kv"><span>7日平均 たんぱく質</span><b>${a7p?a7p.toFixed(0)+' g':'—'}</b></div>
+  </div>`;
+
+  h += `<div class="card"><h2>カロリー<span class="sub">${t.kcal?'点線が目標':''}</span></h2>
+    <div id="c-kcal"></div></div>`;
+  h += `<div class="card"><h2>たんぱく質</h2><div id="c-pro"></div></div>`;
+  h += `<div class="card"><h2>体重</h2><div id="c-w"></div></div>`;
+
+  const withMeals = days.slice().reverse().filter(k=>day(k).meals.length);
+  h += `<div class="card"><h2>記録の一覧</h2>`;
+  if(!withMeals.length) h += `<div class="muted">まだ記録がありません。</div>`;
+  withMeals.forEach(k=>{
+    const tt = totals(k);
+    h += `<div class="slot"><div class="slot-head">
+            <span class="slot-name">${labelOf(k)}</span>
+            <span class="slot-kcal">${fmt(tt.kcal)}kcal ・ P${tt.protein.toFixed(0)} ・ 塩${tt.salt.toFixed(1)}</span></div>
+          <div class="muted">${day(k).meals.map(m=>esc(m.name)).join('、')}</div></div>`;
+  });
+  h += `</div>`;
+  el.innerHTML = h;
+
+  drawChart('c-kcal', kcalData, {color:'var(--series-2)', unit:'kcal', target:t.kcal, dec:0});
+  drawChart('c-pro',  proData,  {color:'var(--series-3)', unit:'g',    target:t.protein, dec:0});
+  drawChart('c-w',    wData,    {color:'var(--series-1)', unit:'kg',   dec:1, sparse:true});
+}
+
+/* 折れ線1本ぶん。左に目盛り、右端に値。値がなければ描かない */
+function drawChart(id, data, o){
+  const host = document.getElementById(id); if(!host) return;
+  const pts = data.filter(d=>d.v!=null && d.v>0);
+  if(pts.length < 2){ host.innerHTML = `<div class="muted">データが2日ぶん貯まると線になります。</div>`; return; }
+  const W=560, H=150, L=38, R=52, T=12, B=22;
+  const vals = pts.map(d=>d.v).concat(o.target?[o.target]:[]);
+  let lo=Math.min(...vals), hi=Math.max(...vals);
+  if(hi===lo){ hi=lo+1; lo=lo-1; }
+  const pad=(hi-lo)*0.15; lo-=pad; hi+=pad;
+  const xi = k => data.findIndex(d=>d.k===k);
+  const X = i => L + (W-L-R) * (data.length<2?0:i/(data.length-1));
+  const Y = v => T + (H-T-B) * (1 - (v-lo)/(hi-lo));
+
+  let s = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img">`;
+  [lo+ (hi-lo)*0.1, (lo+hi)/2, hi-(hi-lo)*0.1].forEach(v=>{
+    s += `<line x1="${L}" y1="${Y(v).toFixed(1)}" x2="${W-R}" y2="${Y(v).toFixed(1)}" stroke="var(--grid)" stroke-width="1"/>`;
+    s += `<text x="${L-6}" y="${(Y(v)+4).toFixed(1)}" text-anchor="end" font-size="10" fill="var(--text-muted)">${o.dec?v.toFixed(1):Math.round(v)}</text>`;
+  });
+  if(o.target){
+    s += `<line x1="${L}" y1="${Y(o.target).toFixed(1)}" x2="${W-R}" y2="${Y(o.target).toFixed(1)}"
+            stroke="var(--text-muted)" stroke-width="1" stroke-dasharray="4 4"/>`;
+  }
+  const d = pts.map((p,i)=>`${i?'L':'M'}${X(xi(p.k)).toFixed(1)},${Y(p.v).toFixed(1)}`).join(' ');
+  s += `<path d="${d}" fill="none" stroke="${o.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  const last = pts[pts.length-1];
+  s += `<circle cx="${X(xi(last.k)).toFixed(1)}" cy="${Y(last.v).toFixed(1)}" r="4" fill="${o.color}" stroke="var(--surface-1)" stroke-width="2"/>`;
+  s += `<text x="${W-R+7}" y="${(Y(last.v)+4).toFixed(1)}" font-size="11.5" font-weight="700" fill="${o.color}">${o.dec?last.v.toFixed(1):fmt(last.v)}</text>`;
+  const f=data[0], l=data[data.length-1];
+  s += `<text x="${L}" y="${H-5}" font-size="10" fill="var(--text-muted)">${dateOf(f.k).getMonth()+1}/${dateOf(f.k).getDate()}</text>`;
+  s += `<text x="${W-R}" y="${H-5}" text-anchor="end" font-size="10" fill="var(--text-muted)">${dateOf(l.k).getMonth()+1}/${dateOf(l.k).getDate()}</text>`;
+  s += `</svg><div class="legend">単位：${o.unit}</div>`;
+  host.innerHTML = s;
+}
+
+/* ==========================================================================
+   画面：設定
+   ========================================================================== */
+function renderSet(){
+  const el = document.getElementById('set-body');
+  const p = S.profile, t = targetsFor(todayKey());
+  let h = '';
+
+  h += `<div class="card"><h2>からだと目標</h2>
+    <div class="row">
+      <label class="f"><span>年齢</span><input type="number" inputmode="numeric" id="s-age" value="${p.age??''}" onchange="setProf('age',this.value)"></label>
+      <label class="f"><span>身長 cm</span><input type="number" inputmode="decimal" step="0.1" id="s-h" value="${p.heightCm??''}" onchange="setProf('heightCm',this.value)"></label>
+      <label class="f"><span>体重 kg</span><input type="number" inputmode="decimal" step="0.1" id="s-w" value="${p.weightKg??''}" onchange="setProf('weightKg',this.value)"></label>
+    </div>
+    <button class="btn btn-ghost" style="margin-bottom:12px" onclick="pullKihonWeightToProfile()">KIHONの7日平均を体重に入れる</button>
+    <label class="f"><span>ふだんの活動量</span>
+      <select id="s-act" onchange="setProf('activity',this.value)">
+        <option value="1.2"   ${p.activity==1.2?'selected':''}>ほとんど座っている</option>
+        <option value="1.375" ${p.activity==1.375?'selected':''}>週1〜3回 運動する</option>
+        <option value="1.55"  ${p.activity==1.55?'selected':''}>週3〜5回 運動する</option>
+        <option value="1.725" ${p.activity==1.725?'selected':''}>ほぼ毎日 動いている</option>
+      </select></label>
+    <label class="f"><span>目標</span>
+      <select id="s-goal" onchange="setProf('goal',this.value)">
+        <option value="0.8"  ${p.goal==0.8?'selected':''}>しっかり減らす（−20%）</option>
+        <option value="0.88" ${p.goal==0.88?'selected':''}>減らしながら筋肉を残す（−12%）</option>
+        <option value="1"    ${p.goal==1?'selected':''}>維持する</option>
+      </select></label>
+    <div class="kv"><span>1日の目安</span><b>${t.kcal?fmt(t.kcal - t.bonus)+' kcal':'—'}</b></div>
+    <div class="kv"><span>たんぱく質</span><b>${t.protein?t.protein+' g':'—'}（体重×1.6）</b></div>
+    <div class="kv"><span>塩分の上限</span><b>${SALT_MAX} g</b></div>
+    ${t.basis?`<div class="muted" style="margin-top:6px">${esc(t.basis)}</div>`:''}
+    <div class="muted" style="margin-top:6px">トレーニングした日は KIHON の記録を見て自動で +${num(S.prefs.trainBonus)}kcal します。</div>
+  </div>`;
+
+  h += `<div class="card"><h2>献立の好み</h2>
+    <label class="f"><span>避けたいもの・苦手なもの</span>
+      <textarea id="s-avoid" onchange="setPref('avoid',this.value)" placeholder="例：パクチー、生の貝">${esc(S.prefs.avoid)}</textarea></label>
+    <label class="f"><span>好きなもの・よく作るもの</span>
+      <textarea id="s-likes" onchange="setPref('likes',this.value)" placeholder="例：鶏むね、豆腐、味噌">${esc(S.prefs.likes)}</textarea></label>
+  </div>`;
+
+  h += `<div class="card"><h2>よく食べるもの<span class="sub">${S.favorites.length}件</span></h2>`;
+  S.favorites.forEach(f=>{
+    h += `<div class="li">
+            <span class="n">${esc(f.name)} <span class="muted">${SLOT_NAME[f.slot]||''}</span></span>
+            <span class="muted" style="white-space:nowrap">${fmt(f.kcal)}k / P${num(f.protein).toFixed(0)}</span>
+            <button class="x" style="border:0;background:transparent;color:var(--text-muted)" onclick="editFav('${f.id}')">編集</button>
+          </div>`;
+  });
+  h += `<button class="btn btn-ghost" style="margin-top:10px" onclick="editFav(null)">＋ 追加する</button></div>`;
+
+  h += `<div class="card"><h2>Claude APIキー</h2>
+    <label class="f"><span>献立づくりと栄養計算に使います。この端末にだけ保存されます</span>
+      <input type="password" id="s-key" value="${esc(apiKey)}" placeholder="sk-ant-..." onchange="setKey(this.value)"></label>
+    <label class="f"><span>使うモデル</span>
+      <select onchange="setPref('model',this.value)">
+        <option value="claude-opus-5" ${S.prefs.model==='claude-opus-5'?'selected':''}>Opus 5（よく考える）</option>
+        <option value="claude-sonnet-5" ${S.prefs.model==='claude-sonnet-5'?'selected':''}>Sonnet 5（速い・安い）</option>
+      </select></label>
+  </div>`;
+
+  const pAvail = prepAvailable();
+  h += `<div class="card"><h2>Prep（献立帳）との連携</h2>
+    <div class="kv"><span>冷蔵庫の在庫</span><b>${pAvail?prepStock().length+' 品':'見つかりません'}</b></div>
+    <div class="kv"><span>取り込み済みの記録</span><b>${(S.imported||[]).length} 件</b></div>
+    <div class="kv"><span>栄養を計算したレシピ</span><b>${Object.keys(S.nutrition||{}).length} 件</b></div>
+    <div class="muted" style="margin-top:8px">
+      在庫はPrepのものを直接読み書きします。<b>Prepとこのアプリを同時に開いたまま操作しない</b>でください。
+      片方の変更がもう片方に上書きされることがあります。
+    </div>
+  </div>`;
+
+  h += `<div class="card"><h2>データ</h2>
+    <div class="row" style="margin-bottom:8px">
+      <button class="btn btn-ghost" onclick="exportData()">書き出す</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('imp').click()">読み込む</button>
+    </div>
+    <input type="file" id="imp" accept="application/json" style="display:none" onchange="importData(event)">
+    <div class="muted">書き出すのはMAKANAIのデータだけです。Prepと KIHON には触れません。</div>
+  </div>`;
+
+  el.innerHTML = h;
+}
+function setProf(k,v){
+  const n = Number(v);
+  S.profile[k] = (v==='' || !Number.isFinite(n)) ? null : n;
+  save(); renderSet(); renderToday();
+}
+function setPref(k,v){ S.prefs[k] = v; save(); }
+function setKey(v){
+  apiKey = (v||'').trim();
+  if(apiKey) localStorage.setItem(AKEY, apiKey); else localStorage.removeItem(AKEY);
+  renderSet(); renderPlan();
+}
+function pullKihonWeightToProfile(){
+  const w = kihonWeightAvg();
+  if(w==null){ toast('KIHONに体重の記録がありません'); return; }
+  S.profile.weightKg = w; save(); renderSet(); renderToday();
+  toast(`体重に ${w}kg を入れました`);
+}
+function editFav(id){
+  const f = id ? S.favorites.find(x=>x.id===id) : {id:'', name:'', slot:'breakfast', kcal:'', protein:'', salt:''};
+  if(!f) return;
+  let h = `<h3>${id?'編集':'よく食べるものを追加'}<button class="x" onclick="closeSheet()">×</button></h3>
+    <label class="f"><span>名前</span><input id="f-name" value="${esc(f.name)}"></label>
+    <label class="f"><span>ふだん食べる時間帯</span><select id="f-slot">
+      ${SLOTS.map(s=>`<option value="${s.id}" ${f.slot===s.id?'selected':''}>${s.name}</option>`).join('')}
+    </select></label>
+    <div class="row">
+      <label class="f"><span>kcal</span><input id="f-kcal" type="number" inputmode="numeric" value="${f.kcal}"></label>
+      <label class="f"><span>たんぱく質 g</span><input id="f-pro" type="number" step="0.1" inputmode="decimal" value="${f.protein}"></label>
+      <label class="f"><span>塩分 g</span><input id="f-salt" type="number" step="0.1" inputmode="decimal" value="${f.salt}"></label>
+    </div>
+    <button class="btn" onclick="saveFav('${id||''}')">保存</button>`;
+  if(id) h += `<button class="btn btn-danger" style="margin-top:8px" onclick="delFav('${id}')">削除</button>`;
+  openSheet(h);
+}
+function saveFav(id){
+  const o = {
+    name:(document.getElementById('f-name').value||'').trim(),
+    slot:document.getElementById('f-slot').value,
+    kcal:num(document.getElementById('f-kcal').value),
+    protein:num(document.getElementById('f-pro').value),
+    salt:num(document.getElementById('f-salt').value),
+  };
+  if(!o.name){ toast('名前を入れてください'); return; }
+  if(id){ Object.assign(S.favorites.find(x=>x.id===id), o); }
+  else S.favorites.push(Object.assign({id:uid()}, o));
+  save(); closeSheet(); renderSet(); toast('保存しました');
+}
+function delFav(id){
+  S.favorites = S.favorites.filter(x=>x.id!==id);
+  save(); closeSheet(); renderSet();
+}
+function exportData(){
+  const blob = new Blob([JSON.stringify(S,null,2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `makanai-${todayKey()}.json`;
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+}
+function importData(ev){
+  const f = ev.target.files && ev.target.files[0]; if(!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try{
+      const o = JSON.parse(r.result);
+      if(o.app !== 'makanai') throw new Error('MAKANAIのデータではありません');
+      S = Object.assign(JSON.parse(JSON.stringify(DEF)), o);
+      save(); renderAll(); toast('読み込みました');
+    }catch(e){ toast('読み込めません：'+e.message, 4000); }
+  };
+  r.readAsText(f);
+  ev.target.value = '';
+}
+
+/* ==========================================================================
+   Claude API
+   ========================================================================== */
+async function callClaude(body){
+  if(!apiKey) throw new Error('APIキーが設定されていません');
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method:'POST',
+    headers:{
+      'Content-Type':'application/json',
+      'x-api-key':apiKey,
+      'anthropic-version':'2023-06-01',
+      'anthropic-dangerous-direct-browser-access':'true',
+    },
+    body: JSON.stringify(body),
+  });
+  if(!res.ok){
+    const e = await res.json().catch(()=>({}));
+    const msg = (e.error && e.error.message) || `APIエラー ${res.status}`;
+    const err = new Error(msg); err.status = res.status; throw err;
+  }
+  return res.json();
+}
+function textOf(r){
+  return (r.content||[]).filter(c=>c.type==='text').map(c=>c.text).join('\n');
+}
+/* 構造化出力で受け取る。古い経路に落ちたときのためJSON抜き出しも残す */
+function looseJSON(text){
+  if(!text) throw new Error('空の応答');
+  let s = text.replace(/```json\s*/gi,'').replace(/```/g,'').trim();
+  const a = s.indexOf('{'), b = s.lastIndexOf('}');
+  if(a>=0 && b>a) s = s.slice(a, b+1);
+  return JSON.parse(s);
+}
+async function askJSON(prompt, schema, maxTokens){
+  const base = { model:S.prefs.model||'claude-opus-5', max_tokens:maxTokens||8000,
+                 messages:[{role:'user', content:prompt}] };
+  try{
+    const r = await callClaude(Object.assign({}, base,
+      { output_config:{ format:{ type:'json_schema', schema } } }));
+    return looseJSON(textOf(r));
+  }catch(e){
+    if(e.status && e.status >= 500) throw e;
+    /* 構造化出力が通らない環境では、指示だけでJSONを書かせる */
+    const r = await callClaude(Object.assign({}, base, {
+      messages:[{role:'user', content: prompt +
+        '\n\n出力はこのJSONスキーマに厳密に従うこと。JSONだけを返し、前置きも説明もコードブロックも付けない。\n' +
+        JSON.stringify(schema)}]
+    }));
+    return looseJSON(textOf(r));
+  }
+}
+
+const NUTRI_SCHEMA = {
+  type:'object', additionalProperties:false,
+  required:['kcal','protein','salt'],
+  properties:{
+    kcal:{type:'number', description:'1人分のエネルギー(kcal)'},
+    protein:{type:'number', description:'1人分のたんぱく質(g)'},
+    salt:{type:'number', description:'1人分の食塩相当量(g)'},
+  }
+};
+
+const MEAL_SCHEMA = {
+  type:'object', additionalProperties:false,
+  required:['slot','name','bento','kcal','protein','salt','ingredients','steps','memo'],
+  properties:{
+    slot:{type:'string', enum:['breakfast','lunch','dinner']},
+    name:{type:'string'},
+    bento:{type:'boolean', description:'お弁当に詰めて持って行くものなら true'},
+    kcal:{type:'number'}, protein:{type:'number'}, salt:{type:'number'},
+    ingredients:{ type:'array', items:{
+      type:'object', additionalProperties:false, required:['name','amount','unit'],
+      properties:{ name:{type:'string'}, amount:{type:'number'}, unit:{type:'string'} } } },
+    steps:{ type:'array', items:{type:'string'} },
+    memo:{type:'string'},
+  }
+};
+const PLAN_SCHEMA = {
+  type:'object', additionalProperties:false,
+  required:['days','prep','shopping','note'],
+  properties:{
+    days:{ type:'array', items:{
+      type:'object', additionalProperties:false, required:['date','meals'],
+      properties:{ date:{type:'string', description:'YYYY-MM-DD'},
+                   meals:{ type:'array', items: MEAL_SCHEMA } } } },
+    prep:{ type:'array', items:{
+      type:'object', additionalProperties:false, required:['when','text'],
+      properties:{ when:{type:'string', description:'いつやるか（例：8/17の夜）'}, text:{type:'string'} } } },
+    shopping:{ type:'array', items:{
+      type:'object', additionalProperties:false, required:['name','amount','unit','category'],
+      properties:{ name:{type:'string'}, amount:{type:'number'}, unit:{type:'string'},
+                   category:{type:'string', enum:['野菜','肉・魚','卵・乳製品','調味料','乾物・麺','その他']} } } },
+    note:{type:'string'},
+  }
+};
+
+/* Prep のレシピ1人分の栄養を、このアプリ側で計算する */
+async function estimateRecipe(recipe){
+  const sv = num(recipe.servings) || 2;
+  const ings = (recipe.ingredients||[])
+    .map(i=>`${i.name} ${i.amount!=null?i.amount:''}${i.unit||''}`).join('、');
+  const prompt =
+`次の料理の栄養価を推定してください。分量は全体量（${sv}人分）です。
+料理名：${recipe.name}
+材料（全体）：${ings || '不明'}
+
+「1人分」（全体を${sv}で割った量）のエネルギー・たんぱく質・食塩相当量を、日本食品標準成分表に基づいて数値で答えてください。`;
+  const o = await askJSON(prompt, NUTRI_SCHEMA, 2000);
+  return { kcal:num(o.kcal), protein:num(o.protein), salt:num(o.salt) };
+}
+
+/* 手入力シートの「名前から栄養を推定する」 */
+async function guessNutrition(){
+  const name = (document.getElementById('m-name').value||'').trim();
+  if(!name){ toast('先に名前を入れてください'); return; }
+  const l = document.getElementById('guess-l');
+  l.innerHTML = '<span class="spin"></span>計算中…';
+  try{
+    const o = await askJSON(
+      `「${name}」を1人前食べたときのエネルギー・たんぱく質・食塩相当量を、日本の一般的な量で推定してください。`,
+      NUTRI_SCHEMA, 2000);
+    document.getElementById('m-kcal').value = Math.round(num(o.kcal));
+    document.getElementById('m-pro').value  = Math.round(num(o.protein)*10)/10;
+    document.getElementById('m-salt').value = Math.round(num(o.salt)*10)/10;
+    l.textContent = '推定しました（直せます）';
+  }catch(e){
+    l.textContent = '名前から栄養を推定する';
+    toast('推定できませんでした：'+e.message, 4000);
+  }
+}
+
+/* ---------- 献立づくり ---------- */
+async function makePlan(){
+  if(busy) return;
+  const btn = document.getElementById('plan-go');
+  busy = true; btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span>考えています… 1分ほどかかります';
+  try{
+    const t = targetsFor(todayKey());
+    const stock = prepStock();
+    const dates = []; for(let i=0;i<planDays;i++) dates.push(addDays(todayKey(), i));
+    const stockTxt = stock.length
+      ? stock.map(s=>`${s.name} ${num(s.qty)}${s.unit||''}${s.expiry?`(期限 ${s.expiry})`:''}`).join('、')
+      : '（在庫の登録なし）';
+    const recent = Object.keys(S.days).sort().slice(-5)
+      .flatMap(k=>day(k).meals.map(m=>m.name)).slice(-15);
+
+    const prompt =
+`あなたは日本の家庭料理に詳しい管理栄養士です。40〜50代女性1人ぶんの食事計画を${planDays}日分つくってください。
+
+【この人の目標】
+${t.kcal ? `1日 ${t.kcal - t.bonus} kcal / たんぱく質 ${t.protein} g / 食塩相当量 ${SALT_MAX} g 以下` : '一般的な成人女性の基準'}
+体脂肪を減らしながら筋肉を保ちたい。たんぱく質は毎食に分けて入れる。
+
+【日付】
+${dates.map((d,i)=>`${i+1}日目：${d}`).join(' / ')}
+
+【冷蔵庫にあるもの（これを先に使い切る。期限が近いものを優先）】
+${stockTxt}
+
+【条件】
+- 朝食・昼食・夕食の3食を必ず作ること。1日3件のmealsにする
+- 朝は10分以内でできるものにする${S.prefs.bento?'\n- 昼はお弁当にする。前日の夜に作り置きして詰められるものにし、bentoをtrueにする。冷めてもおいしく、汁気が出ないもの' : ''}
+- 外食やコンビニに頼らず自分で作れる献立にする
+- 同じ主菜を繰り返さない。和洋中を散らす
+- 分量・栄養価はすべて「1人分」で答える
+- 材料のnameは冷蔵庫の表記に合わせる（例「鶏むね肉」）。amountは数値、unitは g / ml / 個 / 本 / 枚 / パック などの単位
+- stepsは1品につき2〜4行の短い手順
+- prepには、まとめて仕込む作業を「いつ・何をする」の形で書く（前日夜の下ごしらえ、弁当の詰め方など）
+- shoppingには、冷蔵庫にないので買う必要があるものだけを入れる。すでにあるものは入れない
+${S.prefs.avoid?`- 避ける：${S.prefs.avoid}`:''}
+${S.prefs.likes?`- 好み：${S.prefs.likes}`:''}
+${recent.length?`- 最近食べたもの（続けない）：${recent.join('、')}`:''}
+
+noteには、この${planDays}日をうまく回すためのひとことを1〜2文で。`;
+
+    const o = await askJSON(prompt, PLAN_SCHEMA, 16000);
+    S.plan = {
+      id: uid(), createdAt: new Date().toISOString(),
+      days: (o.days||[]).map((d,i)=>({ date: dates[i] || d.date, meals: d.meals||[] })),
+      prep: (o.prep||[]).map(x=>Object.assign({done:false}, x)),
+      shopping: (o.shopping||[]).map(x=>Object.assign({done:false, stocked:false}, x)),
+      note: o.note || '',
+    };
+    save();
+    toast('献立ができました');
+  }catch(e){
+    toast('うまくいきませんでした：'+e.message, 5000);
+    console.error(e);
+  }finally{
+    busy = false;
+    renderPlan();
+  }
+}
+
+/* ==========================================================================
+   起動
+   ========================================================================== */
+function renderAll(){ renderToday(); renderPlan(); renderLog(); renderSet(); updateSub(); }
+function updateSub(){
+  const t = targetsFor(todayKey()), tot = totals(todayKey());
+  document.getElementById('h-sub').textContent = t.kcal
+    ? `今日 ${fmt(tot.kcal)} / ${fmt(t.kcal)} kcal` : '賄い';
+}
+document.querySelectorAll('nav button').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    const v = b.dataset.view;
+    document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on', x===b));
+    document.querySelectorAll('.view').forEach(x=>x.classList.toggle('on', x.id==='v-'+v));
+    if(v==='today'){ cursor = cursor || todayKey(); renderToday(); }
+    if(v==='plan') renderPlan();
+    if(v==='log')  renderLog();
+    if(v==='set')  renderSet();
+    updateSub();
+    window.scrollTo(0,0);
+  });
+});
+
+load();
+renderAll();
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
+}
+</script>
+</body>
+</html>
