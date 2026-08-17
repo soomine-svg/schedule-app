@@ -1154,6 +1154,15 @@ function renderSet(){
     </div>
   </div>`;
 
+  /* 同じ入れ物の中を行き来するための入口。
+     iPhone はホーム画面のアイコンごとに保存領域が分かれるので、
+     アプリ間の移動はリンクで行う必要がある（別アイコンから開くと繋がらない） */
+  h += `<div class="card"><h2>ほかのアプリ<span class="sub">ここから開くと在庫を共有できます</span></h2>
+    <div class="row">
+      <a class="btn btn-ghost" href="../kondate-cho/" style="text-decoration:none;text-align:center">Prep（献立帳）</a>
+      <a class="btn btn-ghost" href="../kihon/" style="text-decoration:none;text-align:center">KIHON（運動）</a>
+    </div></div>`;
+
   h += `<div class="card"><h2>データ</h2>
     <div class="row" style="margin-bottom:8px">
       <button class="btn btn-ghost" onclick="exportData()">書き出す</button>

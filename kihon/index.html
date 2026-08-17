@@ -304,6 +304,15 @@ nav button.on{color:var(--accent)}
       </div>
       <input type="file" id="importFile" accept="application/json,.json" style="display:none">
     </div>
+    <!-- iPhone はホーム画面のアイコンごとに保存領域が分かれる。
+         別アイコンから開くとアプリ間でデータが見えないので、移動はこのリンクで行う。 -->
+    <div class="card">
+      <h2>ほかのアプリ<span class="sub">ここから開くとデータを共有できます</span></h2>
+      <div class="row" style="margin-top:6px">
+        <a class="btn-ghost" href="../kondate-cho/" style="text-decoration:none;text-align:center;display:block">Prep（献立帳）</a>
+        <a class="btn-ghost" href="../makanai/" style="text-decoration:none;text-align:center;display:block">MAKANAI（食事）</a>
+      </div>
+    </div>
     <div class="card">
       <h2>やり直し</h2>
       <p class="muted">プログラムだけを1週目に戻します（記録は消えません）。</p>

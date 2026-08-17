@@ -1413,6 +1413,19 @@ h1, h2, h3, h4 { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-we
       </div>
     </div>
 
+    <!-- 他アプリへの入口。
+         iPhone はホーム画面のアイコンごとに保存領域が分かれるため、別アイコンから
+         開いた MAKANAI は Prep の在庫を読めない。ここから開けば同じ領域の中で
+         開くので連携が成立する。リンクのみで、処理は持たせない。 -->
+    <div class="card">
+      <h3 style="font-size: 14px; margin-bottom: 4px;">ほかのアプリ</h3>
+      <p class="text-sm text-muted mb-3">ここから開くと在庫を共有できます</p>
+      <div class="flex gap-2">
+        <a class="btn btn-ghost btn-sm" href="../makanai/" style="text-decoration:none;">MAKANAI（食事）</a>
+        <a class="btn btn-ghost btn-sm" href="../kihon/" style="text-decoration:none;">KIHON（運動）</a>
+      </div>
+    </div>
+
     <div class="card">
       <p class="text-sm text-muted text-center">Prep v2.0 · Phase 1</p>
     </div>
