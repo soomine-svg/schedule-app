@@ -288,6 +288,9 @@ const DEF = {
   favorites:[],
   plan:null,        // 直近に作った献立計画
   planHistory:[],   // 直近5件。上書きで消えると困るので取っておく
+  /* 「残りのカロリーで組む」提案。1日ぶんだけ持つ（計画とは別枠）。
+     {date, meals:[...], at} — 計画を上書きしないよう、あえて分けている */
+  fill:null,
   nutrition:{},     // Prepレシピid -> {kcal,protein,salt,at}  ← このアプリが計算した値
   imported:[],      // 取り込み済みの Prep 履歴id
 };
@@ -544,6 +547,11 @@ function targetsFor(k){
   return { kcal: kcal ? kcal + bonus : null, protein, bonus, basis };
 }
 
+/* まだ何も記録していない食事の枠 */
+function emptySlots(k){
+  const ms = day(k).meals;
+  return SLOTS.filter(s=>!ms.some(m=>m.slot===s.id)).map(s=>s.id);
+}
 function totals(k){
   const ms = day(k).meals;
   return ms.reduce((a,m)=>({
@@ -587,6 +595,9 @@ function renderToday(){
           <div class="kv"><span>塩分</span><b>${tot.salt.toFixed(1)} g</b></div>`;
   }
   h += `</div>`;
+
+  /* --- 残りのカロリーで組む --- */
+  h += fillCard(k, t, tot);
 
   /* --- 食事スロット --- */
   h += `<div class="card">`;
@@ -640,6 +651,184 @@ function renderToday(){
   el.innerHTML = h;
   updateSub();
 }
+
+/* ==========================================================================
+   残りのカロリーで組む
+   1日ぶんの計画とは別枠。すでに食べたぶんを引いた残りに収まる料理を、
+   まだ空いている食事の枠にだけ出す。
+   ========================================================================== */
+function fillCard(k, t, tot){
+  const F = (S.fill && S.fill.date === k) ? S.fill : null;
+  const open = emptySlots(k);
+  const left = t.kcal ? t.kcal - tot.kcal : null;
+  let h = `<div class="card"><h2>残りで組む<span class="sub">在庫とお気に入りから</span></h2>`;
+
+  if(!t.kcal){
+    h += `<div class="muted">設定で年齢・身長・体重を入れると、残り枠から提案できます。</div></div>`;
+    return h;
+  }
+  if(F && (F.meals||[]).some(m=>!m.doneAt)){
+    const tk = F.meals.filter(m=>!m.doneAt).reduce((a,m)=>a+num(m.kcal),0);
+    const tp = F.meals.filter(m=>!m.doneAt).reduce((a,m)=>a+num(m.protein),0);
+    h += `<div class="muted" style="margin-bottom:10px">
+            まだ食べていない分の合計 <b>${fmt(tk)}kcal ・ たんぱく質 ${tp.toFixed(0)}g</b></div>`;
+    F.meals.forEach((m,i)=>{
+      if(m.doneAt) return;
+      const saved = !!favByName(m.name);
+      const cook = (m.ingredients||[]).length > 0;
+      h += `<div class="slot">
+        <div class="slot-head">
+          <span class="slot-name">${SLOT_NAME[m.slot]||m.slot}</span>
+          <span class="slot-kcal">${fmt(m.kcal)}kcal ・ P${num(m.protein).toFixed(0)} ・ 塩${num(m.salt).toFixed(1)}</span>
+          <button class="star ${saved?'on':''}" onclick="fillFav(${i})" aria-label="お気に入り">${saved?'★':'☆'}</button>
+        </div>
+        <div style="font-size:14.5px;margin-bottom:6px">${esc(m.name)}${m.bento?'<span class="tag">弁当</span>':''}</div>
+        <div class="row">
+          <button class="btn btn-ghost" onclick="openFill(${i})">作り方</button>
+          <button class="btn btn-ghost" onclick="fillCook(${i})">${cook?'作った':'食べた'}</button>
+        </div></div>`;
+    });
+    h += `<button class="btn btn-ghost" style="margin-top:12px" onclick="clearFill()">この提案を捨てる</button>`;
+  }else if(left <= 0){
+    h += `<div class="muted">今日はもう目標に届いています。ここから足す提案は出しません。</div>`;
+  }else if(!open.length){
+    h += `<div class="muted">朝・昼・夕・間食すべて記録済みです。空いている枠がないので提案はしません。</div>`;
+  }else{
+    h += `<div class="muted" style="margin-bottom:10px">
+            残り <b>${fmt(left)}kcal</b> ・ たんぱく質 <b>あと${Math.max(0, t.protein - tot.protein).toFixed(0)}g</b>
+            ・ 空いている枠：${open.map(s=>SLOT_NAME[s]).join('・')}</div>
+          <button class="btn" id="fill-go" onclick="makeFill()" ${apiKey?'':'disabled'}>
+            ${apiKey?`残り ${fmt(left)}kcal で献立を出す`:'設定でAPIキーを入れてください'}</button>`;
+  }
+  return h + `</div>`;
+}
+
+const FILL_MEAL = {
+  type:'object', additionalProperties:false,
+  required:['slot','name','bento','kcal','protein','salt','ingredients','steps','memo'],
+  properties:{
+    slot:{type:'string', enum:['breakfast','lunch','dinner','snack']},
+    name:{type:'string'}, bento:{type:'boolean'},
+    kcal:{type:'number'}, protein:{type:'number'}, salt:{type:'number'},
+    ingredients:{ type:'array', items:{
+      type:'object', additionalProperties:false, required:['name','amount','unit'],
+      properties:{ name:{type:'string'}, amount:{type:'number'}, unit:{type:'string'} } } },
+    steps:{ type:'array', items:{type:'string'} },
+    memo:{type:'string'},
+  }
+};
+const FILL_SCHEMA = {
+  type:'object', additionalProperties:false, required:['meals','note'],
+  properties:{ meals:{ type:'array', items: FILL_MEAL }, note:{type:'string'} }
+};
+
+async function makeFill(){
+  if(busy) return;
+  const k = cursor;
+  const btn = document.getElementById('fill-go');
+  busy = true; if(btn){ btn.disabled = true; btn.innerHTML = '<span class="spin"></span>考えています…'; }
+  try{
+    const t = targetsFor(k), tot = totals(k);
+    const leftK = t.kcal - tot.kcal;
+    const leftP = Math.max(0, t.protein - tot.protein);
+    const leftS = Math.max(0, SALT_MAX - tot.salt);
+    const open  = emptySlots(k);
+    const eaten = day(k).meals.map(m=>`${SLOT_NAME[m.slot]}：${m.name}（${fmt(m.kcal)}kcal）`).join('、') || 'まだ何も記録なし';
+    const stock = prepStock();
+    const stockTxt = stock.length
+      ? stock.map(s=>`${s.name} ${num(s.qty)}${s.unit||''}${s.expiry?`(期限 ${s.expiry})`:''}`).join('、')
+      : '（在庫の登録なし）';
+    const favs = cookableFavs().filter(f=>open.includes(f.slot) || open.length>1);
+    const favTxt = favs.map(f=>
+      `・${f.name}（${SLOT_NAME[f.slot]||''} / ${fmt(f.kcal)}kcal / P${num(f.protein).toFixed(0)}g）`
+      + ` 材料: ${(f.ingredients||[]).map(i=>`${i.name}${num(i.amount)?num(i.amount)+(i.unit||''):''}`).join('、')}`).join('\n');
+
+    const prompt =
+`日本の家庭料理に詳しい管理栄養士として、今日の残りの食事を提案してください。
+
+【今日すでに食べたもの】
+${eaten}
+
+【残り枠】ここに収めること
+- カロリー：残り ${fmt(leftK)} kcal（超えない）
+- たんぱく質：あと ${leftP.toFixed(0)} g（できるだけ埋める）
+- 食塩相当量：あと ${leftS.toFixed(1)} g（超えない）
+
+【まだ空いている食事の枠】
+${open.map(s=>SLOT_NAME[s]).join('・')}　← この枠にだけ出す。埋まっている枠には出さない
+
+【冷蔵庫にあるもの（ここから作れるものを優先）】
+${stockTxt}
+${favs.length?`\n【お気に入り（合うものがあればそのまま使う。名前・材料・手順を変えない）】\n${favTxt}`:''}
+
+【条件】
+- 合計が残り枠を超えないこと。**枠が小さければ品数を減らす**。無理に全部の枠を埋めなくてよい
+- たんぱく質を優先する。減量中なのでここが足りないと筋肉が落ちる
+- 分量・栄養価はすべて「1人分」
+- 材料のnameは冷蔵庫の表記に合わせる。amountは数値、unitは g / ml / 個 / 本 / 枚 / パック など
+- stepsは1品2〜4行の短い手順。手早く作れるものにする
+${S.prefs.avoid?`- 避ける：${S.prefs.avoid}`:''}
+${S.prefs.likes?`- 好み：${S.prefs.likes}`:''}
+
+noteには、残り枠の使い方のひとことを1文で。`;
+
+    const o = await askJSON(prompt, FILL_SCHEMA, 6000);
+    S.fill = { date:k, at:new Date().toISOString(),
+               meals:(o.meals||[]).map(m=>Object.assign({}, m)), note:o.note||'' };
+    save();
+    toast('残り枠で組みました');
+  }catch(e){
+    toast('うまくいきませんでした：'+e.message, 5000);
+    console.error(e);
+  }finally{
+    busy = false;
+    renderToday();
+  }
+}
+function openFill(i){
+  const m = S.fill.meals[i];
+  const cook = (m.ingredients||[]).length > 0;
+  let h = `<h3>${esc(m.name)}<button class="x" onclick="closeSheet()">×</button></h3>
+    <div class="muted" style="margin-bottom:10px">${fmt(m.kcal)}kcal ・ たんぱく質 ${num(m.protein).toFixed(0)}g ・ 塩分 ${num(m.salt).toFixed(1)}g</div>`;
+  if(cook){
+    h += `<div class="sec-label">材料（1人分）</div>`;
+    m.ingredients.forEach(x=>{
+      h += `<div class="li"><span class="n">${esc(x.name)}</span><span class="muted">${num(x.amount)?fmt(x.amount)+esc(x.unit||''):esc(x.unit||'')}</span></div>`;
+    });
+  }
+  if((m.steps||[]).length){
+    h += `<div class="sec-label">作り方</div>`;
+    m.steps.forEach((s,n)=>{ h += `<div class="li"><span class="n"><b>${n+1}.</b> ${esc(s)}</span></div>`; });
+  }
+  if(m.memo) h += `<div class="sec-label">メモ</div><div class="muted">${esc(m.memo)}</div>`;
+  h += `<button class="btn" style="margin-top:14px" onclick="fillCook(${i});closeSheet()">
+          ${cook?'作った（在庫を減らして記録）':'食べた（記録する）'}</button>
+        <button class="btn btn-ghost" style="margin-top:8px" onclick="fillFav(${i});closeSheet()">
+          ${favByName(m.name)?'お気に入りを今の内容で更新':'お気に入りに保存する'}</button>`;
+  openSheet(h);
+}
+function fillCook(i){
+  const m = S.fill.meals[i];
+  if(m.doneAt) return;
+  const cook = (m.ingredients||[]).length > 0;
+  const r = cook ? consumeStock(m.ingredients) : {ok:true, n:0};
+  logMeal(S.fill.date, m.slot, {name:m.name, kcal:num(m.kcal), protein:num(m.protein),
+                                salt:num(m.salt), bento:!!m.bento, source:'fill'});
+  m.doneAt = new Date().toISOString();
+  save(); renderToday();
+  toast(r.n ? `記録しました（在庫を${r.n}品減らしました）` : '記録しました');
+}
+function fillFav(i){
+  const m = S.fill.meals[i];
+  const o = { name:m.name, slot:m.slot, bento:!!m.bento,
+              kcal:num(m.kcal), protein:num(m.protein), salt:num(m.salt),
+              ingredients:m.ingredients||[], steps:m.steps||[], memo:m.memo||'' };
+  const ex = favByName(m.name);
+  if(ex){ Object.assign(ex, o); toast('お気に入りを更新しました'); }
+  else  { S.favorites.push(Object.assign({id:uid(), uses:0}, o)); toast('お気に入りに保存しました'); }
+  save(); renderToday();
+}
+function clearFill(){ S.fill = null; save(); renderToday(); }
 
 function shiftDay(n){ cursor = addDays(cursor, n); renderToday(); }
 function setWeight(v){
