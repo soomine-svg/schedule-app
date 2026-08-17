@@ -4587,6 +4587,7 @@ ${recipeInfo || 'なし'}
     // 履歴用の追加メタ情報を付与（生成時刻、表示用ID）
     data.id = uuid();
     data.createdAt = new Date().toISOString();
+    data.planFor = planForMode(); // 自分だけ / 家族と一緒。保存時の人数とタグに効く
 
     state.mealPlan = data;
 
@@ -4614,11 +4615,24 @@ ${recipeInfo || 'なし'}
   }
 }
 
+// 提案は1枠しか持てない（新しい提案は前のものを置き換える）。
+// どちらの分の提案かを明示して、家族用が消えたように見えるのを防ぐ
+function planForBadge(p) {
+  if (!p || !p.planFor) return '';
+  return p.planFor === 'self'
+    ? '<span class="tag" style="background:#e8f5e9; color:#2e7d32;">自分だけ</span>'
+    : '<span class="tag" style="background:#ede7f6; color:#4527a0;">家族と一緒</span>';
+}
+
 function renderMealPlan(data) {
   const resultEl = document.getElementById('meal-plan-result');
   if (!data) { resultEl.innerHTML = ''; return; }
 
   let mainHtml = '';
+  const forHtml = data.planFor
+    ? `<div class="flex gap-2 mb-2" style="align-items:center; flex-wrap:wrap;">${planForBadge(data)}`
+      + `<span class="text-sm text-muted">の献立です。前の提案は「履歴」から戻せます。</span></div>`
+    : '';
 
   // 単発プラン（お弁当 or 1日 or 作り置き）
   if (data.dishes && Array.isArray(data.dishes)) {
@@ -4767,7 +4781,7 @@ function renderMealPlan(data) {
     </div>
   ` : '';
 
-  resultEl.innerHTML = summaryHtml + mainHtml + shoppingHtml;
+  resultEl.innerHTML = forHtml + summaryHtml + mainHtml + shoppingHtml;
 }
 
 function savePlanRecipe(dayIdx) {
@@ -4777,13 +4791,18 @@ function savePlanRecipe(dayIdx) {
     showToast('既に保存済みです');
     return;
   }
+  const tags = ['献立提案'];
+  if (state.mealPlan.planFor === 'self') tags.push('自分用');
+
   const recipeId = uuid();
   const recipe = {
     id: recipeId,
     name: d.name,
-    servings: 2,
+    // 自分だけの提案は1人分で作らせている。2人分で保存すると1食あたりの
+    // カロリーが半分に見積もられてしまう
+    servings: state.mealPlan.planFor === 'self' ? 1 : 2,
     cookTime: null,
-    tags: ['献立提案'],
+    tags: tags,
     ingredients: d.ingredients || [],
     steps: (Array.isArray(d.steps) && d.steps.length > 0) ? d.steps : (d.note ? [d.note] : ['手順は後で追加してください']),
     notes: '献立提案から保存',
@@ -4835,11 +4854,15 @@ function savePlanDish(dishIdx) {
   let notes = '献立提案から保存';
   if (d.storageNote) notes += `\n保存目安: ${d.storageNote}`;
 
+  if (state.mealPlan.planFor === 'self') tags.push('自分用');
+
   const recipeId = uuid();
   const recipe = {
     id: recipeId,
     name: d.name,
-    servings: 2,
+    // 自分だけの提案は1人分で作らせている。2人分で保存すると1食あたりの
+    // カロリーが半分に見積もられてしまう
+    servings: state.mealPlan.planFor === 'self' ? 1 : 2,
     cookTime: null,
     tags: tags,
     ingredients: d.ingredients || [],
@@ -4899,12 +4922,12 @@ function openMealPlanHistory() {
       const date = p.createdAt ? formatDate(p.createdAt) : '日時不明';
       const title = p.title || '献立';
       // タイプを表示用に整形
-      let typeBadge = '';
-      if (p.planType === 'prep') typeBadge = '<span class="tag" style="background:#fff3e0; color:#e65100;">作り置き</span>';
-      else if (p.planType === 'bento') typeBadge = '<span class="tag tag-shu">お弁当</span>';
-      else if (p.planType === 'dinner-1') typeBadge = '<span class="tag">1日</span>';
-      else if (p.planType === 'dinner-3' || (p.days && p.days.length === 3)) typeBadge = '<span class="tag">3日</span>';
-      else if (p.planType === 'dinner-7' || (p.days && p.days.length === 7)) typeBadge = '<span class="tag">1週間</span>';
+      let typeBadge = planForBadge(p);
+      if (p.planType === 'prep') typeBadge += '<span class="tag" style="background:#fff3e0; color:#e65100;">作り置き</span>';
+      else if (p.planType === 'bento') typeBadge += '<span class="tag tag-shu">お弁当</span>';
+      else if (p.planType === 'dinner-1') typeBadge += '<span class="tag">1日</span>';
+      else if (p.planType === 'dinner-3' || (p.days && p.days.length === 3)) typeBadge += '<span class="tag">3日</span>';
+      else if (p.planType === 'dinner-7' || (p.days && p.days.length === 7)) typeBadge += '<span class="tag">1週間</span>';
 
       // 内容のサマリー
       let summary = '';
