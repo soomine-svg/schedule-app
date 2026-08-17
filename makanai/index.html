@@ -1046,6 +1046,15 @@ function skipPrep(historyId){
    画面：計画
    ========================================================================== */
 let planDays = 3;
+let planStart = 0;   // 0 = 今日から / 1 = 明日から。前夜に仕込む使い方があるので選べるようにする
+function planDates(){
+  return Array.from({length:planDays}, (_,i)=>addDays(todayKey(), planStart + i));
+}
+function planRangeLabel(){
+  const ds = planDates();
+  const one = k => k===todayKey() ? '今日' : (k===addDays(todayKey(),1) ? '明日' : labelOf(k).split('・')[0]);
+  return ds.length===1 ? one(ds[0]) : `${one(ds[0])} 〜 ${one(ds[ds.length-1])}`;
+}
 function renderPlan(){
   const el = document.getElementById('plan-body');
   const t = targetsFor(todayKey());
@@ -1054,6 +1063,10 @@ function renderPlan(){
   h += linkWarning();
   const cf = cookableFavs();
   h += `<div class="card"><h2>献立をつくる<span class="sub">在庫を先に使う</span></h2>
+    <div class="chips" style="margin-bottom:8px">
+      <button class="chip ${planStart===0?'on':''}" onclick="planStart=0;renderPlan()">今日から</button>
+      <button class="chip ${planStart===1?'on':''}" onclick="planStart=1;renderPlan()">明日から</button>
+    </div>
     <div class="chips" style="margin-bottom:10px">
       <button class="chip ${planDays===1?'on':''}" onclick="planDays=1;renderPlan()">1日分</button>
       <button class="chip ${planDays===3?'on':''}" onclick="planDays=3;renderPlan()">3日分</button>
@@ -1061,19 +1074,24 @@ function renderPlan(){
       <button class="chip ${S.prefs.useFav?'on':''}" onclick="S.prefs.useFav=!S.prefs.useFav;save();renderPlan()">お気に入り中心</button>
     </div>
     <div class="muted" style="margin-bottom:10px">
+      <b>${esc(planRangeLabel())}</b> の献立を組みます<br>
       在庫 ${prepStock().length} 品${prepAvailable()?'':'（Prepのデータが見つかりません）'}
       ・ お気に入り ${cf.length} 品${S.prefs.useFav&&cf.length?'（ここから優先的に組みます）':''}
       ${t.kcal?`<br>1日 ${fmt(t.kcal)}kcal / たんぱく質 ${t.protein}g を目安に組みます`:'<br>設定で体格を入れると目安つきで組めます'}
     </div>
     <button class="btn" id="plan-go" onclick="makePlan()" ${apiKey?'':'disabled'}>
       ${apiKey?'献立をつくる':'設定でAPIキーを入れてください'}</button>
+    ${planStart===1?`<div class="muted" style="margin-top:8px">
+      今夜のうちに仕込むなら、そのまま「作った」を押してください。
+      <b>在庫は今すぐ減り、食べた記録は明日に入ります。</b></div>`:''}
   </div>`;
 
   if((S.planHistory||[]).length){
     h += `<div class="card"><h2>前に作った計画<span class="sub">${S.planHistory.length}件</span></h2><div class="chips">`;
     S.planHistory.forEach((p,i)=>{
       const d0 = (p.days&&p.days[0]) ? p.days[0].date : '';
-      h += `<button class="chip sm" onclick="restorePlan(${i})">${d0?esc(labelOf(d0).split('・')[0]):'計画'}から</button>`;
+      /* 「今日から/明日から」のチップと紛らわしいので「…の計画」と書く */
+      h += `<button class="chip sm" onclick="restorePlan(${i})">${d0?esc(labelOf(d0).split('・')[0]):''}の計画</button>`;
     });
     h += `</div><div class="muted" style="margin-top:8px">呼び戻すと、今の計画は履歴に移ります。作り直さずに済みます。</div></div>`;
   }
@@ -1732,7 +1750,7 @@ async function makePlan(){
   try{
     const t = targetsFor(todayKey());
     const stock = prepStock();
-    const dates = []; for(let i=0;i<planDays;i++) dates.push(addDays(todayKey(), i));
+    const dates = planDates();
     const stockTxt = stock.length
       ? stock.map(s=>`${s.name} ${num(s.qty)}${s.unit||''}${s.expiry?`(期限 ${s.expiry})`:''}`).join('、')
       : '（在庫の登録なし）';
@@ -1764,6 +1782,7 @@ ${t.kcal ? `1日 ${t.kcal - t.bonus} kcal / たんぱく質 ${t.protein} g / 食
 
 【日付】
 ${dates.map((d,i)=>`${i+1}日目：${d}`).join(' / ')}
+今日は ${todayKey()}。${planStart===1 ? '**明日ぶんからの計画**なので、仕込みは「今夜」のうちにできる形にする。' : ''}
 
 【冷蔵庫にあるもの（これを先に使い切る。期限が近いものを優先）】
 ${stockTxt}
