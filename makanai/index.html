@@ -636,6 +636,7 @@ document.getElementById('ov').addEventListener('click', e=>{ if(e.target.id==='o
 
 let addSlot = 'breakfast';
 let pendingPrepId = null;   // 栄養が分からず手入力にまわした Prep 履歴id
+let keyShown = false;       // APIキーを伏字にしないで見せるか
 let favSlot = 'all';        // お気に入り絞り込み（時間帯）
 let favBento = false;       // お気に入り絞り込み（弁当のみ）
 function setFavSlot(s){ favSlot = s; renderAdd('fav'); }
@@ -1102,9 +1103,16 @@ function renderSet(){
       材料を持つもの（作れる）は、計画タブの「お気に入り中心」で献立に使われます。
       計画の料理の★を押すと、材料と作り方ごとここに保存されます。</div></div>`;
 
+  const prepKey = prepApiKey();
   h += `<div class="card"><h2>Claude APIキー</h2>
     <label class="f"><span>献立づくりと栄養計算に使います。この端末にだけ保存されます</span>
-      <input type="password" id="s-key" value="${esc(apiKey)}" placeholder="sk-ant-..." onchange="setKey(this.value)"></label>
+      <input type="${keyShown?'text':'password'}" id="s-key" value="${esc(apiKey)}" placeholder="sk-ant-..." onchange="setKey(this.value)"></label>
+    <div class="row" style="margin-bottom:12px">
+      <button class="btn btn-ghost" onclick="keyShown=!keyShown;renderSet()">${keyShown?'隠す':'表示する'}</button>
+      ${prepKey && prepKey!==apiKey
+        ? `<button class="btn btn-ghost" onclick="pullPrepKey()">Prepのキーを使う</button>`
+        : `<button class="btn btn-ghost" disabled>${prepKey?'Prepと同じキー':'Prepにもキーなし'}</button>`}
+    </div>
     <label class="f"><span>使うモデル</span>
       <select onchange="setPref('model',this.value)">
         <option value="claude-opus-5" ${S.prefs.model==='claude-opus-5'?'selected':''}>Opus 5（よく考える）</option>
@@ -1144,6 +1152,17 @@ function setKey(v){
   apiKey = (v||'').trim();
   if(apiKey) localStorage.setItem(AKEY, apiKey); else localStorage.removeItem(AKEY);
   renderSet(); renderPlan();
+}
+/* Prep が持っている API キー。同じオリジンなので読める。
+   Prep の入力欄は伏字で読めないため、写さずに持ってこられるようにしてある */
+function prepApiKey(){
+  try{ return localStorage.getItem('kondate_cho_api_key') || ''; }catch(e){ return ''; }
+}
+function pullPrepKey(){
+  const k = prepApiKey();
+  if(!k){ toast('Prepにもキーが入っていません'); return; }
+  setKey(k);
+  toast('Prepのキーを取り込みました');
 }
 function pullKihonWeightToProfile(){
   const w = kihonWeightAvg();
