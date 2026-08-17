@@ -1712,6 +1712,18 @@ h1, h2, h3, h4 { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-we
       <button class="rating-star" onclick="setRating(5)">☆</button>
     </div>
 
+    <div class="form-group" id="feedback-servings-group">
+      <label class="form-label">自分が食べた量</label>
+      <div class="flex gap-2" style="flex-wrap: wrap;">
+        <button class="btn btn-ghost btn-sm serving-btn" data-servings="0">食べていない</button>
+        <button class="btn btn-ghost btn-sm serving-btn" data-servings="0.5">半分</button>
+        <button class="btn btn-ghost btn-sm serving-btn active" data-servings="1">1人分</button>
+        <button class="btn btn-ghost btn-sm serving-btn" data-servings="1.5">1.5</button>
+        <button class="btn btn-ghost btn-sm serving-btn" data-servings="2">2人分</button>
+      </div>
+      <p class="text-sm text-muted" style="margin-top:6px;">家族の分をまとめて作っても、ここで選んだぶんだけが自分の摂取に入ります。作り置きなら「食べていない」。</p>
+    </div>
+
     <div class="form-group">
       <label class="form-label">メモ（次回への覚書）</label>
       <textarea class="form-textarea" id="feedback-memo" rows="3" placeholder="例：醤油をもう少し控えめに／想像以上に美味しかった／トマトは少なめの方が良さそう"></textarea>
@@ -2987,11 +2999,25 @@ function cookRecipe(id) {
 
   pendingCookRecipeId = id;
   pendingRating = 0;
+  pendingServings = 1;
   // フィードバック入力を表示
   document.getElementById('feedback-recipe-name').textContent = recipe.name;
   document.getElementById('feedback-memo').value = '';
   renderRatingStars(0);
+  renderServingButtons();
+  // からだの設定が無ければ、食べた量を聞く意味がない
+  const sg = document.getElementById('feedback-servings-group');
+  if (sg) sg.style.display = bodyTargets() ? '' : 'none';
   openModal('modal-cook-feedback');
+}
+
+// 作った量ではなく「自分が食べた量」。家族分をまとめて作る日のための区別
+let pendingServings = 1;
+function renderServingButtons() {
+  document.querySelectorAll('.serving-btn').forEach(b => {
+    b.classList.toggle('active', Number(b.dataset.servings) === pendingServings);
+    b.onclick = () => { pendingServings = Number(b.dataset.servings); renderServingButtons(); };
+  });
 }
 
 function renderRatingStars(rating) {
@@ -3047,7 +3073,7 @@ function completeCook(rating, memo) {
     // レシピは後から編集・削除されうるので、食べた時点の値を控える
     kcalPerServing: recipe.kcalPerServing ?? null,
     proteinPerServing: recipe.proteinPerServing ?? null,
-    servingsEaten: 1,
+    servingsEaten: pendingServings,
   });
 
   saveState();
@@ -3055,6 +3081,7 @@ function completeCook(rating, memo) {
   closeModal('modal-recipe-detail');
   pendingCookRecipeId = null;
   pendingRating = 0;
+  pendingServings = 1;
   showToast(`記録しました（在庫を${decreased}品更新）`);
   renderRecipes();
   renderIntake();
@@ -5061,10 +5088,11 @@ function intakeOn(key) {
       const r = (state.recipes || []).find(r => r.id === h.recipeId);
       if (r) { if (k == null) k = r.kcalPerServing; if (p == null) p = r.proteinPerServing; }
     }
-    const mult = h.servingsEaten || 1;
+    const mult = typeof h.servingsEaten === 'number' ? h.servingsEaten : 1;
     if (typeof k === 'number') kcal += k * mult;
     if (typeof p === 'number') protein += p * mult;
-    items.push({ label: h.recipeName, kcal: typeof k === 'number' ? k * mult : null, known: typeof k === 'number' });
+    if (mult > 0) items.push({ label: h.recipeName + (mult !== 1 ? `（${mult}人分）` : ''),
+                               kcal: typeof k === 'number' ? k * mult : null, known: typeof k === 'number' });
   });
   (state.intakeLog || []).forEach(e => {
     if (e.date !== key) return;
@@ -5099,6 +5127,33 @@ const OUTSIDE_PRESETS = [
   { label: '外食（普通）', kcal: 800,  protein: 30 },
   { label: '外食（重め）', kcal: 1100, protein: 35 },
 ];
+
+// 作り置き・残り物を後から食べた日のため。在庫は減らさず、摂取だけ足す
+function recentCooked() {
+  const seen = new Set(), out = [];
+  const today = new Date();
+  (state.history || []).slice().sort((a, b) => new Date(b.date) - new Date(a.date)).forEach(h => {
+    if ((today - new Date(h.date)) / 86400000 > 10) return;
+    if (seen.has(h.recipeId)) return;
+    const r = (state.recipes || []).find(r => r.id === h.recipeId);
+    const kcal = h.kcalPerServing ?? (r && r.kcalPerServing);
+    const protein = h.proteinPerServing ?? (r && r.proteinPerServing);
+    if (typeof kcal !== 'number') return;
+    seen.add(h.recipeId);
+    out.push({ id: h.recipeId, name: h.recipeName || (r && r.name) || '', kcal, protein: protein || 0 });
+  });
+  return out.slice(0, 6);
+}
+
+function addCookedIntake(recipeId) {
+  const r = recentCooked().find(x => x.id === recipeId);
+  if (!r) return;
+  if (!state.intakeLog) state.intakeLog = [];
+  state.intakeLog.push({ id: uuid(), date: dateKey(), label: r.name, kcal: r.kcal, protein: r.protein });
+  saveState();
+  renderIntake();
+  showToast(`${r.name} を記録しました`);
+}
 
 function addOutsideIntake(idx) {
   const p = OUTSIDE_PRESETS[idx];
@@ -5135,6 +5190,7 @@ function renderIntake() {
   const kcalLeft = t.kcal - v.kcal;
   const protLeft = t.protein - v.protein;
   const unknown = v.items.filter(i => !i.known).length;
+  const cooked = recentCooked();
 
   el.innerHTML = `<div class="card">
     <div class="flex" style="justify-content:space-between; align-items:baseline;">
@@ -5161,6 +5217,10 @@ function renderIntake() {
         <span>${escapeHtml(i.label)}</span>
         <span class="text-muted">${i.kcal != null ? Math.round(i.kcal).toLocaleString() + ' kcal' : '—'}${i.logId ? ` <button class="btn btn-ghost btn-sm" style="padding:0 6px;" onclick="removeIntake('${i.logId}')">×</button>` : ''}</span>
       </div>`).join('')}</div>` : ''}
+    ${cooked.length ? `<div class="form-label" style="margin-top:12px;">作り置き・残り物から</div>
+    <div class="flex gap-2" style="flex-wrap:wrap;">
+      ${cooked.map(c => `<button class="btn btn-ghost btn-sm" onclick="addCookedIntake('${c.id}')">${escapeHtml(c.name)}<span class="text-muted"> ${Math.round(c.kcal)}</span></button>`).join('')}
+    </div>` : ''}
     <div class="form-label" style="margin-top:12px;">外で食べた（ざっくりで構いません）</div>
     <div class="flex gap-2" style="flex-wrap:wrap;">
       ${OUTSIDE_PRESETS.map((p, i) => `<button class="btn btn-ghost btn-sm" onclick="addOutsideIntake(${i})">${p.label}</button>`).join('')}
@@ -5168,18 +5228,27 @@ function renderIntake() {
   </div>`;
 }
 
-// AI提案に目標を渡す。未設定なら何も足さない
+// AI提案に目標を渡す。未設定なら何も足さない。
+// 重要: この目標は「作る人1人分」のもの。家族の分量まで目標に合わせると、
+// 家族全員を本人のダイエットに巻き込むことになる。そこを明示的に否定する。
 function buildIntakePromptInfo() {
   const t = bodyTargets();
   if (!t) return '';
   const v = intakeOn(dateKey());
   const kcalLeft = Math.max(0, t.kcal - v.kcal);
   const protLeft = Math.max(0, t.protein - v.protein);
-  return `\n\n【栄養の目標】
-- 1日の目標: 約${t.kcal}kcal / たんぱく質${t.protein}g${t.training ? '（今日はトレーニング日）' : ''}
-- 今日の残り: 約${kcalLeft}kcal / たんぱく質${protLeft}g
+  const f = state.family || {};
+  const others = (f.adults || 0) + (f.teens || 0) + (f.schoolKids || 0) + (f.preschoolers || 0) > 1;
+  return `\n\n【栄養の目標（作る本人の1人分についてのみ）】
+- 本人の1日の目標: 約${t.kcal}kcal / たんぱく質${t.protein}g${t.training ? '（今日はトレーニング日）' : ''}
+- 本人の今日の残り: 約${kcalLeft}kcal / たんぱく質${protLeft}g
 - たんぱく質を満たすことを最優先。カロリーは目安で、±15%の幅は問題にしない
-- 在庫の消費を優先しつつ、この範囲に収まる構成にすること`;
+- 在庫の消費を優先しつつ、1人分がこの範囲に収まる構成にすること`
+  + (others ? `
+- 【厳守】この数値は本人1人分にのみ適用する。家族の分量は家族構成の指示に従い、
+  1人分の量を減らしてはならない。人数分に増やすだけにすること
+- 家族と本人で必要量が違う場合は、主食やご飯の量で調整できる構成にし、
+  「本人はご飯を控えめに」のように note で伝えること` : '');
 }
 
 // ========== からだと目標（設定） ==========
