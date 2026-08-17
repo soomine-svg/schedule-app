@@ -129,6 +129,7 @@ label.f span{display:block;font-size:12px;color:var(--text-muted);margin-bottom:
 .star{border:1px solid var(--line);background:var(--surface-2);color:var(--text-secondary);
   font-size:12px;font-weight:600;line-height:1;padding:6px 10px;border-radius:999px;margin-left:8px;white-space:nowrap}
 .star.on{color:#fff;background:var(--accent);border-color:var(--accent)}
+.star.kept{color:var(--text-primary);background:var(--surface-3)}
 .add{border:1px dashed var(--line);background:transparent;color:var(--text-secondary);
   border-radius:10px;padding:8px;width:100%;font-size:13px;font-weight:600}
 .tag{display:inline-block;font-size:10.5px;font-weight:700;padding:1px 6px;border-radius:99px;
@@ -284,8 +285,11 @@ const DEF = {
   targets:{ manual:false, kcal:null, protein:null },
   prefs:{ avoid:'', likes:'', model:'claude-opus-5', trainBonus:200, bento:true, useFav:true },
   days:{},          // 'YYYY-MM-DD' -> {meals:[...], weightKg}
-  /* お気に入り。材料を持つものは「作れる」＝献立に使える。持たないものは記録専用（外食など）
-     {id,name,slot,bento,kcal,protein,salt,ingredients:[],steps:[],memo,uses} */
+  /* 保存したもの（レシピ帳）。1つのリストで、2つの軸で役割が変わる。
+     ・材料を持つ（ingredients あり）… 作れる。「作った」で在庫が減る
+     ・star が true … お気に入り。献立づくりで優先的に使う
+     材料はあるが star でないもの＝「控えておくだけ」。献立には出てこない。
+     {id,name,slot,bento,star,kcal,protein,salt,ingredients:[],steps:[],memo,uses} */
   favorites:[],
   plan:null,        // 直近に作った献立計画
   planHistory:[],   // 直近5件。上書きで消えると困るので取っておく
@@ -361,6 +365,9 @@ function load(){
   /* 古い版のお気に入りにも新しい欄を足しておく */
   S.favorites.forEach(f=>{
     if(f.bento === undefined)      f.bento = false;
+    /* ★は「献立に使う」印なので、材料を持たない記録専用のものには付けない。
+       材料つきの既存分は今までどおり献立に使う（挙動を変えない） */
+    if(f.star === undefined)       f.star = (f.ingredients||[]).length > 0;
     if(!Array.isArray(f.ingredients)) f.ingredients = [];
     if(!Array.isArray(f.steps))       f.steps = [];
     if(f.memo === undefined)       f.memo = '';
@@ -369,8 +376,10 @@ function load(){
   if(!Array.isArray(S.planHistory)) S.planHistory = [];
   apiKey = localStorage.getItem(AKEY) || '';
 }
-/* 材料を持つ＝献立に組める定番 */
+/* 材料を持つ＝作れるもの（記録で「作った」が押せる） */
 function cookableFavs(){ return S.favorites.filter(f=>(f.ingredients||[]).length > 0); }
+/* そのうち★が付いたもの＝献立づくりに渡すもの */
+function planFavs(){ return cookableFavs().filter(f=>f.star); }
 function favByName(name){
   const n = normName(name);
   return S.favorites.find(f=>normName(f.name)===n) || null;
@@ -684,13 +693,13 @@ function fillCard(k, t, tot){
             まだ食べていない分の合計 <b>${fmt(tk)}kcal ・ たんぱく質 ${tp.toFixed(0)}g</b></div>`;
     F.meals.forEach((m,i)=>{
       if(m.doneAt) return;
-      const saved = !!favByName(m.name);
+      const saved = favByName(m.name);
       const cook = (m.ingredients||[]).length > 0;
       h += `<div class="slot">
         <div class="slot-head">
           <span class="slot-name">${SLOT_NAME[m.slot]||m.slot}</span>
           <span class="slot-kcal">${fmt(m.kcal)}kcal ・ P${num(m.protein).toFixed(0)} ・ 塩${num(m.salt).toFixed(1)}</span>
-          <button class="star ${saved?'on':''}" onclick="fillFav(${i})" aria-label="お気に入りに保存">${saved?'★ 保存済':'☆ 保存'}</button>
+          <button class="star ${saved?(saved.star?'on':'kept'):''}" onclick="fillFav(${i})" aria-label="保存">${saved ? (saved.star?'★ 保存済':'保存済') : '＋ 保存'}</button>
         </div>
         <div style="font-size:14.5px;margin-bottom:6px">${esc(m.name)}${m.bento?'<span class="tag">弁当</span>':''}</div>
         <div class="row">
@@ -748,7 +757,7 @@ async function makeFill(){
     const stockTxt = stock.length
       ? stock.map(s=>`${s.name} ${num(s.qty)}${s.unit||''}${s.expiry?`(期限 ${s.expiry})`:''}`).join('、')
       : '（在庫の登録なし）';
-    const favs = cookableFavs().filter(f=>open.includes(f.slot) || open.length>1);
+    const favs = planFavs().filter(f=>open.includes(f.slot) || open.length>1);
     const favTxt = favs.map(f=>
       `・${f.name}（${SLOT_NAME[f.slot]||''} / ${fmt(f.kcal)}kcal / P${num(f.protein).toFixed(0)}g）`
       + ` 材料: ${(f.ingredients||[]).map(i=>`${i.name}${num(i.amount)?num(i.amount)+(i.unit||''):''}`).join('、')}`).join('\n');
@@ -814,10 +823,15 @@ function openFill(i){
     m.steps.forEach((s,n)=>{ h += `<div class="li"><span class="n"><b>${n+1}.</b> ${esc(s)}</span></div>`; });
   }
   if(m.memo) h += `<div class="sec-label">メモ</div><div class="muted">${esc(m.memo)}</div>`;
+  const sv2 = favByName(m.name);
   h += `<button class="btn" style="margin-top:14px" onclick="fillCook(${i});closeSheet()">
           ${cook?'作った（在庫を減らして記録）':'食べた（記録する）'}</button>
-        <button class="btn btn-ghost" style="margin-top:8px" onclick="fillFav(${i});closeSheet()">
-          ${favByName(m.name)?'お気に入りを今の内容で更新':'お気に入りに保存する'}</button>`;
+        <button class="btn btn-ghost" style="margin-top:8px" onclick="fillFav(${i});openFill(${i})">
+          ${sv2?'保存した内容を更新する':'＋ 保存する（材料と作り方を控える）'}</button>`;
+  if(sv2){
+    h += `<button class="btn btn-ghost" style="margin-top:8px" onclick="toggleStar('${esc(m.name).replace(/'/g,"\\'")}', ()=>{renderToday();openFill(${i})})">
+            ${sv2.star?'★ お気に入りを外す（保存は残る）':'☆ お気に入りにする（献立に使う）'}</button>`;
+  }
   openSheet(h);
 }
 function fillCook(i){
@@ -833,13 +847,9 @@ function fillCook(i){
 }
 function fillFav(i){
   const m = S.fill.meals[i];
-  const o = { name:m.name, slot:m.slot, bento:!!m.bento,
-              kcal:num(m.kcal), protein:num(m.protein), salt:num(m.salt),
-              ingredients:m.ingredients||[], steps:m.steps||[], memo:m.memo||'' };
-  const ex = favByName(m.name);
-  if(ex){ Object.assign(ex, o); toast('お気に入りを更新しました'); }
-  else  { S.favorites.push(Object.assign({id:uid(), uses:0}, o)); toast('お気に入りに保存しました'); }
-  save(); renderToday();
+  saveDish({ name:m.name, slot:m.slot, bento:!!m.bento,
+             kcal:num(m.kcal), protein:num(m.protein), salt:num(m.salt),
+             ingredients:m.ingredients||[], steps:m.steps||[], memo:m.memo||'' }, renderToday);
 }
 function clearFill(){ S.fill = null; save(); renderToday(); }
 
@@ -918,7 +928,7 @@ function renderAdd(tab){
       const cook = (f.ingredients||[]).length > 0;
       h += `<div style="display:flex;align-items:stretch;gap:6px;border-bottom:1px solid var(--line)">
               <button class="pick" style="border-bottom:0;flex:1" onclick="addFav('${f.id}')">
-                <span class="n">${esc(f.name)}${f.bento?'<span class="tag">弁当</span>':''}${cook?'<span class="tag g">作れる</span>':''}</span>
+                <span class="n">${cook&&f.star?'★ ':''}${esc(f.name)}${f.bento?'<span class="tag">弁当</span>':''}${cook?'<span class="tag g">作れる</span>':''}</span>
                 <span class="v">${fmt(f.kcal)}kcal ・ P${num(f.protein).toFixed(0)}g</span>
               </button>
               ${cook?`<button class="chip sm" style="align-self:center;white-space:nowrap" onclick="cookFav('${f.id}')">作った</button>`:''}
@@ -985,8 +995,8 @@ function addManual(){
     protein:num(document.getElementById('m-pro').value),
     salt:num(document.getElementById('m-salt').value), source:'manual' };
   if(document.getElementById('m-fav').checked){
-    S.favorites.push({id:uid(), name, slot:addSlot, bento:false, kcal:o.kcal, protein:o.protein,
-                      salt:o.salt, ingredients:[], steps:[], memo:'', uses:0});
+    S.favorites.push({id:uid(), name, slot:addSlot, bento:false, star:false, kcal:o.kcal,
+                      protein:o.protein, salt:o.salt, ingredients:[], steps:[], memo:'', uses:0});
   }
   if(pendingPrepId){
     o.source = 'prep'; o.prepHistoryId = pendingPrepId;
@@ -1062,7 +1072,7 @@ function renderPlan(){
   let h = '';
 
   h += linkWarning();
-  const cf = cookableFavs();
+  const cf = planFavs();
   h += `<div class="card"><h2>献立をつくる<span class="sub">在庫を先に使う</span></h2>
     <div class="chips" style="margin-bottom:8px">
       <button class="chip ${planStart===0?'on':''}" onclick="planStart=0;renderPlan()">今日から</button>
@@ -1078,6 +1088,7 @@ function renderPlan(){
       <b>${esc(planRangeLabel())}</b> の献立を組みます<br>
       在庫 ${prepStock().length} 品${prepAvailable()?'':'（Prepのデータが見つかりません）'}
       ・ お気に入り ${cf.length} 品${S.prefs.useFav&&cf.length?'（ここから優先的に組みます）':''}
+      ${cookableFavs().length-cf.length>0?`・ 保存のみ ${cookableFavs().length-cf.length} 品（献立には出しません）`:''}
       ${t.kcal?`<br>1日 ${fmt(t.kcal)}kcal / たんぱく質 ${t.protein}g を目安に組みます`:'<br>設定で体格を入れると目安つきで組めます'}
     </div>
     <button class="btn" id="plan-go" onclick="makePlan()" ${apiKey?'':'disabled'}>
@@ -1105,15 +1116,16 @@ function renderPlan(){
       const dp = (d.meals||[]).reduce((a,m)=>a+num(m.protein),0);
       h += `<div class="card"><h2>${esc(dt)}<span class="sub">${fmt(dk)}kcal ・ P${dp.toFixed(0)}g</span></h2>
         ${di===0?`<div class="muted" style="margin-bottom:6px">
-          気に入った料理は<b>「☆ 保存」</b>を押すと、材料と作り方ごとお気に入りに残ります。</div>`:''}`;
+          <b>「＋ 保存」</b>で材料と作り方ごと控えられます。<b>献立にも使いたいときは、
+          「作り方」の中で★を付けてください。</b></div>`:''}`;
       (d.meals||[]).forEach((m,mi)=>{
-        const saved = !!favByName(m.name);
+        const saved = favByName(m.name);
         h += `<div class="slot">
           <div class="slot-head">
             <span class="slot-name">${SLOT_NAME[m.slot]||m.slot}</span>
             <span class="slot-kcal">${fmt(m.kcal)}kcal ・ P${num(m.protein).toFixed(0)} ・ 塩${num(m.salt).toFixed(1)}</span>
-            <button class="star ${saved?'on':''}" onclick="saveDishAsFav(${di},${mi})"
-                    aria-label="お気に入りに保存">${saved?'★ 保存済':'☆ 保存'}</button>
+            <button class="star ${saved?(saved.star?'on':'kept'):''}" onclick="saveDishAsFav(${di},${mi})"
+                    aria-label="保存">${saved ? (saved.star?'★ 保存済':'保存済') : '＋ 保存'}</button>
           </div>
           <div style="font-size:14.5px;margin-bottom:6px">${esc(m.name)}${m.bento?'<span class="tag">弁当</span>':''}${m.doneAt?'<span class="tag g">記録済</span>':''}</div>
           <div class="row">
@@ -1170,22 +1182,39 @@ function openDish(di,mi){
     m.steps.forEach((s,i)=>{ h += `<div class="li"><span class="n"><b>${i+1}.</b> ${esc(s)}</span></div>`; });
   }
   if(m.memo) h += `<div class="sec-label">メモ</div><div class="muted">${esc(m.memo)}</div>`;
+  const sv = favByName(m.name);
   h += `<button class="btn" style="margin-top:14px" onclick="cookDish(${di},${mi});closeSheet()" ${m.doneAt?'disabled':''}>
           ${m.doneAt?'記録済み':'作った（在庫を減らして記録）'}</button>
-        <button class="btn btn-ghost" style="margin-top:8px" onclick="saveDishAsFav(${di},${mi});closeSheet()">
-          ${favByName(m.name)?'お気に入りを今の内容で更新':'お気に入りに保存する'}</button>`;
+        <button class="btn btn-ghost" style="margin-top:8px" onclick="saveDishAsFav(${di},${mi});openDish(${di},${mi})">
+          ${sv?'保存した内容を更新する':'＋ 保存する（材料と作り方を控える）'}</button>`;
+  if(sv){
+    h += `<button class="btn btn-ghost" style="margin-top:8px" onclick="toggleStar('${esc(m.name).replace(/'/g,"\\'")}', ()=>{renderPlan();openDish(${di},${mi})})">
+            ${sv.star?'★ お気に入りを外す（保存は残る）':'☆ お気に入りにする（献立に使う）'}</button>
+          <div class="muted" style="margin-top:8px">
+            お気に入りにすると、次の献立づくりで優先的に使われます。保存だけなら献立には出てきません。</div>`;
+  }
   openSheet(h);
 }
-/* 計画の料理をお気に入りに残す。材料・手順・栄養ごと持っていくので、次から作り直せる */
+/* 計画の料理を保存する。材料・手順・栄養ごと持っていくので、次から作り直せる。
+   ★（献立に使う）は立てない。控えておきたいだけの料理もあるため、別操作にしてある */
+function saveDish(o, after){
+  const ex = favByName(o.name);
+  if(ex){ Object.assign(ex, o); toast('保存した内容を更新しました'); }
+  else  { S.favorites.push(Object.assign({id:uid(), uses:0, star:false}, o)); toast('保存しました'); }
+  save(); if(after) after();
+}
 function saveDishAsFav(di,mi){
   const m = S.plan.days[di].meals[mi];
-  const o = { name:m.name, slot:m.slot, bento:!!m.bento,
-              kcal:num(m.kcal), protein:num(m.protein), salt:num(m.salt),
-              ingredients:m.ingredients||[], steps:m.steps||[], memo:m.memo||'' };
-  const ex = favByName(m.name);
-  if(ex){ Object.assign(ex, o); toast('お気に入りを更新しました'); }
-  else  { S.favorites.push(Object.assign({id:uid(), uses:0}, o)); toast('お気に入りに保存しました'); }
-  save(); renderPlan();
+  saveDish({ name:m.name, slot:m.slot, bento:!!m.bento,
+             kcal:num(m.kcal), protein:num(m.protein), salt:num(m.salt),
+             ingredients:m.ingredients||[], steps:m.steps||[], memo:m.memo||'' }, renderPlan);
+}
+/* ★の付け外し。名前で引く（保存済みでなければ何もしない） */
+function toggleStar(name, after){
+  const f = favByName(name); if(!f) return;
+  f.star = !f.star; save();
+  toast(f.star ? 'お気に入りにしました（献立に使います）' : 'お気に入りを外しました（保存は残ります）');
+  if(after) after();
 }
 /* 前に作った計画を呼び戻す。今の計画は履歴に移す（捨てない） */
 function restorePlan(i){
@@ -1442,23 +1471,30 @@ function renderSet(){
       <textarea id="s-likes" onchange="setPref('likes',this.value)" placeholder="例：鶏むね、豆腐、味噌">${esc(S.prefs.likes)}</textarea></label>
   </div>`;
 
-  const nCook = cookableFavs().length;
-  h += `<div class="card"><h2>お気に入り<span class="sub">${S.favorites.length}件 / 作れる ${nCook}件</span></h2>`;
+  const nCook = cookableFavs().length, nStar = planFavs().length;
+  h += `<div class="card"><h2>保存したもの<span class="sub">${S.favorites.length}件 / 作れる ${nCook}件 / お気に入り ${nStar}件</span></h2>`;
   S.favorites.slice().sort((a,b)=>
-    (a.slot===b.slot?0:SLOTS.findIndex(s=>s.id===a.slot)-SLOTS.findIndex(s=>s.id===b.slot))
+    (b.star?1:0)-(a.star?1:0)
+    || (a.slot===b.slot?0:SLOTS.findIndex(s=>s.id===a.slot)-SLOTS.findIndex(s=>s.id===b.slot))
     || num(b.uses)-num(a.uses)).forEach(f=>{
+    const cook = (f.ingredients||[]).length > 0;
     h += `<div class="li">
+            ${cook ? `<button class="star ${f.star?'on':''}" style="margin-left:0"
+                    onclick="toggleStar('${esc(f.name).replace(/'/g,"\\'")}', renderSet)"
+                    aria-label="お気に入り">${f.star?'★':'☆'}</button>`
+                   : `<span class="muted" style="width:30px;flex:0 0 auto"></span>`}
             <span class="n">${esc(f.name)}
-              <span class="muted">${SLOT_NAME[f.slot]||''}</span>${f.bento?'<span class="tag">弁当</span>':''}${(f.ingredients||[]).length?'<span class="tag g">作れる</span>':''}</span>
+              <span class="muted">${SLOT_NAME[f.slot]||''}</span>${f.bento?'<span class="tag">弁当</span>':''}${cook?'<span class="tag g">作れる</span>':''}</span>
             <span class="muted" style="white-space:nowrap">${fmt(f.kcal)}k / P${num(f.protein).toFixed(0)}</span>
             <button class="x" style="border:0;background:transparent;color:var(--text-muted)" onclick="editFav('${f.id}')">編集</button>
           </div>`;
   });
   h += `<button class="btn btn-ghost" style="margin-top:10px" onclick="editFav(null)">＋ 追加する</button>
     <div class="muted" style="margin-top:8px">
-      分類は<b>時間帯</b>と<b>弁当かどうか</b>の2つだけ。タグは自動で増やしません。<br>
-      材料を持つもの（作れる）は、計画タブの「お気に入り中心」で献立に使われます。
-      計画の料理の★を押すと、材料と作り方ごとここに保存されます。</div></div>`;
+      <b>★ = お気に入り</b>。★付きだけが、計画タブの「お気に入り中心」で献立に使われます。
+      ★は<b>材料を持つもの（作れる）にだけ</b>付けられます。<br>
+      <b>★なし</b>は控えておくだけ。献立には出てきませんが、記録では1タップで使えます。<br>
+      分類は<b>時間帯</b>と<b>弁当かどうか</b>の2つだけ。タグは自動で増やしません。</div></div>`;
 
   const prepKey = prepApiKey();
   h += `<div class="card"><h2>Claude APIキー</h2>
@@ -1542,7 +1578,7 @@ function pullKihonWeightToProfile(){
 }
 function editFav(id){
   const f = id ? S.favorites.find(x=>x.id===id)
-              : {id:'', name:'', slot:'breakfast', bento:false, kcal:'', protein:'', salt:'', ingredients:[], steps:[], memo:''};
+              : {id:'', name:'', slot:'breakfast', bento:false, star:false, kcal:'', protein:'', salt:'', ingredients:[], steps:[], memo:''};
   if(!f) return;
   let h = `<h3>${id?'お気に入りを編集':'お気に入りを追加'}<button class="x" onclick="closeSheet()">×</button></h3>
     <label class="f"><span>名前</span><input id="f-name" value="${esc(f.name)}"></label>
@@ -1552,6 +1588,9 @@ function editFav(id){
     <label class="f" style="display:flex;gap:8px;align-items:center">
       <input type="checkbox" id="f-bento" ${f.bento?'checked':''} style="width:19px;height:19px;accent-color:var(--accent)">
       <span style="margin:0">お弁当にできる</span></label>
+    <label class="f" style="display:flex;gap:8px;align-items:center">
+      <input type="checkbox" id="f-star" ${f.star?'checked':''} style="width:19px;height:19px;accent-color:var(--accent)">
+      <span style="margin:0">★ お気に入り（献立に使う）</span></label>
     <div class="row">
       <label class="f"><span>kcal</span><input id="f-kcal" type="number" inputmode="numeric" value="${f.kcal}"></label>
       <label class="f"><span>たんぱく質 g</span><input id="f-pro" type="number" step="0.1" inputmode="decimal" value="${f.protein}"></label>
@@ -1577,6 +1616,7 @@ function saveFav(id){
     name:(document.getElementById('f-name').value||'').trim(),
     slot:document.getElementById('f-slot').value,
     bento:document.getElementById('f-bento').checked,
+    star:document.getElementById('f-star').checked,
     kcal:num(document.getElementById('f-kcal').value),
     protein:num(document.getElementById('f-pro').value),
     salt:num(document.getElementById('f-salt').value),
@@ -1761,7 +1801,7 @@ async function makePlan(){
       .flatMap(k=>day(k).meals.map(m=>m.name)).slice(-15);
 
     /* お気に入り中心モード：材料つきのお気に入りを渡し、そこから優先的に組ませる */
-    const favs = S.prefs.useFav ? cookableFavs() : [];
+    const favs = S.prefs.useFav ? planFavs() : [];
     const favTxt = favs.map(f=>
       `・${f.name}（${SLOT_NAME[f.slot]||''}${f.bento?'・弁当可':''} / ${fmt(f.kcal)}kcal / P${num(f.protein).toFixed(0)}g / 塩${num(f.salt).toFixed(1)}g）`
       + ` 材料: ${(f.ingredients||[]).map(i=>`${i.name}${num(i.amount)?num(i.amount)+(i.unit||''):''}`).join('、')}`

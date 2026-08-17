@@ -1,6 +1,6 @@
 /* MAKANAI service worker — ネットワーク優先・キャッシュはフォールバック。
    更新時は CACHE の版を上げること（v1 → v2 …）。*/
-const CACHE = 'makanai-v12';
+const CACHE = 'makanai-v13';
 const ASSETS = [
   './', './index.html', './manifest.json',
   './favicon.png', './icon-180.png', './icon-192.png', './icon-512.png',
