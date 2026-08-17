@@ -125,6 +125,9 @@ label.f span{display:block;font-size:12px;color:var(--text-muted);margin-bottom:
 .meal .n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .meal .v{font-size:12.5px;color:var(--text-muted);font-variant-numeric:tabular-nums}
 .meal .x{border:0;background:transparent;color:var(--text-muted);padding:2px 6px;font-size:16px;line-height:1}
+.meal .tap{flex:1;min-width:0;display:flex;align-items:center;gap:8px;border:0;background:transparent;
+  padding:2px 0;text-align:left;font:inherit;color:inherit}
+.meal .tap .v{margin-left:auto}
 .prep-row{border-top:1px solid var(--line);padding:9px 0}
 .star{border:1px solid var(--line);background:var(--surface-2);color:var(--text-secondary);
   font-size:12px;font-weight:600;line-height:1;padding:6px 10px;border-radius:999px;margin-left:8px;white-space:nowrap}
@@ -628,8 +631,10 @@ function renderToday(){
               <span class="slot-kcal">${ms.length?fmt(sk)+' kcal':'—'}</span></div>`;
     ms.forEach(m=>{
       h += `<div class="meal">
-              <span class="n">${esc(m.name)}${m.source==='prep'?'<span class="tag g">Prep</span>':''}${m.bento?'<span class="tag">弁当</span>':''}</span>
-              <span class="v">${fmt(m.kcal)}k / P${num(m.protein).toFixed(0)}</span>
+              <button class="tap" onclick="editMeal('${m.id}')">
+                <span class="n">${esc(m.name)}${m.source==='prep'?'<span class="tag g">Prep</span>':''}${m.bento?'<span class="tag">弁当</span>':''}</span>
+                <span class="v">${fmt(m.kcal)}k / P${num(m.protein).toFixed(0)}</span>
+              </button>
               <button class="x" onclick="delMeal('${m.id}')" aria-label="削除">×</button>
             </div>`;
     });
@@ -873,6 +878,60 @@ function delMeal(id){
   if(m && m.prepHistoryId) S.imported = (S.imported||[]).filter(x=>x!==m.prepHistoryId);
   if(m && m.planRef && S.plan) unmarkPlanDone(m.planRef);
   save(); renderToday();
+}
+/* 記録の編集。食べた量が違ったときに直せないと、数字が信用できなくなる。
+   倍率ボタンは入力欄に反映するだけで、保存を押すまで確定しない（押しすぎても戻せる） */
+function editMeal(id){
+  const d = day(cursor);
+  const m = d.meals.find(x=>x.id===id); if(!m) return;
+  const h = `<h3>記録を直す<button class="x" onclick="closeSheet()">×</button></h3>
+    <label class="f"><span>名前</span><input id="e-name" value="${esc(m.name)}"></label>
+    <label class="f"><span>食べた時間帯</span><select id="e-slot">
+      ${SLOTS.map(s=>`<option value="${s.id}" ${m.slot===s.id?'selected':''}>${s.name}</option>`).join('')}
+    </select></label>
+    <div class="sec-label">食べた量を変える</div>
+    <div class="chips" style="margin-bottom:12px">
+      <button class="chip sm" onclick="scaleMeal(0.5)">半分</button>
+      <button class="chip sm" onclick="scaleMeal(0.75)">3/4</button>
+      <button class="chip sm" onclick="scaleMeal(1.5)">1.5倍</button>
+      <button class="chip sm" onclick="scaleMeal(2)">2倍</button>
+      <button class="chip sm" onclick="resetMeal('${id}')">元に戻す</button>
+    </div>
+    <div class="row">
+      <label class="f"><span>kcal</span><input id="e-kcal" type="number" inputmode="numeric" value="${Math.round(num(m.kcal))}"></label>
+      <label class="f"><span>たんぱく質 g</span><input id="e-pro" type="number" step="0.1" inputmode="decimal" value="${Math.round(num(m.protein)*10)/10}"></label>
+      <label class="f"><span>塩分 g</span><input id="e-salt" type="number" step="0.1" inputmode="decimal" value="${Math.round(num(m.salt)*10)/10}"></label>
+    </div>
+    <div class="muted" style="margin-bottom:12px">
+      倍率は上の3つの数字に掛けるだけです。<b>保存を押すまで反映されません。</b>
+      ${m.source==='plan'||m.source==='fill' ? '<br>在庫はすでに減らしています。ここを直しても在庫は変わりません。' : ''}
+    </div>
+    <button class="btn" onclick="saveMeal('${id}')">保存する</button>
+    <button class="btn btn-danger" style="margin-top:8px" onclick="delMeal('${id}');closeSheet()">この記録を消す</button>`;
+  openSheet(h);
+}
+function scaleMeal(r){
+  const k = document.getElementById('e-kcal'), p = document.getElementById('e-pro'), s = document.getElementById('e-salt');
+  k.value = Math.round(num(k.value) * r);
+  p.value = Math.round(num(p.value) * r * 10) / 10;
+  s.value = Math.round(num(s.value) * r * 10) / 10;
+}
+function resetMeal(id){
+  const m = day(cursor).meals.find(x=>x.id===id); if(!m) return;
+  document.getElementById('e-kcal').value = Math.round(num(m.kcal));
+  document.getElementById('e-pro').value  = Math.round(num(m.protein)*10)/10;
+  document.getElementById('e-salt').value = Math.round(num(m.salt)*10)/10;
+}
+function saveMeal(id){
+  const m = day(cursor).meals.find(x=>x.id===id); if(!m) return;
+  const name = (document.getElementById('e-name').value||'').trim();
+  if(!name){ toast('名前を入れてください'); return; }
+  m.name = name;
+  m.slot = document.getElementById('e-slot').value;
+  m.kcal = num(document.getElementById('e-kcal').value);
+  m.protein = num(document.getElementById('e-pro').value);
+  m.salt = num(document.getElementById('e-salt').value);
+  save(); closeSheet(); renderToday(); toast('直しました');
 }
 function logMeal(k, slot, o){
   day(k).meals.push(Object.assign({ id:uid(), slot, at:new Date().toISOString() }, o));
