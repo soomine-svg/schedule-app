@@ -589,8 +589,8 @@ h1, h2, h3, h4 { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-we
   font-size: 13px;
   z-index: 300;
   opacity: 0;
-  /* 透明でもタップは吸ってしまう。トーストは触るものではないので常に透過させる。
-     これが無いと、一度トーストが出た後、下部ナビの中央がタップに反応しなくなる */
+  /* 透明でもタップを吸ってしまうため常に透過させる。これが無いと、一度
+     トーストが出た後、下部ナビの中央がタップに反応しなくなる（実測で確認） */
   pointer-events: none;
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   box-shadow: 0 4px 16px rgba(0,0,0,0.2);
@@ -1197,16 +1197,7 @@ h1, h2, h3, h4 { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-we
       <h2 class="view-title"><span class="view-title-deco"></span>献立</h2>
     </div>
 
-    <div id="intake-box"></div>
-
     <div class="card">
-      <div class="form-label">誰の分</div>
-      <div class="flex gap-2 mb-2" style="flex-wrap: wrap;">
-        <button class="btn btn-ghost btn-sm plan-for-btn active" data-plan-for="family">家族と一緒</button>
-        <button class="btn btn-ghost btn-sm plan-for-btn" data-plan-for="self">自分だけ</button>
-      </div>
-      <p class="text-sm text-muted mb-3" id="plan-for-hint"></p>
-
       <div class="form-label">種類</div>
       <div class="flex gap-2 mb-3" style="flex-wrap: wrap;">
         <button class="btn btn-ghost btn-sm plan-period-btn active" data-plan-type="dinner-3">3日（夕食）</button>
@@ -1308,48 +1299,6 @@ h1, h2, h3, h4 { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-we
       <p class="text-sm text-muted mb-3">APIキーはこの端末にのみ保存されます</p>
       <input type="password" class="form-input mb-2" id="api-key-input" placeholder="sk-ant-...">
       <button class="btn btn-primary btn-sm" onclick="saveApiKey()">保存</button>
-    </div>
-
-    <div class="card">
-      <h3 style="font-size: 14px; margin-bottom: 4px;">からだと目標</h3>
-      <p class="text-sm text-muted mb-3">入れると献立タブに今日の摂取が出ます。未入力なら従来通り動きます。<b>この数値はこの端末から出ません。</b></p>
-      <div class="form-group" style="display:grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-        <div>
-          <label class="form-label">性別</label>
-          <select class="form-input" id="body-sex" onchange="saveBody()">
-            <option value="female">女性</option>
-            <option value="male">男性</option>
-          </select>
-        </div>
-        <div>
-          <label class="form-label">年齢</label>
-          <input type="number" class="form-input" id="body-age" min="10" max="100" inputmode="numeric" onchange="saveBody()">
-        </div>
-        <div>
-          <label class="form-label">身長 (cm)</label>
-          <input type="number" class="form-input" id="body-height" step="0.1" inputmode="decimal" onchange="saveBody()">
-        </div>
-        <div>
-          <label class="form-label">体重 (kg)</label>
-          <input type="number" class="form-input" id="body-weight" step="0.1" inputmode="decimal" onchange="saveBody()">
-        </div>
-      </div>
-      <button class="btn btn-ghost btn-sm mb-3" id="body-kihon" style="display:none;" onclick="pullWeightFromKihon()"></button>
-      <label class="form-label">活動レベル</label>
-      <select class="form-input mb-3" id="body-activity" onchange="saveBody()">
-        <option value="1.2">ほぼ座位 — 外出が少なく運動もしない</option>
-        <option value="1.375">やや活動的 — 立ち仕事や外出あり＋週1〜3回の運動</option>
-        <option value="1.55">活動的 — 動く仕事＋週3〜5回の運動</option>
-      </select>
-      <p class="text-sm text-muted mb-3">車移動が長い生活は、体感より低く出ます。迷ったら「やや活動的」。</p>
-      <label class="form-label">目標</label>
-      <select class="form-input mb-3" id="body-goal" onchange="saveBody()">
-        <option value="recomp">絞りながら筋を乗せる</option>
-        <option value="cut">体重を落とす</option>
-        <option value="maintain">維持</option>
-        <option value="gain">増やす</option>
-      </select>
-      <div id="body-result"></div>
     </div>
 
     <div class="card">
@@ -1722,18 +1671,6 @@ h1, h2, h3, h4 { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-we
       <button class="rating-star" onclick="setRating(5)">☆</button>
     </div>
 
-    <div class="form-group" id="feedback-servings-group">
-      <label class="form-label">自分が食べた量</label>
-      <div class="flex gap-2" style="flex-wrap: wrap;">
-        <button class="btn btn-ghost btn-sm serving-btn" data-servings="0">食べていない</button>
-        <button class="btn btn-ghost btn-sm serving-btn" data-servings="0.5">半分</button>
-        <button class="btn btn-ghost btn-sm serving-btn active" data-servings="1">1人分</button>
-        <button class="btn btn-ghost btn-sm serving-btn" data-servings="1.5">1.5</button>
-        <button class="btn btn-ghost btn-sm serving-btn" data-servings="2">2人分</button>
-      </div>
-      <p class="text-sm text-muted" style="margin-top:6px;">家族の分をまとめて作っても、ここで選んだぶんだけが自分の摂取に入ります。作り置きなら「食べていない」。</p>
-    </div>
-
     <div class="form-group">
       <label class="form-label">メモ（次回への覚書）</label>
       <textarea class="form-textarea" id="feedback-memo" rows="3" placeholder="例：醤油をもう少し控えめに／想像以上に美味しかった／トマトは少なめの方が良さそう"></textarea>
@@ -1831,27 +1768,7 @@ let state = {
   family: { adults: 0, teens: 0, schoolKids: 0, preschoolers: 0, note: '' }, // 家族構成
   equipment: { tools: [], avoidNote: '' }, // 調理環境（保有機材 + 苦手な調理/避けたいジャンル）
   cookingRules: '', // 料理の作り方ルール（塩分濃度、調味料の扱い等、独立セクションとしてAI提案に注入）
-  // からだと目標（未入力なら摂取管理の機能は全部オフ。従来通り動く）
-  body: { sex: 'female', age: null, heightCm: null, weightKg: null, activity: 1.375, goal: 'recomp', updatedAt: null },
-  intakeLog: [], // レシピ以外の摂取（外食・コンビニ等）{ id, date, label, kcal, protein }
-  planFor: null, // 'self' | 'family'。毎食変わるので設定ではなく献立タブで選ぶ
 };
-
-// 活動レベル。車移動が前提の生活は、体感より低く出るのが普通
-const ACTIVITY_LEVELS = [
-  { v: 1.2,   label: 'ほぼ座位',   hint: '外出が少なく運動もしない' },
-  { v: 1.375, label: 'やや活動的', hint: '立ち仕事や外出あり＋週1〜3回の運動' },
-  { v: 1.55,  label: '活動的',     hint: '動く仕事＋週3〜5回の運動' },
-];
-// 目標。減量幅を大きく取ると落ちるのは脂肪ではなく筋肉なので、recomp は控えめの −12%
-const GOALS = [
-  { v: 'recomp',   label: '絞りながら筋を乗せる', factor: 0.88, note: '体重はほぼ動きません。周囲径で見てください' },
-  { v: 'cut',      label: '体重を落とす',         factor: 0.85, note: '筋量は乗りにくくなります' },
-  { v: 'maintain', label: '維持',                 factor: 1.00, note: '' },
-  { v: 'gain',     label: '増やす',               factor: 1.05, note: '' },
-];
-const TRAINING_DAY_BONUS = 200; // トレ日の上乗せ。消費推定は誤差が大きいので固定値に留める
-const PROTEIN_PER_KG = 1.6;
 
 // 調理器具マスタ（将来拡張しやすいよう配列で管理）
 // id: 保存用の一意キー / label: UI表示 / promptHint: AIプロンプト用の説明文
@@ -1938,7 +1855,7 @@ function switchView(name) {
   if (name === 'stock') renderStock();
   if (name === 'shopping') renderShopping();
   if (name === 'settings') renderSettings();
-  if (name === 'suggest') { renderMealPlanHistoryButton(); renderIntake(); renderPlanFor(); }
+  if (name === 'suggest') renderMealPlanHistoryButton();
 }
 
 // ============================================================
@@ -2039,7 +1956,6 @@ function saveRecipe() {
     notes: document.getElementById('recipe-notes-input').value.trim(),
     createdAt: new Date().toISOString(),
     proteinPerServing: null, // 後で栄養計算
-    kcalPerServing: null, // 後で栄養計算
     saltPerServing: null, // 塩分量はAI生成時のみ取得
   };
 
@@ -2319,7 +2235,6 @@ function renderRecipes() {
       ? `<div class="match-score">マッチ<span class="match-score-value">${Math.round(r._match * 100)}</span>%</div>`
       : '';
     const proteinBadge = r.proteinPerServing ? `<span>タンパク質${Math.round(r.proteinPerServing)}g</span>` : '';
-    const kcalBadge = r.kcalPerServing ? `<span>${Math.round(r.kcalPerServing).toLocaleString()}kcal</span>` : '';
     const saltBadge = r.saltPerServing ? `<span>塩分${(Math.round(r.saltPerServing * 10) / 10).toFixed(1)}g</span>` : '';
     const ratingStats = getRecipeRating(r.id);
     const ratingBadge = ratingStats.count > 0
@@ -2335,7 +2250,6 @@ function renderRecipes() {
           <span>${r.servings}人分</span>
           ${r.cookTime ? `<span>${r.cookTime}分</span>` : ''}
           ${proteinBadge}
-          ${kcalBadge}
           ${saltBadge}
           ${ratingBadge}
         </div>
@@ -2763,14 +2677,8 @@ function openRecipeDetail(id) {
 
   const stepsHtml = recipe.steps.map(s => `<li>${escapeHtml(s)}</li>`).join('');
 
-  const nutritionHtml = (recipe.proteinPerServing || saltDisplay || recipe.kcalPerServing) ? `
+  const nutritionHtml = (recipe.proteinPerServing || saltDisplay) ? `
     <div class="nutrition-box">
-      ${recipe.kcalPerServing ? `
-      <div>
-        <div class="nutrition-item-label">カロリー/人</div>
-        <div class="nutrition-item-value">${Math.round(recipe.kcalPerServing).toLocaleString()}<span class="nutrition-item-unit">kcal</span></div>
-      </div>
-      ` : ''}
       ${recipe.proteinPerServing ? `
       <div>
         <div class="nutrition-item-label">タンパク質/人</div>
@@ -3010,25 +2918,11 @@ function cookRecipe(id) {
 
   pendingCookRecipeId = id;
   pendingRating = 0;
-  pendingServings = 1;
   // フィードバック入力を表示
   document.getElementById('feedback-recipe-name').textContent = recipe.name;
   document.getElementById('feedback-memo').value = '';
   renderRatingStars(0);
-  renderServingButtons();
-  // からだの設定が無ければ、食べた量を聞く意味がない
-  const sg = document.getElementById('feedback-servings-group');
-  if (sg) sg.style.display = bodyTargets() ? '' : 'none';
   openModal('modal-cook-feedback');
-}
-
-// 作った量ではなく「自分が食べた量」。家族分をまとめて作る日のための区別
-let pendingServings = 1;
-function renderServingButtons() {
-  document.querySelectorAll('.serving-btn').forEach(b => {
-    b.classList.toggle('active', Number(b.dataset.servings) === pendingServings);
-    b.onclick = () => { pendingServings = Number(b.dataset.servings); renderServingButtons(); };
-  });
 }
 
 function renderRatingStars(rating) {
@@ -3081,10 +2975,6 @@ function completeCook(rating, memo) {
     date: new Date().toISOString(),
     rating: rating,
     memo: memo,
-    // レシピは後から編集・削除されうるので、食べた時点の値を控える
-    kcalPerServing: recipe.kcalPerServing ?? null,
-    proteinPerServing: recipe.proteinPerServing ?? null,
-    servingsEaten: pendingServings,
   });
 
   saveState();
@@ -3092,10 +2982,8 @@ function completeCook(rating, memo) {
   closeModal('modal-recipe-detail');
   pendingCookRecipeId = null;
   pendingRating = 0;
-  pendingServings = 1;
   showToast(`記録しました（在庫を${decreased}品更新）`);
   renderRecipes();
-  renderIntake();
 }
 
 // -------- 履歴の後追い追加・編集・削除 --------
@@ -3174,9 +3062,6 @@ function submitHistoryEdit() {
       date: date.toISOString(),
       rating: historyEditRating || null,
       memo: memo,
-      kcalPerServing: recipe ? (recipe.kcalPerServing ?? null) : null,
-      proteinPerServing: recipe ? (recipe.proteinPerServing ?? null) : null,
-      servingsEaten: 1,
     });
     showToast('記録を追加しました');
   }
@@ -3281,7 +3166,6 @@ function saveEditedRecipe() {
 
   if (ingredientsChanged) {
     recipe.proteinPerServing = null; // 再計算
-    recipe.kcalPerServing = null; // 再計算
   }
 
   saveState();
@@ -4069,12 +3953,12 @@ ${exclusionInfo}
 2. すべての値は実際の値（数値は数値、文字列はダブルクォート囲み）
 3. 文字列内では改行を使わない
 4. 末尾カンマ禁止
-5. saltPerServing（1人分の推定塩分量、g単位の数値）と proteinPerServing（1人分のタンパク質量、g単位の数値）と kcalPerServing（1人分の推定エネルギー、kcal単位の整数）を必ず含めること。塩分は調味料・素材の塩分を合算して算出。醤油大さじ1=約2.6g、味噌大さじ1=約2.2g、塩小さじ1=約6g、コンソメ1個=約2.5g、ベーコン20g=約0.4g 等を参考に
+5. saltPerServing（1人分の推定塩分量、g単位の数値）と proteinPerServing（1人分のタンパク質量、g単位の数値）を必ず含めること。塩分は調味料・素材の塩分を合算して算出。醤油大さじ1=約2.6g、味噌大さじ1=約2.2g、塩小さじ1=約6g、コンソメ1個=約2.5g、ベーコン20g=約0.4g 等を参考に
 6. steps は調理手順を配列で返す。1工程=1要素として分割し、各工程は具体的に書く（時間・火加減・判断ポイントを含める）
 7. ingredients内の各要素にはoptionalで group フィールドを付けてOK。同じ調味料が下味用とタレ用で2回出る場合などに、用途を区別する。例: {"name":"醤油","amount":1,"unit":"大さじ","group":"下味用"}, {"name":"醤油","amount":2,"unit":"大さじ","group":"タレ用"}。groupの値は「下味用」「タレ用」「ソース用」「仕上げ用」「合わせ調味料」「漬け込み用」など、用途分けが不要な材料には group を付けない
 
 出力例（この通りの構造で実際の値を入れて返すこと）:
-{"name":"鶏もも肉の照り焼き","servings":2,"cookTime":20,"tags":["和風","鶏肉"],"ingredients":[{"name":"鶏もも肉","amount":300,"unit":"g"},{"name":"酒","amount":1,"unit":"大さじ","group":"下味用"},{"name":"塩","amount":1,"unit":"少々","group":"下味用"},{"name":"醤油","amount":2,"unit":"大さじ","group":"タレ用"},{"name":"みりん","amount":2,"unit":"大さじ","group":"タレ用"},{"name":"砂糖","amount":1,"unit":"大さじ","group":"タレ用"}],"steps":["鶏もも肉を一口大に切り、下味用の調味料を揉み込み10分置く","フライパンに油を熱し中火で皮目から3分焼く","裏返してさらに2分焼く","タレ用の調味料を加え強火で煮絡める","煮汁が半分になり照りが出たら完成"],"notes":"皮はパリッと焼き上げるのがコツ","proteinPerServing":28,"kcalPerServing":380,"saltPerServing":1.6}`;
+{"name":"鶏もも肉の照り焼き","servings":2,"cookTime":20,"tags":["和風","鶏肉"],"ingredients":[{"name":"鶏もも肉","amount":300,"unit":"g"},{"name":"酒","amount":1,"unit":"大さじ","group":"下味用"},{"name":"塩","amount":1,"unit":"少々","group":"下味用"},{"name":"醤油","amount":2,"unit":"大さじ","group":"タレ用"},{"name":"みりん","amount":2,"unit":"大さじ","group":"タレ用"},{"name":"砂糖","amount":1,"unit":"大さじ","group":"タレ用"}],"steps":["鶏もも肉を一口大に切り、下味用の調味料を揉み込み10分置く","フライパンに油を熱し中火で皮目から3分焼く","裏返してさらに2分焼く","タレ用の調味料を加え強火で煮絡める","煮汁が半分になり照りが出たら完成"],"notes":"皮はパリッと焼き上げるのがコツ","proteinPerServing":28,"saltPerServing":1.6}`;
 
     const response = await callClaudeAPI({
       model: 'claude-sonnet-4-5',
@@ -4132,7 +4016,6 @@ function saveAIRecipe() {
     notes: r.notes || '',
     createdAt: new Date().toISOString(),
     proteinPerServing: r.proteinPerServing || null,
-    kcalPerServing: r.kcalPerServing || null,
     saltPerServing: r.saltPerServing || null,
   };
   state.recipes.unshift(recipe);
@@ -4148,34 +4031,30 @@ function saveAIRecipe() {
 async function enrichRecipeNutrition(recipeId) {
   if (!apiKey) return;
   const recipe = state.recipes.find(r => r.id === recipeId);
-  // タンパク質とカロリーの両方が揃っていれば何もしない。
-  // 旧データ（タンパク質だけある）はカロリーの取得だけ走る
-  if (!recipe) return;
-  if (recipe.proteinPerServing !== null && recipe.kcalPerServing != null) return;
+  if (!recipe || recipe.proteinPerServing !== null) return;
 
   try {
-    // 食材マスタに「カロリーまで」揃っていない食材を集める（旧マスタはタンパク質のみ）
+    // 食材マスタにない食材を集める
     const missing = [];
     recipe.ingredients.forEach(ing => {
       const key = normalizeIngredientName(ing.name);
-      const info = state.ingredientMaster[key];
-      if (!info || typeof info.kcalPer100g !== 'number') {
+      if (!state.ingredientMaster[key]) {
         missing.push(ing.name);
       }
     });
 
     if (missing.length > 0) {
-      const prompt = `以下の食材それぞれについて、100gあたりのタンパク質量（g）とエネルギー量（kcal）を推定して返してください。
+      const prompt = `以下の食材それぞれについて、100gあたりのタンパク質量（g）を推定して返してください。
 
 食材: ${missing.join(', ')}
 
 【厳守】純粋なJSONのみを返してください。マークダウン記法・コードブロック（三連バッククォート）・コメント・前置きは一切不要。文字列内では改行コードを使わず、必要なら\\nで表現してください。出力形式:
 {
-  "食材名1": { "protein": タンパク質量g, "kcal": エネルギーkcal },
-  "食材名2": { "protein": タンパク質量g, "kcal": エネルギーkcal }
+  "食材名1": タンパク質量g,
+  "食材名2": タンパク質量g
 }
 
-※ 調味料のような少量使用で実質タンパク質が無視できるものは protein を 0 で構いません。油・砂糖のようにカロリーが高いものは kcal を正しく（油100g=約890kcal、砂糖100g=約390kcal）。`;
+※ 調味料のような少量使用で実質タンパク質が無視できるものは 0 で構いません。`;
 
       const response = await callClaudeAPI({
         model: 'claude-haiku-4-5-20251001',
@@ -4189,21 +4068,14 @@ async function enrichRecipeNutrition(recipeId) {
       missing.forEach(name => {
         const key = normalizeIngredientName(name);
         const val = data[name];
-        const prev = state.ingredientMaster[key] || {};
         if (typeof val === 'number') {
-          // 旧形式（数値＝タンパク質のみ）で返ってきた場合の保険
-          state.ingredientMaster[key] = { ...prev, proteinPer100g: val };
-        } else if (val && typeof val === 'object') {
-          state.ingredientMaster[key] = {
-            proteinPer100g: typeof val.protein === 'number' ? val.protein : (prev.proteinPer100g ?? 0),
-            kcalPer100g: typeof val.kcal === 'number' ? val.kcal : prev.kcalPer100g,
-          };
+          state.ingredientMaster[key] = { proteinPer100g: val };
         }
       });
     }
 
-    // タンパク質とカロリーを計算
-    let totalProtein = 0, totalKcal = 0, kcalKnown = false;
+    // タンパク質を計算
+    let totalProtein = 0;
     recipe.ingredients.forEach(ing => {
       const key = normalizeIngredientName(ing.name);
       const info = state.ingredientMaster[key];
@@ -4217,15 +4089,12 @@ async function enrichRecipeNutrition(recipeId) {
         else if (ing.unit === 'L') grams = ing.amount * 1000;
         else grams = ing.amount * 50; // 個・本・枚など
       }
-      if (typeof info.proteinPer100g === 'number') totalProtein += grams * info.proteinPer100g / 100;
-      if (typeof info.kcalPer100g === 'number') { totalKcal += grams * info.kcalPer100g / 100; kcalKnown = true; }
+      totalProtein += grams * info.proteinPer100g / 100;
     });
 
     recipe.proteinPerServing = totalProtein / recipe.servings;
-    if (kcalKnown) recipe.kcalPerServing = Math.round(totalKcal / recipe.servings);
     saveState();
     renderRecipes();
-    renderIntake();
   } catch (e) {
     console.error('栄養情報取得エラー:', e);
   }
@@ -4243,10 +4112,6 @@ let prepCategories = new Set(['main']); // 'main', 'side' の組み合わせ（�
 let prepStorages = new Set(['chilled']); // 'chilled', 'frozen' の組み合わせ（主菜時のみ有効）
 let prepMainCount = 1; // 主菜の品数 (1-3)
 let prepSideCount = 3; // 副菜の品数 (1-5)
-
-document.querySelectorAll('.plan-for-btn').forEach(btn => {
-  btn.addEventListener('click', () => setPlanFor(btn.dataset.planFor));
-});
 
 document.querySelectorAll('.plan-period-btn').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -4374,19 +4239,9 @@ async function generateMealPlan() {
       ? `\n【最優先】以下の食材は消費期限が迫っているため、献立に必ず組み込んでください: ${urgentStock.map(s => `${s.name}（あと${Math.max(0, getExpiryDaysLeft(s.expiry))}日）`).join('、')}`
       : '';
 
-    // 家族の日に「自分用」(1人分のダイエット向け)を候補として渡さない。
-    // レシピは新しい順に先頭30件だけ渡すので、絞ってから切らないと、
-    // 自分用が増えるほど家族用のレシピが候補から押し出される。
-    const isSelf = planForMode() === 'self';
-    const candidates = state.recipes
-      .filter(r => isSelf ? true : !(r.tags || []).includes('自分用'))
-      .slice(0, 30);
-    const recipeInfo = candidates.map(r =>
-      `- ${r.name}（${r.servings || 2}人分／${r.ingredients.map(i => i.name).join('・')}）${r.tags && r.tags.length > 0 ? ` [${r.tags.join('/')}]` : ''}`
+    const recipeInfo = state.recipes.slice(0, 30).map(r =>
+      `- ${r.name}（${r.ingredients.map(i => i.name).join('・')}）${r.tags && r.tags.length > 0 ? ` [${r.tags.join('/')}]` : ''}`
     ).join('\n');
-    // 人数が違う既存レシピをそのまま使うと、買い物リストが足りなくなる
-    const scaleInfo = `\n- 登録済みレシピは「何人分か」が書いてある。使うときは今回必要な人数へ`
-      + `分量を換算し、買い物リストにも換算後の量を反映すること`;
 
     const avoidInfo = state.avoidIngredients.length > 0
       ? `\n避けたい食材: ${state.avoidIngredients.join(', ')}` : '';
@@ -4398,7 +4253,6 @@ async function generateMealPlan() {
     const tasteInfo = buildTasteFeedbackInfo();
     const equipmentInfo = buildEquipmentPromptInfo();
     const cookingRulesInfo = buildCookingRulesPromptInfo();
-    const intakeInfo = buildIntakePromptInfo();
 
     // 献立提案にも多様性指示を追加
     const recent = state.recentAISuggestions || [];
@@ -4478,9 +4332,9 @@ async function generateMealPlan() {
 ${requirements.join('\n\n')}
 
 現在の在庫: ${stockInfo || (useStock ? "なし" : "（今回は在庫不問・まとめ買い前提）")}${stockPolicyInfo}${structuredRecipeInfo}
-${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}${cookingRulesInfo}${intakeInfo}${diversityHint}${exclusionInfo}
+${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}${cookingRulesInfo}${diversityHint}${exclusionInfo}
 
-登録済みレシピ（優先使用・参考）:${scaleInfo}
+登録済みレシピ（優先使用・参考）:
 ${recipeInfo || 'なし'}
 
 【作り置きレシピ全体の設計方針】
@@ -4494,12 +4348,12 @@ ${recipeInfo || 'なし'}
 2. すべての値は実際の値（数値は数値、true/falseはtrue/false、文字列はダブルクォート囲み）
 3. 文字列内では改行を使わない
 4. 末尾カンマ禁止
-5. 各dishにはsaltPerServing（1人分の推定塩分量、g単位の数値）と proteinPerServing（1人分のタンパク質量、g単位の数値）と kcalPerServing（1人分の推定エネルギー、kcal単位の整数）を必ず含めること。塩分は調味料・素材の塩分を合算して算出（醤油大さじ1=約2.6g、味噌大さじ1=約2.2g、塩小さじ1=約6g、コンソメ1個=約2.5g、ベーコン20g=約0.4g 等を参考に）。
+5. 各dishにはsaltPerServing（1人分の推定塩分量、g単位の数値）と proteinPerServing（1人分のタンパク質量、g単位の数値）を必ず含めること。塩分は調味料・素材の塩分を合算して算出（醤油大さじ1=約2.6g、味噌大さじ1=約2.2g、塩小さじ1=約6g、コンソメ1個=約2.5g、ベーコン20g=約0.4g 等を参考に）。
 6. dishes配列には必ず合計${totalCount}個の要素を含めること
 7. 各dishにはcategory（"主菜"または"副菜"）とprepStorage（"chilled"または"frozen"）を必ず含めること
 
 出力例（この通りの構造で実際の値を入れて返すこと）:
-{"planType":"prep","title":"${title}","dishes":[{"category":"主菜","prepStorage":"chilled","name":"鶏むね肉の塩麹漬け焼き","isExisting":false,"ingredients":[{"name":"鶏むね肉","amount":300,"unit":"g"},{"name":"塩麹","amount":2,"unit":"大さじ"}],"proteinPerServing":25,"kcalPerServing":380,"saltPerServing":1.5,"storageNote":"冷蔵4日","note":"漬け込み1時間以上→フライパンで両面焼き。密閉容器で保存"},{"category":"副菜","prepStorage":"chilled","name":"にんじんのラペ","isExisting":false,"ingredients":[{"name":"にんじん","amount":1,"unit":"本"},{"name":"オリーブオイル","amount":1,"unit":"大さじ"}],"proteinPerServing":1,"kcalPerServing":120,"saltPerServing":0.5,"storageNote":"冷蔵5日","note":"時間が経つほど味が馴染む"}],"shoppingList":[{"name":"鶏むね肉","amount":300,"unit":"g"}],"totalProtein":26}`;
+{"planType":"prep","title":"${title}","dishes":[{"category":"主菜","prepStorage":"chilled","name":"鶏むね肉の塩麹漬け焼き","isExisting":false,"ingredients":[{"name":"鶏むね肉","amount":300,"unit":"g"},{"name":"塩麹","amount":2,"unit":"大さじ"}],"proteinPerServing":25,"saltPerServing":1.5,"storageNote":"冷蔵4日","note":"漬け込み1時間以上→フライパンで両面焼き。密閉容器で保存"},{"category":"副菜","prepStorage":"chilled","name":"にんじんのラペ","isExisting":false,"ingredients":[{"name":"にんじん","amount":1,"unit":"本"},{"name":"オリーブオイル","amount":1,"unit":"大さじ"}],"proteinPerServing":1,"saltPerServing":0.5,"storageNote":"冷蔵5日","note":"時間が経つほど味が馴染む"}],"shoppingList":[{"name":"鶏むね肉","amount":300,"unit":"g"}],"totalProtein":26}`;
     } else if (currentPlanType === 'bento') {
       // お弁当プラン
       const styleNote = currentBentoStyle === 'morning'
@@ -4511,9 +4365,9 @@ ${recipeInfo || 'なし'}
 スタイル: ${styleNote}
 
 現在の在庫: ${stockInfo || (useStock ? "なし" : "（今回は在庫不問・まとめ買い前提）")}${stockPolicyInfo}${structuredRecipeInfo}
-${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}${cookingRulesInfo}${intakeInfo}${diversityHint}${exclusionInfo}
+${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}${cookingRulesInfo}${diversityHint}${exclusionInfo}
 
-登録済みレシピ（優先使用）:${scaleInfo}
+登録済みレシピ（優先使用）:
 ${recipeInfo || 'なし'}
 
 注意:
@@ -4522,7 +4376,7 @@ ${recipeInfo || 'なし'}
 - お弁当に適した（冷めても美味しい・汁気が少ない）料理を選ぶ
 - 既存レシピを優先しつつ、足りなければ新規提案OK
 - 主菜と副菜の味付けがかぶらないようにすること（全部醤油系にしない等）
-- 各dishにsaltPerServing（1人分の推定塩分量、g単位の数値）とproteinPerServing（1人分のタンパク質量、g単位の数値）と kcalPerServing（1人分の推定エネルギー、kcal単位の整数）を必ず含めること（醤油大さじ1=約2.6g、味噌大さじ1=約2.2g、塩小さじ1=約6g、コンソメ1個=約2.5g等を参考に算出）
+- 各dishにsaltPerServing（1人分の推定塩分量、g単位の数値）とproteinPerServing（1人分のタンパク質量、g単位の数値）を必ず含めること（醤油大さじ1=約2.6g、味噌大さじ1=約2.2g、塩小さじ1=約6g、コンソメ1個=約2.5g等を参考に算出）
 - dishes配列には必ず3つの要素（主菜1＋副菜2）を含めること
 
 【厳守事項】
@@ -4532,15 +4386,15 @@ ${recipeInfo || 'なし'}
 4. 末尾カンマ禁止
 
 出力例（この通りの構造で実際の値を入れて返すこと）:
-{"planType":"bento","title":"今日のお弁当","dishes":[{"category":"主菜","name":"鶏むね肉のハーブソテー","isExisting":false,"ingredients":[{"name":"鶏むね肉","amount":200,"unit":"g"},{"name":"塩","amount":1,"unit":"小さじ"}],"proteinPerServing":25,"kcalPerServing":380,"saltPerServing":1.5,"note":"前日から下味をつけておくと味が染みる"},{"category":"副菜","name":"ブロッコリーのペペロンチーノ","isExisting":false,"ingredients":[{"name":"ブロッコリー","amount":100,"unit":"g"},{"name":"にんにく","amount":1,"unit":"片"}],"proteinPerServing":3,"kcalPerServing":120,"saltPerServing":0.5,"note":""},{"category":"副菜","name":"人参のラペ","isExisting":false,"ingredients":[{"name":"人参","amount":1,"unit":"本"},{"name":"オリーブオイル","amount":1,"unit":"大さじ"}],"proteinPerServing":1,"kcalPerServing":120,"saltPerServing":0.5,"note":""}],"shoppingList":[{"name":"鶏むね肉","amount":200,"unit":"g"}],"totalProtein":29}`;
+{"planType":"bento","title":"今日のお弁当","dishes":[{"category":"主菜","name":"鶏むね肉のハーブソテー","isExisting":false,"ingredients":[{"name":"鶏むね肉","amount":200,"unit":"g"},{"name":"塩","amount":1,"unit":"小さじ"}],"proteinPerServing":25,"saltPerServing":1.5,"note":"前日から下味をつけておくと味が染みる"},{"category":"副菜","name":"ブロッコリーのペペロンチーノ","isExisting":false,"ingredients":[{"name":"ブロッコリー","amount":100,"unit":"g"},{"name":"にんにく","amount":1,"unit":"片"}],"proteinPerServing":3,"saltPerServing":0.5,"note":""},{"category":"副菜","name":"人参のラペ","isExisting":false,"ingredients":[{"name":"人参","amount":1,"unit":"本"},{"name":"オリーブオイル","amount":1,"unit":"大さじ"}],"proteinPerServing":1,"saltPerServing":0.5,"note":""}],"shoppingList":[{"name":"鶏むね肉","amount":200,"unit":"g"}],"totalProtein":29}`;
     } else if (currentPlanType === 'dinner-1') {
       // 1日分（夕食、主菜＋副菜）
       prompt = `1日分の夕食の献立を考えてください。主菜1品＋副菜1〜2品の構成で。
 
 現在の在庫: ${stockInfo || (useStock ? "なし" : "（今回は在庫不問・まとめ買い前提）")}${stockPolicyInfo}${structuredRecipeInfo}
-${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}${cookingRulesInfo}${intakeInfo}${diversityHint}${exclusionInfo}
+${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}${cookingRulesInfo}${diversityHint}${exclusionInfo}
 
-登録済みレシピ（優先使用）:${scaleInfo}
+登録済みレシピ（優先使用）:
 ${recipeInfo || 'なし'}
 
 注意:
@@ -4548,7 +4402,7 @@ ${recipeInfo || 'なし'}
 - 副菜は野菜中心、汁物または和え物などの軽いもの
 - 主菜と副菜の味付けが被らないようにバランスを取る（全部醤油系にしない）
 - 既存レシピを優先しつつ、足りなければ新規提案OK
-- 各dishにsaltPerServing（1人分の推定塩分量、g単位の数値）とproteinPerServing（1人分のタンパク質量、g単位の数値）と kcalPerServing（1人分の推定エネルギー、kcal単位の整数）を必ず含めること（醤油大さじ1=約2.6g、味噌大さじ1=約2.2g、塩小さじ1=約6g、コンソメ1個=約2.5g等を参考に算出）
+- 各dishにsaltPerServing（1人分の推定塩分量、g単位の数値）とproteinPerServing（1人分のタンパク質量、g単位の数値）を必ず含めること（醤油大さじ1=約2.6g、味噌大さじ1=約2.2g、塩小さじ1=約6g、コンソメ1個=約2.5g等を参考に算出）
 
 【厳守事項】
 1. 純粋なJSONのみ返す。マークダウン・コードブロック・コメント・前置き禁止
@@ -4557,22 +4411,22 @@ ${recipeInfo || 'なし'}
 4. 末尾カンマ禁止
 
 出力例（この通りの構造で実際の値を入れて返すこと）:
-{"planType":"dinner-1","title":"今夜の献立","dishes":[{"category":"主菜","name":"鮭のムニエル","isExisting":false,"ingredients":[{"name":"鮭","amount":2,"unit":"切れ"},{"name":"バター","amount":1,"unit":"大さじ"}],"proteinPerServing":22,"kcalPerServing":380,"saltPerServing":1.5,"note":"皮はカリッと焼く"},{"category":"副菜","name":"きのこのバター醤油炒め","isExisting":false,"ingredients":[{"name":"しめじ","amount":1,"unit":"パック"},{"name":"バター","amount":1,"unit":"大さじ"}],"proteinPerServing":3,"kcalPerServing":120,"saltPerServing":0.5,"note":""}],"shoppingList":[{"name":"鮭","amount":2,"unit":"切れ"}],"totalProtein":25}`;
+{"planType":"dinner-1","title":"今夜の献立","dishes":[{"category":"主菜","name":"鮭のムニエル","isExisting":false,"ingredients":[{"name":"鮭","amount":2,"unit":"切れ"},{"name":"バター","amount":1,"unit":"大さじ"}],"proteinPerServing":22,"saltPerServing":1.5,"note":"皮はカリッと焼く"},{"category":"副菜","name":"きのこのバター醤油炒め","isExisting":false,"ingredients":[{"name":"しめじ","amount":1,"unit":"パック"},{"name":"バター","amount":1,"unit":"大さじ"}],"proteinPerServing":3,"saltPerServing":0.5,"note":""}],"shoppingList":[{"name":"鮭","amount":2,"unit":"切れ"}],"totalProtein":25}`;
     } else {
       // 3日 or 1週間（複数日分の夕食）
       const days = currentPlanType === 'dinner-7' ? 7 : 3;
       prompt = `${days}日分の夕食の献立を考えてください。既存のレシピを優先しつつ、足りなければ新規レシピも提案してOKです。
 
 現在の在庫: ${stockInfo || (useStock ? "なし" : "（今回は在庫不問・まとめ買い前提）")}${stockPolicyInfo}${structuredRecipeInfo}
-${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}${cookingRulesInfo}${intakeInfo}${diversityHint}${exclusionInfo}
+${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}${cookingRulesInfo}${diversityHint}${exclusionInfo}
 
-登録済みレシピ（優先使用）:${scaleInfo}
+登録済みレシピ（優先使用）:
 ${recipeInfo || 'なし'}
 
 注意:
 - 連日同じ味付けにならないよう、ジャンルを分散させる（例：1日目和食、2日目洋食、3日目中華）
 - 主要食材（肉・魚など）も連日同じにしないこと
-- 各日のdinnerにsaltPerServing（1人分の推定塩分量、g単位の数値）とproteinPerServing（1人分のタンパク質量、g単位の数値）と kcalPerServing（1人分の推定エネルギー、kcal単位の整数）を必ず含めること（醤油大さじ1=約2.6g、味噌大さじ1=約2.2g、塩小さじ1=約6g、コンソメ1個=約2.5g等を参考に算出）
+- 各日のdinnerにsaltPerServing（1人分の推定塩分量、g単位の数値）とproteinPerServing（1人分のタンパク質量、g単位の数値）を必ず含めること（醤油大さじ1=約2.6g、味噌大さじ1=約2.2g、塩小さじ1=約6g、コンソメ1個=約2.5g等を参考に算出）
 - days配列には必ず${days}個の要素を含めること
 
 【厳守事項】
@@ -4582,7 +4436,7 @@ ${recipeInfo || 'なし'}
 4. 末尾カンマ禁止
 
 出力例（この通りの構造で実際の値を入れて返すこと）:
-{"planType":"dinner-multi","days":[{"day":1,"dinner":{"name":"鶏むね肉のレモンクリームパスタ","isExisting":false,"ingredients":[{"name":"パスタ","amount":200,"unit":"g"},{"name":"鶏むね肉","amount":150,"unit":"g"}],"proteinPerServing":28,"kcalPerServing":380,"saltPerServing":1.5,"note":"レモンを最後に絞る"}},{"day":2,"dinner":{"name":"豚肉と大根の中華煮","isExisting":false,"ingredients":[{"name":"豚バラ","amount":200,"unit":"g"},{"name":"大根","amount":300,"unit":"g"}],"proteinPerServing":24,"kcalPerServing":380,"saltPerServing":1.5,"note":"五香粉で香りづけ"}}],"shoppingList":[{"name":"パスタ","amount":200,"unit":"g","forDay":1},{"name":"豚バラ","amount":200,"unit":"g","forDay":2}],"totalProteinAvg":26}`;
+{"planType":"dinner-multi","days":[{"day":1,"dinner":{"name":"鶏むね肉のレモンクリームパスタ","isExisting":false,"ingredients":[{"name":"パスタ","amount":200,"unit":"g"},{"name":"鶏むね肉","amount":150,"unit":"g"}],"proteinPerServing":28,"saltPerServing":1.5,"note":"レモンを最後に絞る"}},{"day":2,"dinner":{"name":"豚肉と大根の中華煮","isExisting":false,"ingredients":[{"name":"豚バラ","amount":200,"unit":"g"},{"name":"大根","amount":300,"unit":"g"}],"proteinPerServing":24,"saltPerServing":1.5,"note":"五香粉で香りづけ"}}],"shoppingList":[{"name":"パスタ","amount":200,"unit":"g","forDay":1},{"name":"豚バラ","amount":200,"unit":"g","forDay":2}],"totalProteinAvg":26}`;
     }
 
     const response = await callClaudeAPI({
@@ -4597,7 +4451,6 @@ ${recipeInfo || 'なし'}
     // 履歴用の追加メタ情報を付与（生成時刻、表示用ID）
     data.id = uuid();
     data.createdAt = new Date().toISOString();
-    data.planFor = planForMode(); // 自分だけ / 家族と一緒。保存時の人数とタグに効く
 
     state.mealPlan = data;
 
@@ -4625,24 +4478,11 @@ ${recipeInfo || 'なし'}
   }
 }
 
-// 提案は1枠しか持てない（新しい提案は前のものを置き換える）。
-// どちらの分の提案かを明示して、家族用が消えたように見えるのを防ぐ
-function planForBadge(p) {
-  if (!p || !p.planFor) return '';
-  return p.planFor === 'self'
-    ? '<span class="tag" style="background:#e8f5e9; color:#2e7d32;">自分だけ</span>'
-    : '<span class="tag" style="background:#ede7f6; color:#4527a0;">家族と一緒</span>';
-}
-
 function renderMealPlan(data) {
   const resultEl = document.getElementById('meal-plan-result');
   if (!data) { resultEl.innerHTML = ''; return; }
 
   let mainHtml = '';
-  const forHtml = data.planFor
-    ? `<div class="flex gap-2 mb-2" style="align-items:center; flex-wrap:wrap;">${planForBadge(data)}`
-      + `<span class="text-sm text-muted">の献立です。前の提案は「履歴」から戻せます。</span></div>`
-    : '';
 
   // 単発プラン（お弁当 or 1日 or 作り置き）
   if (data.dishes && Array.isArray(data.dishes)) {
@@ -4791,7 +4631,7 @@ function renderMealPlan(data) {
     </div>
   ` : '';
 
-  resultEl.innerHTML = forHtml + summaryHtml + mainHtml + shoppingHtml;
+  resultEl.innerHTML = summaryHtml + mainHtml + shoppingHtml;
 }
 
 function savePlanRecipe(dayIdx) {
@@ -4801,24 +4641,18 @@ function savePlanRecipe(dayIdx) {
     showToast('既に保存済みです');
     return;
   }
-  const tags = ['献立提案'];
-  if (state.mealPlan.planFor === 'self') tags.push('自分用');
-
   const recipeId = uuid();
   const recipe = {
     id: recipeId,
     name: d.name,
-    // 自分だけの提案は1人分で作らせている。2人分で保存すると1食あたりの
-    // カロリーが半分に見積もられてしまう
-    servings: state.mealPlan.planFor === 'self' ? 1 : 2,
+    servings: 2,
     cookTime: null,
-    tags: tags,
+    tags: ['献立提案'],
     ingredients: d.ingredients || [],
     steps: (Array.isArray(d.steps) && d.steps.length > 0) ? d.steps : (d.note ? [d.note] : ['手順は後で追加してください']),
     notes: '献立提案から保存',
     createdAt: new Date().toISOString(),
     proteinPerServing: d.proteinPerServing || null,
-    kcalPerServing: d.kcalPerServing || null,
     saltPerServing: d.saltPerServing || null,
   };
   state.recipes.unshift(recipe);
@@ -4864,15 +4698,11 @@ function savePlanDish(dishIdx) {
   let notes = '献立提案から保存';
   if (d.storageNote) notes += `\n保存目安: ${d.storageNote}`;
 
-  if (state.mealPlan.planFor === 'self') tags.push('自分用');
-
   const recipeId = uuid();
   const recipe = {
     id: recipeId,
     name: d.name,
-    // 自分だけの提案は1人分で作らせている。2人分で保存すると1食あたりの
-    // カロリーが半分に見積もられてしまう
-    servings: state.mealPlan.planFor === 'self' ? 1 : 2,
+    servings: 2,
     cookTime: null,
     tags: tags,
     ingredients: d.ingredients || [],
@@ -4880,7 +4710,6 @@ function savePlanDish(dishIdx) {
     notes: notes,
     createdAt: new Date().toISOString(),
     proteinPerServing: d.proteinPerServing || null,
-    kcalPerServing: d.kcalPerServing || null,
     saltPerServing: d.saltPerServing || null,
   };
   state.recipes.unshift(recipe);
@@ -4932,12 +4761,12 @@ function openMealPlanHistory() {
       const date = p.createdAt ? formatDate(p.createdAt) : '日時不明';
       const title = p.title || '献立';
       // タイプを表示用に整形
-      let typeBadge = planForBadge(p);
-      if (p.planType === 'prep') typeBadge += '<span class="tag" style="background:#fff3e0; color:#e65100;">作り置き</span>';
-      else if (p.planType === 'bento') typeBadge += '<span class="tag tag-shu">お弁当</span>';
-      else if (p.planType === 'dinner-1') typeBadge += '<span class="tag">1日</span>';
-      else if (p.planType === 'dinner-3' || (p.days && p.days.length === 3)) typeBadge += '<span class="tag">3日</span>';
-      else if (p.planType === 'dinner-7' || (p.days && p.days.length === 7)) typeBadge += '<span class="tag">1週間</span>';
+      let typeBadge = '';
+      if (p.planType === 'prep') typeBadge = '<span class="tag" style="background:#fff3e0; color:#e65100;">作り置き</span>';
+      else if (p.planType === 'bento') typeBadge = '<span class="tag tag-shu">お弁当</span>';
+      else if (p.planType === 'dinner-1') typeBadge = '<span class="tag">1日</span>';
+      else if (p.planType === 'dinner-3' || (p.days && p.days.length === 3)) typeBadge = '<span class="tag">3日</span>';
+      else if (p.planType === 'dinner-7' || (p.days && p.days.length === 7)) typeBadge = '<span class="tag">1週間</span>';
 
       // 内容のサマリー
       let summary = '';
@@ -5058,340 +4887,6 @@ function renderSettings() {
   renderFamily();
   renderEquipment();
   renderCookingRules();
-  renderBody();
-}
-
-// ============================================================
-// からだと目標（摂取カロリー・タンパク質）
-//
-// 精度は追わない。AI推定は ±20% 程度ずれる前提で、7日平均だけを見る。
-// 1日の数字に反応し始めた時点でこの仕組みは失敗している。
-// ============================================================
-
-// 同じオリジン（soomine-svg.github.io）に乗っているので KIHON の記録を直接読める。
-// 無くても全機能が動くこと。あくまで入力を省くための補助。
-function readKihon() {
-  try {
-    const raw = localStorage.getItem('kihon.v1');
-    if (!raw) return null;
-    const k = JSON.parse(raw);
-    return (k && k.days) ? k : null;
-  } catch (e) { return null; }
-}
-
-function dateKey(d) {
-  const t = d ? new Date(d) : new Date();
-  return t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
-}
-
-// KIHON の体重は7日移動平均で見る（日々の増減は水分で、単日は情報にならない）
-function kihonWeightAvg() {
-  const k = readKihon();
-  if (!k) return null;
-  const today = new Date();
-  const pts = Object.keys(k.days)
-    .map(key => ({ key, w: (k.days[key].metrics || {}).weightKg }))
-    .filter(p => typeof p.w === 'number')
-    .filter(p => (today - new Date(p.key)) / 86400000 < 7);
-  if (!pts.length) return null;
-  return Math.round(pts.reduce((a, p) => a + p.w, 0) / pts.length * 10) / 10;
-}
-
-function isTrainingDay(key) {
-  const k = readKihon();
-  if (!k) return false;
-  const d = k.days[key || dateKey()];
-  return !!(d && d.session);
-}
-
-// Mifflin-St Jeor。目標値そのものが推定なので、10kcal単位に丸める
-function bodyTargets(key) {
-  const b = state.body || {};
-  if (!b.age || !b.heightCm || !b.weightKg) return null;
-  const sexTerm = b.sex === 'male' ? 5 : -161;
-  const bmr = 10 * b.weightKg + 6.25 * b.heightCm - 5 * b.age + sexTerm;
-  const tdee = bmr * (b.activity || 1.375);
-  const goal = GOALS.find(g => g.v === b.goal) || GOALS[0];
-  const training = isTrainingDay(key);
-  const kcal = Math.round((tdee * goal.factor + (training ? TRAINING_DAY_BONUS : 0)) / 10) * 10;
-  return {
-    bmr: Math.round(bmr),
-    tdee: Math.round(tdee),
-    kcal,
-    protein: Math.round(b.weightKg * PROTEIN_PER_KG),
-    training,
-    goalNote: goal.note,
-  };
-}
-
-// その日に食べたもの。レシピは「作った」記録から、それ以外は intakeLog から
-function intakeOn(key) {
-  let kcal = 0, protein = 0;
-  const items = [];
-  (state.history || []).forEach(h => {
-    if (dateKey(h.date) !== key) return;
-    // 記録時に控えた値を使う。無ければレシピを引く（レシピは後から編集・削除されうる）
-    let k = h.kcalPerServing, p = h.proteinPerServing;
-    if (k == null || p == null) {
-      const r = (state.recipes || []).find(r => r.id === h.recipeId);
-      if (r) { if (k == null) k = r.kcalPerServing; if (p == null) p = r.proteinPerServing; }
-    }
-    const mult = typeof h.servingsEaten === 'number' ? h.servingsEaten : 1;
-    if (typeof k === 'number') kcal += k * mult;
-    if (typeof p === 'number') protein += p * mult;
-    if (mult > 0) items.push({ label: h.recipeName + (mult !== 1 ? `（${mult}人分）` : ''),
-                               kcal: typeof k === 'number' ? k * mult : null, known: typeof k === 'number' });
-  });
-  (state.intakeLog || []).forEach(e => {
-    if (e.date !== key) return;
-    kcal += e.kcal || 0;
-    protein += e.protein || 0;
-    items.push({ label: e.label, kcal: e.kcal, known: true, logId: e.id });
-  });
-  return { kcal: Math.round(kcal), protein: Math.round(protein), items };
-}
-
-// 7日平均。ここだけを見る
-function intakeAvg7() {
-  const today = new Date();
-  let days = 0, kcal = 0, protein = 0;
-  for (let i = 0; i < 7; i++) {
-    const key = dateKey(new Date(today.getTime() - i * 86400000));
-    const v = intakeOn(key);
-    if (v.items.length === 0) continue; // 記録の無い日は平均に混ぜない
-    days++; kcal += v.kcal; protein += v.protein;
-  }
-  if (!days) return null;
-  return { days, kcal: Math.round(kcal / days), protein: Math.round(protein / days) };
-}
-
-// 外食・コンビニ用のざっくり入力。±150kcal ずれても、記録が無いよりはるかにいい
-const OUTSIDE_PRESETS = [
-  { label: '定食',         kcal: 700,  protein: 30 },
-  { label: '丼もの',       kcal: 750,  protein: 25 },
-  { label: '麺類',         kcal: 600,  protein: 20 },
-  { label: 'コンビニ',     kcal: 550,  protein: 20 },
-  { label: '外食（軽め）', kcal: 450,  protein: 20 },
-  { label: '外食（普通）', kcal: 800,  protein: 30 },
-  { label: '外食（重め）', kcal: 1100, protein: 35 },
-];
-
-// 作り置き・残り物を後から食べた日のため。在庫は減らさず、摂取だけ足す
-function recentCooked() {
-  const seen = new Set(), out = [];
-  const today = new Date();
-  (state.history || []).slice().sort((a, b) => new Date(b.date) - new Date(a.date)).forEach(h => {
-    if ((today - new Date(h.date)) / 86400000 > 10) return;
-    if (seen.has(h.recipeId)) return;
-    const r = (state.recipes || []).find(r => r.id === h.recipeId);
-    const kcal = h.kcalPerServing ?? (r && r.kcalPerServing);
-    const protein = h.proteinPerServing ?? (r && r.proteinPerServing);
-    if (typeof kcal !== 'number') return;
-    seen.add(h.recipeId);
-    out.push({ id: h.recipeId, name: h.recipeName || (r && r.name) || '', kcal, protein: protein || 0 });
-  });
-  return out.slice(0, 6);
-}
-
-function addCookedIntake(recipeId) {
-  const r = recentCooked().find(x => x.id === recipeId);
-  if (!r) return;
-  if (!state.intakeLog) state.intakeLog = [];
-  state.intakeLog.push({ id: uuid(), date: dateKey(), label: r.name, kcal: r.kcal, protein: r.protein });
-  saveState();
-  renderIntake();
-  showToast(`${r.name} を記録しました`);
-}
-
-function addOutsideIntake(idx) {
-  const p = OUTSIDE_PRESETS[idx];
-  if (!p) return;
-  if (!state.intakeLog) state.intakeLog = [];
-  state.intakeLog.push({ id: uuid(), date: dateKey(), label: p.label, kcal: p.kcal, protein: p.protein });
-  saveState();
-  renderIntake();
-  showToast(`${p.label} を記録しました`);
-}
-
-function removeIntake(id) {
-  state.intakeLog = (state.intakeLog || []).filter(e => e.id !== id);
-  saveState();
-  renderIntake();
-}
-
-// 献立タブの先頭。食べるものを決める場所に数字を置く
-function renderIntake() {
-  const el = document.getElementById('intake-box');
-  if (!el) return;
-  const t = bodyTargets();
-  if (!t) {
-    el.innerHTML = `<div class="card">
-      <h3 style="font-size:14px; margin-bottom:4px;">今日の摂取</h3>
-      <p class="text-sm text-muted mb-3">設定タブの「からだと目標」に身長・年齢・体重を入れると、目標カロリーとタンパク質が出ます。入れなければ従来通りの動作です。</p>
-      <button class="btn btn-ghost btn-sm" onclick="switchView('settings')">設定を開く</button>
-    </div>`;
-    return;
-  }
-  const key = dateKey();
-  const v = intakeOn(key);
-  const avg = intakeAvg7();
-  const kcalLeft = t.kcal - v.kcal;
-  const protLeft = t.protein - v.protein;
-  const unknown = v.items.filter(i => !i.known).length;
-  const cooked = recentCooked();
-
-  el.innerHTML = `<div class="card">
-    <div class="flex" style="justify-content:space-between; align-items:baseline;">
-      <h3 style="font-size:14px;">今日の摂取</h3>
-      ${t.training ? '<span class="text-sm" style="color:var(--accent, #e0803f);">トレ日 +' + TRAINING_DAY_BONUS + 'kcal</span>' : ''}
-    </div>
-    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:10px 0 4px;">
-      <div>
-        <div class="text-sm text-muted">カロリー</div>
-        <div style="font-size:20px; font-weight:700;">${v.kcal.toLocaleString()}<span class="text-sm text-muted"> / ${t.kcal.toLocaleString()}</span></div>
-        <div class="text-sm ${kcalLeft < 0 ? '' : 'text-muted'}" ${kcalLeft < 0 ? 'style="color:var(--shu);"' : ''}>${kcalLeft >= 0 ? 'あと ' + kcalLeft.toLocaleString() + ' kcal' : (-kcalLeft).toLocaleString() + ' kcal 超過'}</div>
-      </div>
-      <div>
-        <div class="text-sm text-muted">たんぱく質<span style="font-size:10px;">（こちらが主役）</span></div>
-        <div style="font-size:20px; font-weight:700;">${v.protein}<span class="text-sm text-muted"> / ${t.protein} g</span></div>
-        <div class="text-sm ${protLeft > 0 ? '' : 'text-muted'}">${protLeft > 0 ? 'あと ' + protLeft + ' g' : '達成'}</div>
-      </div>
-    </div>
-    ${avg ? `<p class="text-sm" style="margin-top:8px;">7日平均 <b>${avg.kcal.toLocaleString()} kcal</b> ・ たんぱく <b>${avg.protein}g</b><span class="text-muted">（${avg.days}日分）</span></p>
-    <p class="text-sm text-muted" style="margin-top:2px;">1日の数字ではなく、この平均で判断してください。</p>` : ''}
-    ${unknown ? `<p class="text-sm text-muted">※ ${unknown}品はカロリー未算出（APIキー未設定か計算待ち）</p>` : ''}
-    ${v.items.length ? `<div style="margin-top:10px;">${v.items.map(i => `
-      <div class="flex text-sm" style="justify-content:space-between; padding:3px 0;">
-        <span>${escapeHtml(i.label)}</span>
-        <span class="text-muted">${i.kcal != null ? Math.round(i.kcal).toLocaleString() + ' kcal' : '—'}${i.logId ? ` <button class="btn btn-ghost btn-sm" style="padding:0 6px;" onclick="removeIntake('${i.logId}')">×</button>` : ''}</span>
-      </div>`).join('')}</div>` : ''}
-    ${cooked.length ? `<div class="form-label" style="margin-top:12px;">作り置き・残り物から</div>
-    <div class="flex gap-2" style="flex-wrap:wrap;">
-      ${cooked.map(c => `<button class="btn btn-ghost btn-sm" onclick="addCookedIntake('${c.id}')">${escapeHtml(c.name)}<span class="text-muted"> ${Math.round(c.kcal)}</span></button>`).join('')}
-    </div>` : ''}
-    <div class="form-label" style="margin-top:12px;">外で食べた（ざっくりで構いません）</div>
-    <div class="flex gap-2" style="flex-wrap:wrap;">
-      ${OUTSIDE_PRESETS.map((p, i) => `<button class="btn btn-ghost btn-sm" onclick="addOutsideIntake(${i})">${p.label}</button>`).join('')}
-    </div>
-  </div>`;
-}
-
-// AI提案に目標を渡す。未設定なら何も足さない。
-// 重要: この目標は「作る人1人分」のもの。家族の分量まで目標に合わせると、
-// 家族全員を本人のダイエットに巻き込むことになる。そこを明示的に否定する。
-function buildIntakePromptInfo() {
-  const t = bodyTargets();
-  if (!t) return '';
-  const v = intakeOn(dateKey());
-  const kcalLeft = Math.max(0, t.kcal - v.kcal);
-  const protLeft = Math.max(0, t.protein - v.protein);
-  const f = state.family || {};
-  const others = planForMode() === 'family'
-    && (f.adults || 0) + (f.teens || 0) + (f.schoolKids || 0) + (f.preschoolers || 0) > 1;
-
-  // 自分だけの日は、目標をそのまま献立の設計条件にできる
-  if (planForMode() === 'self') {
-    return `\n\n【栄養の目標（本人1人分）】
-- 本人の1日の目標: 約${t.kcal}kcal / たんぱく質${t.protein}g${t.training ? '（今日はトレーニング日）' : ''}
-- 今日の残り: 約${kcalLeft}kcal / たんぱく質${protLeft}g
-- この残りに収まる1人分を提案すること
-- たんぱく質を最優先で満たす。肉・魚・卵・大豆・乳製品のいずれかを主菜に必ず置く
-- 野菜と汁物で嵩を出し、少ないカロリーで満腹感が出る構成にすること
-- 揚げ物・油の多い調理は控えめに。ただし極端な制限食にはしない（続かないため）
-- 在庫の消費を優先すること`;
-  }
-
-  return `\n\n【栄養の目標（作る本人の1人分についてのみ）】
-- 本人の1日の目標: 約${t.kcal}kcal / たんぱく質${t.protein}g${t.training ? '（今日はトレーニング日）' : ''}
-- 本人の今日の残り: 約${kcalLeft}kcal / たんぱく質${protLeft}g
-- たんぱく質を満たすことを最優先。カロリーは目安で、±15%の幅は問題にしない
-- 在庫の消費を優先しつつ、1人分がこの範囲に収まる構成にすること`
-  + (others ? `
-- 【厳守】この数値は本人1人分にのみ適用する。家族の分量は家族構成の指示に従い、
-  1人分の量を減らしてはならない。人数分に増やすだけにすること
-- 家族と本人で必要量が違う場合は、主食やご飯の量で調整できる構成にし、
-  「本人はご飯を控えめに」のように note で伝えること` : '');
-}
-
-// ========== 誰の分を作るか ==========
-// 家族構成の設定を毎食書き換えるのは、忘れたときに黙って間違うので採らない。
-// 毎食変わる情報は、献立を頼む場所で選ぶ。
-function planForMode() {
-  if (state.planFor === 'self' || state.planFor === 'family') return state.planFor;
-  const f = state.family || {};
-  const total = (f.adults || 0) + (f.teens || 0) + (f.schoolKids || 0) + (f.preschoolers || 0);
-  return total > 1 ? 'family' : 'self';
-}
-
-function renderPlanFor() {
-  const mode = planForMode();
-  document.querySelectorAll('.plan-for-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.planFor === mode);
-  });
-  const hint = document.getElementById('plan-for-hint');
-  if (!hint) return;
-  const t = bodyTargets();
-  hint.textContent = mode === 'self'
-    ? (t ? '1人分で、今日の残りに収まる高たんぱくな内容を提案します。' : '1人分で提案します。')
-    : '家族構成に従った分量で提案します。' + (t ? 'あなたの目標は自分の1人分にだけ効き、家族の量は減りません。' : '');
-}
-
-function setPlanFor(mode) {
-  state.planFor = mode;
-  saveState();
-  renderPlanFor();
-}
-
-// ========== からだと目標（設定） ==========
-function renderBody() {
-  const b = state.body || {};
-  const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = (val == null ? '' : val); };
-  set('body-age', b.age); set('body-height', b.heightCm); set('body-weight', b.weightKg);
-  const sexEl = document.getElementById('body-sex'); if (sexEl) sexEl.value = b.sex || 'female';
-  const actEl = document.getElementById('body-activity'); if (actEl) actEl.value = b.activity || 1.375;
-  const goalEl = document.getElementById('body-goal'); if (goalEl) goalEl.value = b.goal || 'recomp';
-
-  const out = document.getElementById('body-result');
-  if (!out) return;
-  const t = bodyTargets();
-  const kw = kihonWeightAvg();
-  out.innerHTML = t
-    ? `<div class="text-sm" style="line-height:1.9;">
-         基礎代謝 約${t.bmr.toLocaleString()}kcal ／ 消費 約${t.tdee.toLocaleString()}kcal<br>
-         <b>目標 ${t.kcal.toLocaleString()}kcal ・ たんぱく質 ${t.protein}g</b>${t.training ? '（今日はトレ日で +' + TRAINING_DAY_BONUS + '）' : ''}
-         ${t.goalNote ? '<br><span class="text-muted">' + t.goalNote + '</span>' : ''}
-       </div>`
-    : '<p class="text-sm text-muted">年齢・身長・体重を入れると目標が出ます。</p>';
-
-  const kbtn = document.getElementById('body-kihon');
-  if (kbtn) {
-    kbtn.style.display = kw ? '' : 'none';
-    kbtn.textContent = `KIHON の体重を取り込む（7日平均 ${kw}kg）`;
-  }
-}
-
-function saveBody() {
-  const num = id => { const el = document.getElementById(id); if (!el) return null; const v = el.value.trim(); if (v === '') return null; const n = Number(v); return Number.isFinite(n) ? n : null; };
-  state.body = {
-    sex: document.getElementById('body-sex').value,
-    age: num('body-age'),
-    heightCm: num('body-height'),
-    weightKg: num('body-weight'),
-    activity: Number(document.getElementById('body-activity').value) || 1.375,
-    goal: document.getElementById('body-goal').value,
-    updatedAt: new Date().toISOString(),
-  };
-  saveState();
-  renderBody();
-  renderIntake();
-}
-
-function pullWeightFromKihon() {
-  const w = kihonWeightAvg();
-  if (!w) { showToast('KIHON に体重の記録がありません'); return; }
-  document.getElementById('body-weight').value = w;
-  saveBody();
-  showToast(`体重を ${w}kg に更新しました`);
 }
 
 // ========== 料理の作り方ルール ==========
@@ -5461,10 +4956,6 @@ function saveFamily() {
 
 // AI提案・献立提案で使う家族構成のプロンプト断片を生成
 function buildFamilyPromptInfo() {
-  // 自分だけの日は、家族の人数も配慮も関係ない
-  if (planForMode() === 'self') {
-    return '\n作る対象: 本人1人のみ。1人分で提案すること（家族の分は不要）';
-  }
   const f = state.family;
   if (!f) return '';
   const total = (f.adults || 0) + (f.teens || 0) + (f.schoolKids || 0) + (f.preschoolers || 0);
