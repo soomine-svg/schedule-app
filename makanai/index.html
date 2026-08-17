@@ -370,20 +370,61 @@ function consumeStock(ings){
   return { ok: prepWrite(p), n };
 }
 
-/* 買い物したものを在庫に足す（Prep の在庫追加と同じ形） */
-function addStock(items){
+/* 不足分を Prep の買い物リストに送る。買い物と在庫入れは Prep 側でやる。
+   （Prep の買い物リストは項目ごとに「在庫へ」ボタンを持っている） */
+function sendToPrepShopping(items){
   const p = prepRead();
-  if(!p || !Array.isArray(p.stock)) return {ok:false, n:0};
-  let n=0;
+  if(!p) return {ok:false, n:0, dup:0};
+  if(!Array.isArray(p.shoppingList)) p.shoppingList = [];
+  let n=0, dup=0;
   items.forEach(it=>{
-    const ex = p.stock.find(s=>normName(s.name)===normName(it.name));
-    if(ex && ex.unit===it.unit){ ex.qty = num(ex.qty)+num(it.amount); }
-    else if(ex){ ex.qty = num(it.amount); ex.unit = it.unit; }
-    else p.stock.push({ id:uid(), name:String(it.name).trim(), category:it.category||'その他',
-                        qty:num(it.amount), unit:it.unit||'個', addedAt:new Date().toISOString() });
+    const ex = p.shoppingList.find(s=>normName(s.name)===normName(it.name));
+    if(ex){ dup++; return; }
+    p.shoppingList.push({ id:uid(), name:String(it.name).trim(),
+      amount: num(it.amount) || null, unit: it.unit || '',
+      checked:false, source:'MAKANAI' });
     n++;
   });
-  return { ok: prepWrite(p), n };
+  return { ok: prepWrite(p), n, dup };
+}
+
+/* その食材が「在庫 or 常備調味料」にあるか。
+   判定規則は Prep の checkIngredientInInventory に合わせてある。
+   ここがズレると、Prep では「ある」なのに MAKANAI では「買え」と言い出す。 */
+const DANGER_SUFFIX = ['油','オイル','汁','ソース','タレ','たれ','スープ','チューブ','ペースト','パウダー'];
+function safePartial(a, b){
+  if(a === b) return true;
+  const shorter = a.length < b.length ? a : b;
+  const longer  = a.length < b.length ? b : a;
+  if(shorter.length < 2) return false;
+  if(!longer.includes(shorter)) return false;
+  for(const suf of DANGER_SUFFIX){ if(longer === shorter + suf) return false; }
+  return true;
+}
+function haveIngredient(name){
+  const norm = normName(name);
+  if(!norm) return false;
+  const p = prepRead(); if(!p) return false;
+  const inStock = (p.stock||[]).some(s => num(s.qty) > 0 && safePartial(normName(s.name), norm));
+  if(inStock) return true;
+  return (p.pantry||[]).some(x => safePartial(normName(x), norm));   // 常備調味料
+}
+
+/* 献立に必要な材料のうち、在庫にも常備調味料にも無いものだけを買い物リストにする。
+   AI の出した shoppingList を鵜呑みにせず、こちらで数え直す。 */
+function buildShortage(planDaysArr, aiList){
+  const out = [], seen = new Set();
+  const push = (name, amount, unit, category) => {
+    const k = normName(name);
+    if(!k || seen.has(k)) return;
+    if(haveIngredient(name)) return;          // 冷蔵庫にある／常備している
+    seen.add(k);
+    out.push({ name:String(name).trim(), amount:num(amount), unit:unit||'', category:category||'その他', sent:false });
+  };
+  (aiList||[]).forEach(s => push(s.name, s.amount, s.unit, s.category));
+  (planDaysArr||[]).forEach(d => (d.meals||[]).forEach(m =>
+    (m.ingredients||[]).forEach(i => push(i.name, i.amount, i.unit))));
+  return out;
 }
 
 /* Prep で「作った」記録のうち、まだ取り込んでいないもの（指定日ぶん） */
@@ -757,16 +798,19 @@ function renderPlan(){
     }
 
     if((P.shopping||[]).length){
-      const left = P.shopping.filter(s=>!s.done).length;
-      h += `<div class="card"><h2>買い物リスト<span class="sub">残り ${left} 品</span></h2>`;
-      P.shopping.forEach((s,i)=>{
-        h += `<div class="li ${s.done?'done':''}">
-                <input type="checkbox" ${s.done?'checked':''} onchange="toggleShop(${i})">
-                <span class="n">${esc(s.name)} <span class="muted">${num(s.amount)?fmt(s.amount)+esc(s.unit||''):''}</span></span>
+      const unsent = P.shopping.filter(s=>!s.sent);
+      h += `<div class="card"><h2>足りないもの<span class="sub">${P.shopping.length} 品</span></h2>`;
+      P.shopping.forEach(s=>{
+        h += `<div class="li ${s.sent?'done':''}">
+                <span class="n">${esc(s.name)} <span class="muted">${num(s.amount)?fmt(s.amount)+esc(s.unit||''):''}</span>
+                  ${s.sent?'<span class="tag g">送信済</span>':''}</span>
               </div>`;
       });
-      h += `<button class="btn btn-ghost" style="margin-top:10px" onclick="shopToStock()">
-              チェックしたものを冷蔵庫（Prep）に入れる</button></div>`;
+      h += `<button class="btn" style="margin-top:12px" onclick="pushShopping()" ${unsent.length?'':'disabled'}>
+              ${unsent.length?`Prepの買い物リストに送る（${unsent.length}品）`:'すべて送信済み'}</button>
+            <div class="muted" style="margin-top:8px">
+              買い物は<b>Prepの買い物リスト</b>で。買ったものにチェックを入れて「在庫へ」を押すと冷蔵庫に入り、
+              こちらの献立にも反映されます。</div></div>`;
     }
     if(P.note) h += `<div class="card"><h2>ひとこと</h2><div class="muted">${esc(P.note)}</div></div>`;
   }
@@ -814,13 +858,14 @@ function unmarkPlanDone(ref){
   if(S.plan && S.plan.days[di] && S.plan.days[di].meals[mi]) delete S.plan.days[di].meals[mi].doneAt;
 }
 function togglePrepStep(i){ S.plan.prep[i].done = !S.plan.prep[i].done; save(); renderPlan(); }
-function toggleShop(i){ S.plan.shopping[i].done = !S.plan.shopping[i].done; save(); renderPlan(); }
-function shopToStock(){
-  const picked = (S.plan.shopping||[]).filter(s=>s.done && !s.stocked);
-  if(!picked.length){ toast('チェックされたものがありません'); return; }
-  const r = addStock(picked);
-  if(r.ok){ picked.forEach(s=>s.stocked=true); save(); toast(`冷蔵庫に${r.n}品入れました`); renderPlan(); }
-  else toast('Prepのデータが見つかりません');
+function pushShopping(){
+  const items = (S.plan.shopping||[]).filter(s=>!s.sent);
+  if(!items.length) return;
+  const r = sendToPrepShopping(items);
+  if(!r.ok){ toast('Prepのデータが見つかりません'); return; }
+  items.forEach(s=>s.sent=true);
+  save(); renderPlan();
+  toast(r.dup ? `${r.n}品を送りました（${r.dup}品は既にリストにあります）` : `Prepの買い物リストに${r.n}品送りました`);
 }
 
 /* ==========================================================================
@@ -1239,11 +1284,13 @@ ${recent.length?`- 最近食べたもの（続けない）：${recent.join('、'
 noteには、この${planDays}日をうまく回すためのひとことを1〜2文で。`;
 
     const o = await askJSON(prompt, PLAN_SCHEMA, 16000);
+    const pdays = (o.days||[]).map((d,i)=>({ date: dates[i] || d.date, meals: d.meals||[] }));
     S.plan = {
       id: uid(), createdAt: new Date().toISOString(),
-      days: (o.days||[]).map((d,i)=>({ date: dates[i] || d.date, meals: d.meals||[] })),
+      days: pdays,
       prep: (o.prep||[]).map(x=>Object.assign({done:false}, x)),
-      shopping: (o.shopping||[]).map(x=>Object.assign({done:false, stocked:false}, x)),
+      /* AI の買い物リストは当てにせず、在庫と常備品を引いて数え直す */
+      shopping: buildShortage(pdays, o.shopping),
       note: o.note || '',
     };
     save();
