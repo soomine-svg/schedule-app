@@ -380,6 +380,24 @@ function prepWrite(o){
 function prepStock(){ const p=prepRead(); return (p && Array.isArray(p.stock)) ? p.stock : []; }
 function prepAvailable(){ return prepRead() !== null; }
 
+/* 連携が切れているときの案内。
+   localStorage は「端末ごと・ブラウザごと」に別物で、同期しない。
+   同じ URL でも PC の Chrome と iPhone の Safari は別の入れ物になる。
+   ここを黙っていると「連携が壊れた」と誤解されるので、はっきり書く。 */
+function linkWarning(){
+  if(prepAvailable()) return '';
+  return `<div class="warn">
+    <b>Prep のデータがここから見えません。</b><br>
+    保存場所は<b>端末ごと・ブラウザごと</b>に分かれます。同じ端末でも、
+    <b>チャットやSNSのリンクから開いた画面（アプリ内ブラウザ）</b>は
+    Safari とは別の入れ物になり、Prep のデータが見えません。<br><br>
+    <b>Prep をふだん開いているのと同じブラウザで開き直してください。</b>
+    リンクから来た場合は、共有ボタンから「Safariで開く」。<br>
+    <span class="muted">ホーム画面に追加したアプリと Safari も、別扱いになることがあります。
+    どちらか一方に寄せてください。</span>
+  </div>`;
+}
+
 /* 材料ぶんの在庫を減らす。Prep の completeCook と同じ規則に揃えてある */
 function consumeStock(ings){
   const p = prepRead();
@@ -805,6 +823,7 @@ function renderPlan(){
   const t = targetsFor(todayKey());
   let h = '';
 
+  h += linkWarning();
   const cf = cookableFavs();
   h += `<div class="card"><h2>献立をつくる<span class="sub">在庫を先に使う</span></h2>
     <div class="chips" style="margin-bottom:10px">
@@ -1122,12 +1141,16 @@ function renderSet(){
 
   const pAvail = prepAvailable();
   h += `<div class="card"><h2>Prep（献立帳）との連携</h2>
-    <div class="kv"><span>冷蔵庫の在庫</span><b>${pAvail?prepStock().length+' 品':'見つかりません'}</b></div>
+    ${pAvail?'':linkWarning()}
+    <div class="kv"><span>Prepのデータ</span><b>${pAvail?'この端末にあります':'この端末にありません'}</b></div>
+    <div class="kv"><span>冷蔵庫の在庫</span><b>${pAvail?prepStock().length+' 品':'—'}</b></div>
+    <div class="kv"><span>KIHONのデータ</span><b>${kihonRead()?'この端末にあります':'この端末にありません'}</b></div>
     <div class="kv"><span>取り込み済みの記録</span><b>${(S.imported||[]).length} 件</b></div>
     <div class="kv"><span>栄養を計算したレシピ</span><b>${Object.keys(S.nutrition||{}).length} 件</b></div>
     <div class="muted" style="margin-top:8px">
       在庫はPrepのものを直接読み書きします。<b>Prepとこのアプリを同時に開いたまま操作しない</b>でください。
-      片方の変更がもう片方に上書きされることがあります。
+      片方の変更がもう片方に上書きされることがあります。<br>
+      3つのアプリは<b>同じ端末の同じブラウザ</b>でのみつながります。端末をまたいだ同期はしません。
     </div>
   </div>`;
 
