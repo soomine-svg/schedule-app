@@ -126,8 +126,9 @@ label.f span{display:block;font-size:12px;color:var(--text-muted);margin-bottom:
 .meal .v{font-size:12.5px;color:var(--text-muted);font-variant-numeric:tabular-nums}
 .meal .x{border:0;background:transparent;color:var(--text-muted);padding:2px 6px;font-size:16px;line-height:1}
 .prep-row{border-top:1px solid var(--line);padding:9px 0}
-.star{border:0;background:transparent;color:var(--text-muted);font-size:17px;line-height:1;padding:0 2px 0 8px}
-.star.on{color:var(--accent)}
+.star{border:1px solid var(--line);background:var(--surface-2);color:var(--text-secondary);
+  font-size:12px;font-weight:600;line-height:1;padding:6px 10px;border-radius:999px;margin-left:8px;white-space:nowrap}
+.star.on{color:#fff;background:var(--accent);border-color:var(--accent)}
 .add{border:1px dashed var(--line);background:transparent;color:var(--text-secondary);
   border-radius:10px;padding:8px;width:100%;font-size:13px;font-weight:600}
 .tag{display:inline-block;font-size:10.5px;font-weight:700;padding:1px 6px;border-radius:99px;
@@ -689,7 +690,7 @@ function fillCard(k, t, tot){
         <div class="slot-head">
           <span class="slot-name">${SLOT_NAME[m.slot]||m.slot}</span>
           <span class="slot-kcal">${fmt(m.kcal)}kcal ・ P${num(m.protein).toFixed(0)} ・ 塩${num(m.salt).toFixed(1)}</span>
-          <button class="star ${saved?'on':''}" onclick="fillFav(${i})" aria-label="お気に入り">${saved?'★':'☆'}</button>
+          <button class="star ${saved?'on':''}" onclick="fillFav(${i})" aria-label="お気に入りに保存">${saved?'★ 保存済':'☆ 保存'}</button>
         </div>
         <div style="font-size:14.5px;margin-bottom:6px">${esc(m.name)}${m.bento?'<span class="tag">弁当</span>':''}</div>
         <div class="row">
@@ -1102,7 +1103,9 @@ function renderPlan(){
       const dt = d.date===todayKey() ? '今日' : labelOf(d.date);
       const dk = (d.meals||[]).reduce((a,m)=>a+num(m.kcal),0);
       const dp = (d.meals||[]).reduce((a,m)=>a+num(m.protein),0);
-      h += `<div class="card"><h2>${esc(dt)}<span class="sub">${fmt(dk)}kcal ・ P${dp.toFixed(0)}g</span></h2>`;
+      h += `<div class="card"><h2>${esc(dt)}<span class="sub">${fmt(dk)}kcal ・ P${dp.toFixed(0)}g</span></h2>
+        ${di===0?`<div class="muted" style="margin-bottom:6px">
+          気に入った料理は<b>「☆ 保存」</b>を押すと、材料と作り方ごとお気に入りに残ります。</div>`:''}`;
       (d.meals||[]).forEach((m,mi)=>{
         const saved = !!favByName(m.name);
         h += `<div class="slot">
@@ -1110,7 +1113,7 @@ function renderPlan(){
             <span class="slot-name">${SLOT_NAME[m.slot]||m.slot}</span>
             <span class="slot-kcal">${fmt(m.kcal)}kcal ・ P${num(m.protein).toFixed(0)} ・ 塩${num(m.salt).toFixed(1)}</span>
             <button class="star ${saved?'on':''}" onclick="saveDishAsFav(${di},${mi})"
-                    aria-label="お気に入り">${saved?'★':'☆'}</button>
+                    aria-label="お気に入りに保存">${saved?'★ 保存済':'☆ 保存'}</button>
           </div>
           <div style="font-size:14.5px;margin-bottom:6px">${esc(m.name)}${m.bento?'<span class="tag">弁当</span>':''}${m.doneAt?'<span class="tag g">記録済</span>':''}</div>
           <div class="row">
