@@ -1,5 +1,5 @@
 // Prep Service Worker - v5 (network-first strategy)
-const CACHE_NAME = 'prep-v7';
+const CACHE_NAME = 'prep-v8';
 const FALLBACK_URLS = [
   './',
   './index.html',

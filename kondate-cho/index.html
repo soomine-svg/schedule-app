@@ -589,6 +589,9 @@ h1, h2, h3, h4 { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-we
   font-size: 13px;
   z-index: 300;
   opacity: 0;
+  /* 透明でもタップは吸ってしまう。トーストは触るものではないので常に透過させる。
+     これが無いと、一度トーストが出た後、下部ナビの中央がタップに反応しなくなる */
+  pointer-events: none;
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   box-shadow: 0 4px 16px rgba(0,0,0,0.2);
   white-space: nowrap;
@@ -1197,6 +1200,13 @@ h1, h2, h3, h4 { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-we
     <div id="intake-box"></div>
 
     <div class="card">
+      <div class="form-label">誰の分</div>
+      <div class="flex gap-2 mb-2" style="flex-wrap: wrap;">
+        <button class="btn btn-ghost btn-sm plan-for-btn active" data-plan-for="family">家族と一緒</button>
+        <button class="btn btn-ghost btn-sm plan-for-btn" data-plan-for="self">自分だけ</button>
+      </div>
+      <p class="text-sm text-muted mb-3" id="plan-for-hint"></p>
+
       <div class="form-label">種類</div>
       <div class="flex gap-2 mb-3" style="flex-wrap: wrap;">
         <button class="btn btn-ghost btn-sm plan-period-btn active" data-plan-type="dinner-3">3日（夕食）</button>
@@ -1824,6 +1834,7 @@ let state = {
   // からだと目標（未入力なら摂取管理の機能は全部オフ。従来通り動く）
   body: { sex: 'female', age: null, heightCm: null, weightKg: null, activity: 1.375, goal: 'recomp', updatedAt: null },
   intakeLog: [], // レシピ以外の摂取（外食・コンビニ等）{ id, date, label, kcal, protein }
+  planFor: null, // 'self' | 'family'。毎食変わるので設定ではなく献立タブで選ぶ
 };
 
 // 活動レベル。車移動が前提の生活は、体感より低く出るのが普通
@@ -1927,7 +1938,7 @@ function switchView(name) {
   if (name === 'stock') renderStock();
   if (name === 'shopping') renderShopping();
   if (name === 'settings') renderSettings();
-  if (name === 'suggest') { renderMealPlanHistoryButton(); renderIntake(); }
+  if (name === 'suggest') { renderMealPlanHistoryButton(); renderIntake(); renderPlanFor(); }
 }
 
 // ============================================================
@@ -4233,6 +4244,10 @@ let prepStorages = new Set(['chilled']); // 'chilled', 'frozen' の組み合わ�
 let prepMainCount = 1; // 主菜の品数 (1-3)
 let prepSideCount = 3; // 副菜の品数 (1-5)
 
+document.querySelectorAll('.plan-for-btn').forEach(btn => {
+  btn.addEventListener('click', () => setPlanFor(btn.dataset.planFor));
+});
+
 document.querySelectorAll('.plan-period-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.plan-period-btn').forEach(b => b.classList.remove('active'));
@@ -5238,7 +5253,21 @@ function buildIntakePromptInfo() {
   const kcalLeft = Math.max(0, t.kcal - v.kcal);
   const protLeft = Math.max(0, t.protein - v.protein);
   const f = state.family || {};
-  const others = (f.adults || 0) + (f.teens || 0) + (f.schoolKids || 0) + (f.preschoolers || 0) > 1;
+  const others = planForMode() === 'family'
+    && (f.adults || 0) + (f.teens || 0) + (f.schoolKids || 0) + (f.preschoolers || 0) > 1;
+
+  // 自分だけの日は、目標をそのまま献立の設計条件にできる
+  if (planForMode() === 'self') {
+    return `\n\n【栄養の目標（本人1人分）】
+- 本人の1日の目標: 約${t.kcal}kcal / たんぱく質${t.protein}g${t.training ? '（今日はトレーニング日）' : ''}
+- 今日の残り: 約${kcalLeft}kcal / たんぱく質${protLeft}g
+- この残りに収まる1人分を提案すること
+- たんぱく質を最優先で満たす。肉・魚・卵・大豆・乳製品のいずれかを主菜に必ず置く
+- 野菜と汁物で嵩を出し、少ないカロリーで満腹感が出る構成にすること
+- 揚げ物・油の多い調理は控えめに。ただし極端な制限食にはしない（続かないため）
+- 在庫の消費を優先すること`;
+  }
+
   return `\n\n【栄養の目標（作る本人の1人分についてのみ）】
 - 本人の1日の目標: 約${t.kcal}kcal / たんぱく質${t.protein}g${t.training ? '（今日はトレーニング日）' : ''}
 - 本人の今日の残り: 約${kcalLeft}kcal / たんぱく質${protLeft}g
@@ -5249,6 +5278,35 @@ function buildIntakePromptInfo() {
   1人分の量を減らしてはならない。人数分に増やすだけにすること
 - 家族と本人で必要量が違う場合は、主食やご飯の量で調整できる構成にし、
   「本人はご飯を控えめに」のように note で伝えること` : '');
+}
+
+// ========== 誰の分を作るか ==========
+// 家族構成の設定を毎食書き換えるのは、忘れたときに黙って間違うので採らない。
+// 毎食変わる情報は、献立を頼む場所で選ぶ。
+function planForMode() {
+  if (state.planFor === 'self' || state.planFor === 'family') return state.planFor;
+  const f = state.family || {};
+  const total = (f.adults || 0) + (f.teens || 0) + (f.schoolKids || 0) + (f.preschoolers || 0);
+  return total > 1 ? 'family' : 'self';
+}
+
+function renderPlanFor() {
+  const mode = planForMode();
+  document.querySelectorAll('.plan-for-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.planFor === mode);
+  });
+  const hint = document.getElementById('plan-for-hint');
+  if (!hint) return;
+  const t = bodyTargets();
+  hint.textContent = mode === 'self'
+    ? (t ? '1人分で、今日の残りに収まる高たんぱくな内容を提案します。' : '1人分で提案します。')
+    : '家族構成に従った分量で提案します。' + (t ? 'あなたの目標は自分の1人分にだけ効き、家族の量は減りません。' : '');
+}
+
+function setPlanFor(mode) {
+  state.planFor = mode;
+  saveState();
+  renderPlanFor();
 }
 
 // ========== からだと目標（設定） ==========
@@ -5370,6 +5428,10 @@ function saveFamily() {
 
 // AI提案・献立提案で使う家族構成のプロンプト断片を生成
 function buildFamilyPromptInfo() {
+  // 自分だけの日は、家族の人数も配慮も関係ない
+  if (planForMode() === 'self') {
+    return '\n作る対象: 本人1人のみ。1人分で提案すること（家族の分は不要）';
+  }
   const f = state.family;
   if (!f) return '';
   const total = (f.adults || 0) + (f.teens || 0) + (f.schoolKids || 0) + (f.preschoolers || 0);
