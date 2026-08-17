@@ -469,6 +469,14 @@ function haveIngredient(name){
   return (p.pantry||[]).some(x => safePartial(normName(x), norm));   // 常備調味料
 }
 
+/* 主食と水は買い物リストに出さない。判定は Prep の isStapleRice / isWaterLike に合わせてある。
+   主食は栄養に算入するので材料には載るが、都度買うものではない */
+function isStaple(name){
+  const n = normName(name);
+  return /^(米|白米|玄米|精米|ご飯|ごはん|白ごはん|白ご飯|炊いたご飯|炊いたごはん)$/.test(n)
+      || /^(水|お湯|湯|熱湯|ぬるま湯|冷水|氷水|水道水)$/.test(n);
+}
+
 /* 献立に必要な材料のうち、在庫にも常備調味料にも無いものだけを買い物リストにする。
    AI の出した shoppingList を鵜呑みにせず、こちらで数え直す。 */
 function buildShortage(planDaysArr, aiList){
@@ -476,6 +484,7 @@ function buildShortage(planDaysArr, aiList){
   const push = (name, amount, unit, category) => {
     const k = normName(name);
     if(!k || seen.has(k)) return;
+    if(isStaple(name)) return;                // 米・水は買い物リストに出さない
     if(haveIngredient(name)) return;          // 冷蔵庫にある／常備している
     seen.add(k);
     out.push({ name:String(name).trim(), amount:num(amount), unit:unit||'', category:category||'その他', sent:false });
@@ -764,6 +773,9 @@ ${favs.length?`\n【お気に入り（合うものがあればそのまま使う
 【条件】
 - 合計が残り枠を超えないこと。**枠が小さければ品数を減らす**。無理に全部の枠を埋めなくてよい
 - たんぱく質を優先する。減量中なのでここが足りないと筋肉が落ちる
+- **主食（ごはん・パン・麺）を付けるなら、材料と栄養に必ず算入すること。**
+  分量は具体的に書く（例「ごはん 150g」）。残り枠が小さければ主食を減らすか外し、
+  外したときは memo に「主食なし」と明記する
 - 分量・栄養価はすべて「1人分」
 - 材料のnameは冷蔵庫の表記に合わせる。amountは数値、unitは g / ml / 個 / 本 / 枚 / パック など
 - stepsは1品2〜4行の短い手順。手早く作れるものにする
@@ -1762,6 +1774,9 @@ ${favBlock}
 - 朝は10分以内でできるものにする${S.prefs.bento?'\n- 昼はお弁当にする。前日の夜に作り置きして詰められるものにし、bentoをtrueにする。冷めてもおいしく、汁気が出ないもの' : ''}
 - 外食やコンビニに頼らず自分で作れる献立にする
 - 同じ主菜を繰り返さない。和洋中を散らす
+- **主食（ごはん・パン・麺）も1食に含め、材料と栄養に必ず算入すること。**
+  分量は具体的に書く（例「ごはん 150g」「食パン6枚切 1枚」）。
+  主食を出さない食事にするなら、memoに「主食なし」と明記する
 - 分量・栄養価はすべて「1人分」で答える
 - 材料のnameは冷蔵庫の表記に合わせる（例「鶏むね肉」）。amountは数値、unitは g / ml / 個 / 本 / 枚 / パック などの単位
 - stepsは1品につき2〜4行の短い手順
