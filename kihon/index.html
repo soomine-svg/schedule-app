@@ -30,6 +30,11 @@
   --warn:#eda100;
   --bad:#e34948;
   --grid:#e8e5de;
+  --fig:#1c2b36;
+  --fig-ground:#c9c5bc;
+  --fig-eq:#2a78d6;
+  --fig-cue:#eb6834;
+  --fig-bg:#f7f5f0;
   --radius:14px;
   --safe-b: env(safe-area-inset-bottom, 0px);
 }
@@ -52,6 +57,11 @@
     --warn:#c98500;
     --bad:#e66767;
     --grid:#2f2f2c;
+    --fig:#e8e6de;
+    --fig-ground:#4a4a45;
+    --fig-eq:#3987e5;
+    --fig-cue:#d95926;
+    --fig-bg:#202020;
   }
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -109,6 +119,25 @@ button{font:inherit;color:inherit;cursor:pointer}
 .ex-head{display:flex;align-items:baseline;gap:8px}
 .ex-name{font-weight:700;font-size:15px}
 .ex-cue{font-size:12px;color:var(--text-muted);margin:3px 0 9px;line-height:1.5}
+/* --- やり方 --- */
+.howto-btn{
+  border:1px solid var(--line);background:var(--surface-2);border-radius:999px;
+  padding:4px 11px;font-size:11.5px;font-weight:600;color:var(--text-secondary);margin:0 0 9px;
+}
+.howto{margin:0 0 11px}
+.howto-frames{display:flex;gap:8px}
+.howto-frames figure{flex:1;margin:0;position:relative;background:var(--fig-bg);border-radius:10px}
+.howto-frames figcaption{
+  position:absolute;top:5px;left:8px;font-size:10.5px;color:var(--text-muted);font-weight:600;
+}
+.howto-frames svg{width:100%;display:block}
+.howto ol{margin:9px 0 0;padding-left:19px;font-size:12.5px;line-height:1.75;color:var(--text-secondary)}
+.howto ol li::marker{color:var(--text-muted);font-weight:700}
+.howto .ng{
+  margin:7px 0 0;font-size:12px;line-height:1.6;color:var(--bad);
+  padding-left:19px;text-indent:-19px;
+}
+.howto .ng b{font-weight:700}
 .ex-target{margin-left:auto;font-size:12px;color:var(--text-muted);white-space:nowrap;
   background:none;border:0;padding:2px 0}
 .load{display:flex;align-items:center;gap:8px;margin-bottom:9px}
@@ -341,6 +370,364 @@ const EX = {
   lateral:  {n:'スライドボード ラテラル', kind:'time', inc:5, start:30, cue:'横方向へ滑る。膝を内に入れない。'},
   chop:     {n:'バンド チョップ',      kind:'reps', inc:2,   start:10, cue:'斜め上から斜め下へ。腕でなく体幹の回旋で振る。左右それぞれ。'},
   sldl:     {n:'片脚デッドリフト',     kind:'load', unit:'kg', inc:2, start:4, cue:'軸脚1本で前傾。ぐらつくのが正常。左右それぞれ。'},
+};
+
+/* =========================================================================
+   やり方の図
+   ------------------------------------------------------------------------
+   種目名で検索させないための仕組み。関節の座標から人体を描くので、
+   全種目が同じ絵柄で揃い、直すときも座標だけ触ればいい。
+   側面から見た図。100×100 の座標系、床は y=92。
+   ========================================================================= */
+const GROUND = 92;
+
+/* 立位の基本形。各ポーズはここからの差分で書く */
+const STAND = {
+  head:[50,22], neck:[50,31], shoulder:[50,33], elbow:[50,45], hand:[50,57],
+  hip:[50,54], knee:[50,73], ankle:[50,GROUND], toe:[57,GROUND],
+};
+const pose = (o) => Object.assign({}, STAND, o);
+
+function figure(p, props, flip){
+  const P = k => p[k] || STAND[k];
+  const L = (a,b,w,cls) => `<polyline points="${a.map(k=>P(k).join(',')).join(' ')}" `
+    + `fill="none" stroke="${cls||'var(--fig)'}" stroke-width="${w||5}" stroke-linecap="round" stroke-linejoin="round"/>`;
+  let s = '';
+
+  /* 道具は体の後ろに置くものと前に置くものがある */
+  (props||[]).filter(pr=>pr.behind).forEach(pr => { s += prop(pr, P); });
+
+  /* 側面図では奥側の手足を薄く描いて奥行きを出す。正面図では両側とも同じ濃さ */
+  const back = p.front ? 1 : 0.42;
+  if(p.knee2) s += `<g opacity="${back}">${L(['hip','knee2','ankle2','toe2'], 5)}</g>`;
+  if(p.elbow2) s += `<g opacity="${back}">${L(['shoulder','elbow2','hand2'], 4.4)}</g>`;
+
+  s += L(['hip','knee','ankle','toe'], 5);          // 脚
+  /* 背骨。丸める／反らせるが伝わらないと意味がない種目があるので曲線で描ける */
+  if(p.spine){
+    const [nx,ny] = P('neck'), [hx,hy] = P('hip');
+    const len = Math.hypot(hx-nx, hy-ny) || 1;
+    const cx = (nx+hx)/2 - (hy-ny)/len * p.spine;
+    const cy = (ny+hy)/2 + (hx-nx)/len * p.spine;
+    s += `<path d="M${nx} ${ny} Q${cx} ${cy} ${hx} ${hy}" fill="none" stroke="var(--fig)" stroke-width="6.5" stroke-linecap="round"/>`;
+  } else {
+    s += L(['neck','hip'], 6.5);                     // 胴
+  }
+  s += L(['shoulder','elbow','hand'], 4.4);          // 腕
+  s += `<circle cx="${P('head')[0]}" cy="${P('head')[1]}" r="6.4" fill="var(--fig)"/>`;
+
+  (props||[]).filter(pr=>!pr.behind).forEach(pr => { s += prop(pr, P); });
+
+  const inner = `<line x1="4" y1="${GROUND}" x2="96" y2="${GROUND}" stroke="var(--fig-ground)" stroke-width="1.6" stroke-linecap="round"/>` + s;
+  return flip ? `<g transform="translate(100,0) scale(-1,1)">${inner}</g>` : inner;
+}
+
+/* 道具 */
+function prop(pr, P){
+  const at = pr.at ? P(pr.at) : null;
+  const A = pr.xy || at || [50,50];
+  const c = 'var(--fig-eq)';
+  switch(pr.t){
+    case 'dumbbell':
+      return `<g stroke="${c}" stroke-width="4" stroke-linecap="round"><line x1="${A[0]-5}" y1="${A[1]}" x2="${A[0]+5}" y2="${A[1]}"/></g>`
+           + `<circle cx="${A[0]-6}" cy="${A[1]}" r="3.1" fill="${c}"/><circle cx="${A[0]+6}" cy="${A[1]}" r="3.1" fill="${c}"/>`;
+    case 'barbell':
+      return `<line x1="${A[0]-16}" y1="${A[1]}" x2="${A[0]+16}" y2="${A[1]}" stroke="${c}" stroke-width="2.6" stroke-linecap="round"/>`
+           + `<rect x="${A[0]-16}" y="${A[1]-7}" width="4" height="14" rx="1.4" fill="${c}"/>`
+           + `<rect x="${A[0]+12}" y="${A[1]-7}" width="4" height="14" rx="1.4" fill="${c}"/>`;
+    case 'bag': // ウォーターバッグ
+      return `<rect x="${A[0]-11}" y="${A[1]-5}" width="22" height="10" rx="5" fill="${c}" opacity="0.85"/>`;
+    case 'bench':
+      return `<rect x="${pr.x}" y="${pr.y}" width="${pr.w}" height="4.5" rx="2" fill="var(--fig-eq)" opacity="0.75"/>`
+           + `<line x1="${pr.x+4}" y1="${pr.y+4}" x2="${pr.x+4}" y2="${GROUND}" stroke="${c}" stroke-width="2.6" opacity="0.75"/>`
+           + `<line x1="${pr.x+pr.w-4}" y1="${pr.y+4}" x2="${pr.x+pr.w-4}" y2="${GROUND}" stroke="${c}" stroke-width="2.6" opacity="0.75"/>`;
+    case 'board': // スライドボード
+      return `<rect x="8" y="${GROUND-2.5}" width="84" height="3" rx="1.5" fill="${c}" opacity="0.5"/>`;
+    case 'band': { // 伸びたゴム。アンカーから手へ
+      const f = pr.from, t = A;
+      const mx = (f[0]+t[0])/2, my = (f[1]+t[1])/2 + (pr.sag||0);
+      return `<path d="M${f[0]} ${f[1]} Q${mx} ${my} ${t[0]} ${t[1]}" fill="none" stroke="${c}" stroke-width="2.4" stroke-linecap="round"/>`
+           + `<circle cx="${f[0]}" cy="${f[1]}" r="2.6" fill="${c}"/>`;
+    }
+    case 'wall':
+      return `<line x1="${pr.x}" y1="6" x2="${pr.x}" y2="${GROUND}" stroke="${c}" stroke-width="2.6" opacity="0.7"/>`;
+    case 'mat':
+      return `<rect x="10" y="${GROUND-2}" width="80" height="2.5" rx="1.2" fill="${c}" opacity="0.45"/>`;
+    case 'arrow': { // 動く向き
+      const [x1,y1] = pr.from, [x2,y2] = pr.to;
+      const ang = Math.atan2(y2-y1, x2-x1), h = 4.2;
+      const p1 = [x2 - h*Math.cos(ang-0.5), y2 - h*Math.sin(ang-0.5)];
+      const p2 = [x2 - h*Math.cos(ang+0.5), y2 - h*Math.sin(ang+0.5)];
+      return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="var(--fig-cue)" stroke-width="2.2" stroke-linecap="round"/>`
+           + `<polygon points="${x2},${y2} ${p1.join(',')} ${p2.join(',')}" fill="var(--fig-cue)"/>`;
+    }
+    default: return '';
+  }
+}
+
+/* ---------- 種目ごとの姿勢と手順 ----------------------------------------
+   frames: [開始, 動作の終わり] / how: 手順3行 / ng: よくある失敗          */
+const HOWTO = {
+  goblet: {
+    frames: [
+      { p: pose({ elbow:[46,42], hand:[47,40], shoulder:[49,33] }), props:[{t:'dumbbell', at:'hand'}] },
+      { p: pose({ hip:[44,66], knee:[57,72], ankle:[50,GROUND], toe:[58,GROUND], neck:[47,45], head:[46,36],
+                  shoulder:[47,47], elbow:[44,54], hand:[45,52] }), props:[{t:'dumbbell', at:'hand'}] },
+    ],
+    how:['ダンベルを両手で胸の前に抱える','踵を床につけたまま、尻を後ろに引いて沈む','痛みの手前まで下ろし、踵で床を押して立つ'],
+    ng:'膝が内に入る／踵が浮く。深さより、この2つを守るほうが大事',
+  },
+  dbbench: {
+    frames: [
+      { p: pose({ hip:[46,66], knee:[62,66], ankle:[70,GROUND], toe:[76,GROUND], neck:[36,66], head:[30,64],
+                  shoulder:[38,66], elbow:[38,56], hand:[38,50] }),
+        props:[{t:'bench', x:28, y:68, w:44, behind:true},{t:'dumbbell', at:'hand'}] },
+      { p: pose({ hip:[46,66], knee:[62,66], ankle:[70,GROUND], toe:[76,GROUND], neck:[36,66], head:[30,64],
+                  shoulder:[38,66], elbow:[44,72], hand:[38,74] }),
+        props:[{t:'bench', x:28, y:68, w:44, behind:true},{t:'dumbbell', at:'hand'}] },
+    ],
+    how:['ベンチに仰向け。肩甲骨を寄せて、背中を軽く反らせる','肘を45度に開き、胸の高さまで下ろす','胸で押し上げる。肘は伸ばしきらない'],
+    ng:'肘を真横に開くと肩を痛める。45度を守る',
+  },
+  bandrow: {
+    frames: [
+      { p: pose({ hip:[50,54], knee:[52,73], neck:[50,31], shoulder:[50,33], elbow:[58,40], hand:[66,44] }),
+        props:[{t:'band', from:[86,44], at:'hand', sag:2}] },
+      { p: pose({ hip:[50,54], knee:[52,73], neck:[50,31], shoulder:[50,33], elbow:[44,42], hand:[52,46] }),
+        props:[{t:'band', from:[86,44], at:'hand', sag:3},{t:'arrow', from:[70,58], to:[54,58]}] },
+    ],
+    how:['バンドを前方に固定し、腕を伸ばして構える','肩を下げたまま、肘でみぞおちの横まで引く','肩甲骨を寄せて1秒止め、ゆっくり戻す'],
+    ng:'肩がすくむ／体が反る。腕でなく背中で引く',
+  },
+  deadbug: {
+    frames: [
+      { p: { head:[22,78], neck:[30,80], hip:[60,82], shoulder:[32,80], elbow:[32,70], hand:[32,60],
+             knee:[60,66], ankle:[72,66], toe:[78,63], knee2:[62,68], ankle2:[74,68], toe2:[80,65],
+             elbow2:[34,71], hand2:[34,61] },
+        props:[{t:'mat', behind:true}] },
+      { p: { head:[22,78], neck:[30,80], hip:[60,82], shoulder:[32,80], elbow:[24,72], hand:[16,66],
+             knee:[72,76], ankle:[86,80], toe:[91,77], knee2:[62,68], ankle2:[74,68], toe2:[80,65],
+             elbow2:[34,71], hand2:[34,61] },
+        props:[{t:'mat', behind:true},{t:'arrow', from:[26,58], to:[16,60]},{t:'arrow', from:[80,62], to:[90,70]}] },
+    ],
+    how:['仰向けで、両手を天井へ、股関節と膝を90度に上げる','片手と反対の脚を、床すれすれまでゆっくり伸ばす','腰を床に押しつけたまま戻す。左右交互で1回'],
+    ng:'腰が浮いて反る。反ったら可動域を狭める',
+  },
+  dbrdl: {
+    frames: [
+      { p: pose({ hand:[52,58], elbow:[51,46] }), props:[{t:'dumbbell', at:'hand'}] },
+      { p: pose({ hip:[44,54], knee:[50,73], neck:[60,42], head:[66,38], shoulder:[58,44], elbow:[57,55], hand:[57,64] }),
+        props:[{t:'dumbbell', at:'hand'},{t:'arrow', from:[36,54], to:[28,54]}] },
+    ],
+    how:['ダンベルを持って立ち、膝を軽く曲げて固定する','膝の角度を変えずに、尻を後ろへ引いて上体を倒す','もも裏が張ったら止め、尻を締めて起き上がる'],
+    ng:'背中が丸まる／膝を曲げて沈む。これは膝でなく股関節の運動',
+  },
+  slidelun: {
+    frames: [
+      { p: pose({}), props:[{t:'board', behind:true}] },
+      { p: pose({ hip:[48,62], knee:[46,76], ankle:[44,GROUND], toe:[51,GROUND],
+                  knee2:[66,74], ankle2:[76,GROUND], toe2:[82,GROUND], neck:[48,39], head:[48,30],
+                  shoulder:[48,41], elbow:[46,52], hand:[46,62] }),
+        props:[{t:'board', behind:true},{t:'arrow', from:[74,86], to:[86,86]}] },
+    ],
+    how:['スライドボードに後ろ足を乗せて立つ','後ろ足を滑らせながら、前足の膝を曲げて沈む','前足の踵で押して戻る。上体は立てたまま'],
+    ng:'上体が前に倒れる。前足に体重を乗せたまま垂直に沈む',
+  },
+  pullapart: {
+    frames: [
+      { p: { front:true, head:[50,20], neck:[50,29], shoulder:[50,32], hip:[50,58], knee:[46,74], ankle:[45,GROUND], toe:[41,GROUND],
+             knee2:[54,74], ankle2:[55,GROUND], toe2:[59,GROUND],
+             elbow:[41,35], hand:[35,36], elbow2:[59,35], hand2:[65,36] },
+        props:[{t:'band', from:[35,36], at:'hand2', sag:0}] },
+      { p: { front:true, head:[50,20], neck:[50,29], shoulder:[50,32], hip:[50,58], knee:[46,74], ankle:[45,GROUND], toe:[41,GROUND],
+             knee2:[54,74], ankle2:[55,GROUND], toe2:[59,GROUND],
+             elbow:[36,33], hand:[22,33], elbow2:[64,33], hand2:[78,33] },
+        props:[{t:'band', from:[22,33], at:'hand2', sag:0},
+               {t:'arrow', from:[34,46], to:[22,46]},{t:'arrow', from:[66,46], to:[78,46]}] },
+    ],
+    how:['バンドを両手で持ち、胸の高さで前に伸ばす','肩を下げたまま、真横に開いて胸を張る','肩甲骨を寄せて止め、ゆっくり戻す'],
+    ng:'肩がすくむ／肘が曲がる。猫背の解毒剤なので、丁寧に',
+  },
+  sideplnk: {
+    frames: [
+      { p: { head:[20,68], neck:[28,71], shoulder:[30,72], elbow:[29,82], hand:[38,GROUND-2],
+             hip:[56,87], knee:[70,88], ankle:[84,GROUND-2], toe:[89,GROUND-6] },
+        props:[{t:'mat', behind:true},{t:'arrow', from:[56,80], to:[56,70]}] },
+      { p: { head:[20,62], neck:[28,66], shoulder:[30,67], elbow:[29,80], hand:[38,GROUND-2],
+             hip:[56,77], knee:[70,83], ankle:[84,GROUND-2], toe:[89,GROUND-6] },
+        props:[{t:'mat', behind:true}] },
+    ],
+    how:['横向きで前腕をつき、肘は肩の真下','腰を持ち上げ、頭から足まで一直線にする','骨盤を前後に倒さず、その姿勢のまま保つ'],
+    ng:'腰が落ちる／体が前後に傾く。秒数より姿勢',
+  },
+  bbsquat: {
+    frames: [
+      { p: pose({ shoulder:[50,33], elbow:[44,36], hand:[44,34] }), props:[{t:'barbell', xy:[50,34]}] },
+      { p: pose({ hip:[43,66], knee:[57,72], ankle:[50,GROUND], toe:[58,GROUND], neck:[46,45], head:[45,36],
+                  shoulder:[47,46], elbow:[41,49], hand:[41,47] }),
+        props:[{t:'barbell', xy:[47,47]},{t:'arrow', from:[70,44], to:[70,64]}] },
+    ],
+    how:['バーを肩の後ろに担ぎ、足は肩幅、つま先はやや外','息を吸って腹を固め、尻を後ろに引いて沈む','太ももが床と平行あたりまで。踵で押して立つ'],
+    ng:'フォームが崩れる手前で必ず止める。重さは崩れない範囲でだけ増やす',
+  },
+  bbrdl: {
+    frames: [
+      { p: pose({ hand:[52,58], elbow:[51,46] }), props:[{t:'barbell', xy:[52,58]}] },
+      { p: pose({ hip:[44,54], knee:[50,73], neck:[60,42], head:[66,38], shoulder:[58,44], elbow:[57,55], hand:[57,66] }),
+        props:[{t:'barbell', xy:[57,66]},{t:'arrow', from:[36,54], to:[28,54]}] },
+    ],
+    how:['バーを持って立つ。膝は軽く曲げて固定','バーを脚に沿わせたまま、尻を後ろへ引いて下ろす','もも裏が張ったら止め、尻を締めて起き上がる'],
+    ng:'背中が丸まる。丸まる位置より手前で止める',
+  },
+  split: {
+    frames: [
+      { p: pose({ knee2:[58,73], ankle2:[62,GROUND], toe2:[68,GROUND], hand:[48,58], elbow:[48,46] }), props:[] },
+      { p: pose({ hip:[48,64], knee:[42,76], ankle:[40,GROUND], toe:[47,GROUND],
+                  knee2:[66,76], ankle2:[70,GROUND], toe2:[76,GROUND],
+                  neck:[48,41], head:[48,32], shoulder:[48,43], elbow:[47,53], hand:[47,63] }),
+        props:[{t:'arrow', from:[76,50], to:[76,66]}] },
+    ],
+    how:['前後に足を開いて立つ。まず自重（0kg）から','上体を立てたまま、後ろ膝を床に近づけるように沈む','前足の踵で押して戻る。左右それぞれ'],
+    ng:'前に倒れる／前膝がつま先より大きく前に出る',
+  },
+  dbpress: {
+    frames: [
+      { p: pose({ shoulder:[50,33], elbow:[44,40], hand:[45,34] }), props:[{t:'dumbbell', at:'hand'}] },
+      { p: pose({ shoulder:[50,33], elbow:[48,26], hand:[49,17] }),
+        props:[{t:'dumbbell', at:'hand'},{t:'arrow', from:[68,32], to:[68,20]}] },
+    ],
+    how:['ダンベルを肩の高さに構える','肋骨を締めて、腰を反らせずに真上へ押す','耳の横を通して下ろす'],
+    ng:'腰を反らせて上げる。腹に力を入れたままにする',
+  },
+  dbrow: {
+    frames: [
+      { p: { head:[26,50], neck:[34,52], shoulder:[36,52], elbow:[38,64], hand:[38,76],
+             hip:[62,54], knee:[64,73], ankle:[64,GROUND], toe:[70,GROUND], elbow2:[30,60], hand2:[28,70] },
+        props:[{t:'bench', x:20, y:70, w:26, behind:true},{t:'dumbbell', at:'hand'}] },
+      { p: { head:[26,50], neck:[34,52], shoulder:[36,52], elbow:[40,60], hand:[40,62],
+             hip:[62,54], knee:[64,73], ankle:[64,GROUND], toe:[70,GROUND], elbow2:[30,60], hand2:[28,70] },
+        props:[{t:'bench', x:20, y:70, w:26, behind:true},{t:'dumbbell', at:'hand'},{t:'arrow', from:[52,74], to:[52,62]}] },
+    ],
+    how:['ベンチに片手をつき、背中を床と平行にする','肩を下げたまま、肘を腰へ引き上げる','肩甲骨を寄せて止め、ゆっくり下ろす'],
+    ng:'体をひねって上げる。上体は動かさない',
+  },
+  hipthr: {
+    frames: [
+      { p: { head:[26,58], neck:[34,60], shoulder:[36,60], elbow:[36,68], hand:[40,74],
+             hip:[58,80], knee:[74,72], ankle:[76,GROUND], toe:[82,GROUND] },
+        props:[{t:'bench', x:18, y:62, w:26, behind:true},{t:'barbell', xy:[58,76]}] },
+      { p: { head:[26,58], neck:[34,60], shoulder:[36,60], elbow:[36,68], hand:[40,72],
+             hip:[58,64], knee:[74,66], ankle:[76,GROUND], toe:[82,GROUND] },
+        props:[{t:'bench', x:18, y:62, w:26, behind:true},{t:'barbell', xy:[58,60]},{t:'arrow', from:[46,78], to:[46,66]}] },
+    ],
+    how:['ベンチに肩甲骨を乗せ、膝を立てて座る','バーを股関節の上に置き、尻を締めて持ち上げる','頂点で1秒止める。肩から膝が一直線になるまで'],
+    ng:'腰を反らせて上げる。上げるのは尻の力で',
+  },
+  facepull: {
+    frames: [
+      { p: pose({ shoulder:[50,33], elbow:[58,36], hand:[66,34] }), props:[{t:'band', from:[88,28], at:'hand', sag:2}] },
+      { p: pose({ shoulder:[50,33], elbow:[58,28], hand:[46,24] }),
+        props:[{t:'band', from:[88,28], at:'hand', sag:4},{t:'arrow', from:[72,44], to:[58,42]}] },
+    ],
+    how:['バンドを顔より高い位置に固定して構える','顔の高さへ引きながら、手を外に開く','肩甲骨を寄せて止める。肩の健康を保つ種目'],
+    ng:'下に引いてしまう。軌道は「顔の高さ」を守る',
+  },
+  carry: {
+    frames: [
+      { p: pose({ hand:[52,60], elbow:[51,47], hand2:[48,60], elbow2:[49,47] }),
+        props:[{t:'dumbbell', at:'hand'}] },
+      { p: pose({ hip:[50,54], knee:[56,72], ankle:[46,GROUND], toe:[52,GROUND],
+                  knee2:[46,74], ankle2:[58,GROUND], toe2:[64,GROUND], hand:[52,60], elbow:[51,47] }),
+        props:[{t:'dumbbell', at:'hand'},{t:'arrow', from:[74,60], to:[86,60]}] },
+    ],
+    how:['ダンベルを両手に持ち、肩を下げて胸を張る','腹を固めたまま、まっすぐ歩く','秒数のあいだ、姿勢を崩さず歩き続ける'],
+    ng:'肩がすくむ／体が左右に揺れる。揺れたら重さを落とす',
+  },
+  wbcarry: {
+    frames: [
+      { p: pose({ shoulder:[50,33], elbow:[46,32], hand:[46,28] }), props:[{t:'bag', xy:[50,27]}] },
+      { p: pose({ hip:[50,54], knee:[56,72], ankle:[46,GROUND], toe:[52,GROUND],
+                  knee2:[46,74], ankle2:[58,GROUND], toe2:[64,GROUND],
+                  shoulder:[50,33], elbow:[46,32], hand:[46,28] }),
+        props:[{t:'bag', xy:[50,27]},{t:'arrow', from:[74,50], to:[86,50]}] },
+    ],
+    how:['ウォーターバッグを肩に担ぐ','中の水が動く。それに耐えながらまっすぐ歩く','途中で左右の肩を担ぎ替える'],
+    ng:'water が動いた方向に体が流れる。腹で止める',
+  },
+  wbclean: {
+    frames: [
+      { p: pose({ hip:[44,64], knee:[57,72], neck:[47,44], head:[46,35], shoulder:[47,46],
+                  elbow:[50,60], hand:[52,74] }), props:[{t:'bag', xy:[52,78]}] },
+      { p: pose({ shoulder:[50,33], elbow:[48,25], hand:[49,16] }),
+        props:[{t:'bag', xy:[50,13]},{t:'arrow', from:[72,66], to:[72,26]}] },
+    ],
+    how:['バッグを床に置き、股関節を折って持つ','脚の力で一気に肩まで引き上げる','そのまま頭上へ押し上げる。下ろすときもゆっくり'],
+    ng:'腕で引き上げる。上げるのは脚と股関節の力',
+  },
+  bodysaw: {
+    frames: [
+      { p: { head:[28,66], neck:[36,68], shoulder:[38,68], elbow:[36,78], hand:[44,80],
+             hip:[62,70], knee:[76,78], ankle:[86,84], toe:[90,80] }, props:[{t:'board', behind:true}] },
+      { p: { head:[22,66], neck:[30,68], shoulder:[32,68], elbow:[30,78], hand:[38,80],
+             hip:[58,70], knee:[74,78], ankle:[88,84], toe:[92,80] },
+        props:[{t:'board', behind:true},{t:'arrow', from:[52,58], to:[36,58]}] },
+    ],
+    how:['前腕をつき、足をスライドボードに乗せる','腰を落とさないまま、体全体を後ろへ滑らせる','腹の力で元の位置へ引き戻す'],
+    ng:'腰が落ちる／尻が上がる。落ちたらそこで終了',
+  },
+  lateral: {
+    frames: [
+      { p: pose({ hip:[50,58], knee:[52,74], ankle:[50,GROUND], toe:[57,GROUND],
+                  knee2:[48,74], ankle2:[46,GROUND], toe2:[53,GROUND], neck:[50,35], head:[50,26],
+                  shoulder:[50,37], elbow:[52,47], hand:[54,55] }), props:[{t:'board', behind:true}] },
+      { p: pose({ hip:[42,60], knee:[36,76], ankle:[30,GROUND], toe:[36,GROUND],
+                  knee2:[56,74], ankle2:[68,GROUND], toe2:[74,GROUND], neck:[42,37], head:[42,28],
+                  shoulder:[42,39], elbow:[46,48], hand:[50,54] }),
+        props:[{t:'board', behind:true},{t:'arrow', from:[78,86], to:[90,86]}] },
+    ],
+    how:['スライドボードの上で、軽く膝を曲げて構える','片足で押して、横方向へ滑る','反対側の足で受け止めて、また逆へ'],
+    ng:'膝が内に入る。つま先と膝の向きを揃える',
+  },
+  chop: {
+    frames: [
+      { p: pose({ shoulder:[50,33], elbow:[54,26], hand:[60,20] }), props:[{t:'band', from:[86,12], at:'hand', sag:2}] },
+      { p: pose({ hip:[50,54], knee:[52,73], neck:[48,32], head:[46,23], shoulder:[48,34],
+                  elbow:[42,44], hand:[36,56] }),
+        props:[{t:'band', from:[86,12], at:'hand', sag:6},{t:'arrow', from:[66,26], to:[46,50]}] },
+    ],
+    how:['バンドを高い位置に固定し、両手で持つ','斜め上から斜め下へ、体をひねりながら振り下ろす','腕でなく、体幹の回旋で振る。左右それぞれ'],
+    ng:'腕だけで引く。みぞおちから回すつもりで',
+  },
+  sldl: {
+    frames: [
+      { p: pose({ knee2:[52,73], ankle2:[54,GROUND], toe2:[60,GROUND], hand:[52,58], elbow:[51,46] }),
+        props:[{t:'dumbbell', at:'hand'}] },
+      { p: pose({ hip:[42,56], knee:[46,74], ankle:[44,GROUND], toe:[50,GROUND],
+                  knee2:[62,58], ankle2:[76,56], toe2:[82,58], neck:[58,44], head:[65,40],
+                  shoulder:[56,46], elbow:[56,57], hand:[56,68] }),
+        props:[{t:'dumbbell', at:'hand'},{t:'arrow', from:[74,72], to:[84,64]}] },
+    ],
+    how:['片脚で立ち、ダンベルを持つ','軸脚の膝を軽く曲げ、後ろ脚を伸ばしながら上体を倒す','もも裏が張ったら、尻を締めて起き上がる'],
+    ng:'ぐらつくのは正常。安定させようと重くしない',
+  },
+  mob: {
+    frames: [
+      { p: { spine:-9, head:[24,66], neck:[32,62], shoulder:[34,62], elbow:[34,77], hand:[34,GROUND-2],
+             hip:[66,62], knee:[66,77], ankle:[66,GROUND-2], toe:[72,GROUND-2] },
+        props:[{t:'mat', behind:true},{t:'arrow', from:[50,44], to:[50,36]}] },
+      { p: { spine:7, head:[24,58], neck:[32,62], shoulder:[34,62], elbow:[34,77], hand:[34,GROUND-2],
+             hip:[66,62], knee:[66,77], ankle:[66,GROUND-2], toe:[72,GROUND-2] },
+        props:[{t:'mat', behind:true},{t:'arrow', from:[50,74], to:[50,82]}] },
+    ],
+    how:['四つ這いで、背中を丸める→反らせるを10回（キャット&カウ）','四つ這いのまま尻で円を描く 各10回（ヒップサークル）','横向きで上の腕を開く 各8回（胸椎回旋）→ 足首の前後ゆらし 各10回'],
+    ng:'ここを省くと、後の種目でフォームが崩れる。5分は投資',
+  },
+};
+/* トレッドミル系は姿勢の図が要らない。文章だけで足りる */
+const HOWTO_TEXT = {
+  walk10:   { how:['傾斜6〜8%、速度は会話ができる範囲','鼻で呼吸できるペースを守る','息が上がるなら速度を落とす。時間を優先'] },
+  walk12:   { how:['傾斜8%で12分','会話できる強度を守る','脚が疲れたら傾斜を下げてよい'] },
+  interval: { how:['速歩1分 → 歩行2分 を5本','走らない。速歩で息が上がる程度に','息が整いきる前に次の1本へ'] },
 };
 
 /* ---------- プログラム ------------------------------------------------- */
@@ -611,6 +998,55 @@ function renderToday(){
   body.appendChild(cancel);
 }
 
+/* その種目を何回やったか。覚えるまでは、やり方を開いた状態で出す */
+function timesDone(exId){
+  return Object.keys(S.days).filter(k=>{
+    const s = S.days[k].session;
+    return s && (s.items || []).some(i => i.ex === exId);
+  }).length;
+}
+function knowsIt(exId){ return timesDone(exId) >= 3; }
+
+/* やり方のパネル。図・手順・よくある失敗 */
+function howtoHTML(exId){
+  const h = HOWTO[exId], t = HOWTO_TEXT[exId];
+  if(!h && !t) return '';
+  const frames = h ? '<div class="howto-frames">' + h.frames.map((f,i)=>
+      '<figure><figcaption>' + (i ? '②' : '①') + '</figcaption>'
+      + '<svg viewBox="0 0 100 100" aria-hidden="true">' + figure(f.p, f.props) + '</svg></figure>').join('')
+    + '</div>' : '';
+  const steps = (h || t).how;
+  return '<div class="howto">' + frames
+    + '<ol>' + steps.map(s => '<li>' + esc(s) + '</li>').join('') + '</ol>'
+    + (h && h.ng ? '<p class="ng"><b>✗</b> ' + esc(h.ng) + '</p>' : '')
+    + '</div>';
+}
+
+/* 開閉。開いた状態はセッション中だけ覚えていればいい */
+const howtoOpen = {};
+function howtoIsOpen(exId){
+  return howtoOpen[exId] !== undefined ? howtoOpen[exId] : !knowsIt(exId);
+}
+function toggleHowto(exId, btn){
+  const wrap = btn.parentElement.querySelector('[data-howto]');
+  if(!wrap) return;
+  const open = wrap.style.display === 'none';
+  wrap.style.display = open ? '' : 'none';
+  howtoOpen[exId] = open;
+  btn.textContent = open ? 'やり方を閉じる' : 'やり方を見る';
+  // 1行の手がかりと手順は同じことを言っている。開いているときは1行を隠す
+  const host = btn.closest('.ex') || btn.closest('.plan-row');
+  const cue = host && host.querySelector('[data-cue]');
+  if(cue) cue.style.display = open ? 'none' : '';
+}
+function howtoBlock(exId){
+  if(!HOWTO[exId] && !HOWTO_TEXT[exId]) return '';
+  const open = howtoIsOpen(exId);
+  return '<button class="howto-btn" onclick="toggleHowto(\'' + exId + '\', this)">'
+       + (open ? 'やり方を閉じる' : 'やり方を見る') + '</button>'
+       + '<div data-howto' + (open ? '' : ' style="display:none"') + '>' + howtoHTML(exId) + '</div>';
+}
+
 function previewCard(plan){
   let h = '<div class="card"><h2>内容</h2>';
   plan.items.forEach(it=>{
@@ -618,7 +1054,9 @@ function previewCard(plan){
     const t = e.kind==='fixed' ? ''
       : e.kind==='load' ? fmtVal(it.ex, targetOf(it.ex)) + ' × ' + it.reps + '回 × ' + it.sets + 'セット'
       : fmtVal(it.ex, targetOf(it.ex)) + ' × ' + it.sets + 'セット';
-    h += '<div class="plan-row"><div class="nm">'+esc(e.n)+'</div><div class="vl">'+esc(t)+'</div></div>';
+    h += '<div class="plan-row" style="flex-wrap:wrap;"><div class="nm">'+esc(e.n)+'</div>'
+       + '<div class="vl">'+esc(t)+'</div>'
+       + '<div style="flex-basis:100%;">'+howtoBlock(it.ex)+'</div></div>';
   });
   return h + '</div>';
 }
@@ -630,7 +1068,8 @@ function exCard(it, idx){
 
   if(it.fixed){
     wrap.innerHTML = '<div class="ex-head"><div class="ex-name">'+esc(e.n)+'</div></div>'
-      + '<div class="ex-cue">'+esc(e.cue)+'</div>'
+      + '<div class="ex-cue" data-cue' + (howtoIsOpen(it.ex) ? ' style="display:none"' : '') + '>'+esc(e.cue)+'</div>'
+      + howtoBlock(it.ex)
       + '<div class="sets"><button class="set" data-fx="'+idx+'">'
       + '<span class="lbl"></span><span class="mk"></span></button></div>';
     const b = wrap.querySelector('[data-fx]');
@@ -649,7 +1088,8 @@ function exCard(it, idx){
   wrap.innerHTML =
     '<div class="ex-head"><div class="ex-name">'+esc(e.n)+'</div>'
       + '<button class="ex-target" data-edit="1">'+ it.reps + unit +' × '+ n +'セット ✎</button></div>'
-    + '<div class="ex-cue">'+esc(e.cue)+'</div>'
+    + '<div class="ex-cue" data-cue' + (howtoIsOpen(it.ex) ? ' style="display:none"' : '') + '>'+esc(e.cue)+'</div>'
+    + howtoBlock(it.ex)
     + (e.kind==='load'
         ? '<div class="load"><button class="step" data-d="-1">−</button>'
           + '<div class="val">'+ fmtVal(it.ex, it.value) +'</div>'

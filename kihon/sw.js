@@ -1,6 +1,6 @@
 /* KIHON service worker — ネットワーク優先・キャッシュはフォールバック。
    更新時は CACHE の版を上げること（v1 → v2 …）。*/
-const CACHE = 'kihon-v1';
+const CACHE = 'kihon-v2';
 const ASSETS = [
   './', './index.html', './manifest.json',
   './favicon.png', './icon-180.png', './icon-192.png', './icon-512.png',
