@@ -4374,9 +4374,19 @@ async function generateMealPlan() {
       ? `\n【最優先】以下の食材は消費期限が迫っているため、献立に必ず組み込んでください: ${urgentStock.map(s => `${s.name}（あと${Math.max(0, getExpiryDaysLeft(s.expiry))}日）`).join('、')}`
       : '';
 
-    const recipeInfo = state.recipes.slice(0, 30).map(r =>
-      `- ${r.name}（${r.ingredients.map(i => i.name).join('・')}）${r.tags && r.tags.length > 0 ? ` [${r.tags.join('/')}]` : ''}`
+    // 家族の日に「自分用」(1人分のダイエット向け)を候補として渡さない。
+    // レシピは新しい順に先頭30件だけ渡すので、絞ってから切らないと、
+    // 自分用が増えるほど家族用のレシピが候補から押し出される。
+    const isSelf = planForMode() === 'self';
+    const candidates = state.recipes
+      .filter(r => isSelf ? true : !(r.tags || []).includes('自分用'))
+      .slice(0, 30);
+    const recipeInfo = candidates.map(r =>
+      `- ${r.name}（${r.servings || 2}人分／${r.ingredients.map(i => i.name).join('・')}）${r.tags && r.tags.length > 0 ? ` [${r.tags.join('/')}]` : ''}`
     ).join('\n');
+    // 人数が違う既存レシピをそのまま使うと、買い物リストが足りなくなる
+    const scaleInfo = `\n- 登録済みレシピは「何人分か」が書いてある。使うときは今回必要な人数へ`
+      + `分量を換算し、買い物リストにも換算後の量を反映すること`;
 
     const avoidInfo = state.avoidIngredients.length > 0
       ? `\n避けたい食材: ${state.avoidIngredients.join(', ')}` : '';
@@ -4470,7 +4480,7 @@ ${requirements.join('\n\n')}
 現在の在庫: ${stockInfo || (useStock ? "なし" : "（今回は在庫不問・まとめ買い前提）")}${stockPolicyInfo}${structuredRecipeInfo}
 ${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}${cookingRulesInfo}${intakeInfo}${diversityHint}${exclusionInfo}
 
-登録済みレシピ（優先使用・参考）:
+登録済みレシピ（優先使用・参考）:${scaleInfo}
 ${recipeInfo || 'なし'}
 
 【作り置きレシピ全体の設計方針】
@@ -4503,7 +4513,7 @@ ${recipeInfo || 'なし'}
 現在の在庫: ${stockInfo || (useStock ? "なし" : "（今回は在庫不問・まとめ買い前提）")}${stockPolicyInfo}${structuredRecipeInfo}
 ${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}${cookingRulesInfo}${intakeInfo}${diversityHint}${exclusionInfo}
 
-登録済みレシピ（優先使用）:
+登録済みレシピ（優先使用）:${scaleInfo}
 ${recipeInfo || 'なし'}
 
 注意:
@@ -4530,7 +4540,7 @@ ${recipeInfo || 'なし'}
 現在の在庫: ${stockInfo || (useStock ? "なし" : "（今回は在庫不問・まとめ買い前提）")}${stockPolicyInfo}${structuredRecipeInfo}
 ${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}${cookingRulesInfo}${intakeInfo}${diversityHint}${exclusionInfo}
 
-登録済みレシピ（優先使用）:
+登録済みレシピ（優先使用）:${scaleInfo}
 ${recipeInfo || 'なし'}
 
 注意:
@@ -4556,7 +4566,7 @@ ${recipeInfo || 'なし'}
 現在の在庫: ${stockInfo || (useStock ? "なし" : "（今回は在庫不問・まとめ買い前提）")}${stockPolicyInfo}${structuredRecipeInfo}
 ${urgentInfo}${avoidInfo}${prefInfo}${pantryInfo}${familyInfo}${tasteInfo}${equipmentInfo}${cookingRulesInfo}${intakeInfo}${diversityHint}${exclusionInfo}
 
-登録済みレシピ（優先使用）:
+登録済みレシピ（優先使用）:${scaleInfo}
 ${recipeInfo || 'なし'}
 
 注意:
