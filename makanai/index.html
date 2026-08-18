@@ -299,6 +299,10 @@ const DEF = {
   /* 「残りのカロリーで組む」提案。1日ぶんだけ持つ（計画とは別枠）。
      {date, meals:[...], at} — 計画を上書きしないよう、あえて分けている */
   fill:null,
+  /* AI が出した料理を自動で控えておく（新しい順・最大40品）。
+     保存も★も押さないまま消してしまった提案の救済と、次に作るときの選択肢用。
+     捨てても・上書きされても、ここには残る */
+  suggested:[],
   nutrition:{},     // Prepレシピid -> {kcal,protein,salt,at}  ← このアプリが計算した値
   imported:[],      // 取り込み済みの Prep 履歴id
 };
@@ -377,8 +381,23 @@ function load(){
     if(typeof f.uses !== 'number') f.uses = 0;
   });
   if(!Array.isArray(S.planHistory)) S.planHistory = [];
+  if(!Array.isArray(S.suggested))   S.suggested = [];
   apiKey = localStorage.getItem(AKEY) || '';
 }
+/* AI が出した料理を履歴に控える。同じ名前は新しいほうで置き換える */
+function rememberSuggestions(meals){
+  (meals||[]).forEach(m=>{
+    if(!m || !m.name) return;
+    const k = normName(m.name);
+    S.suggested = S.suggested.filter(x=>normName(x.name) !== k);
+    S.suggested.unshift({ name:m.name, slot:m.slot, bento:!!m.bento,
+      kcal:num(m.kcal), protein:num(m.protein), salt:num(m.salt),
+      ingredients:m.ingredients||[], steps:m.steps||[], memo:m.memo||'',
+      at:new Date().toISOString() });
+  });
+  S.suggested = S.suggested.slice(0, 40);
+}
+
 /* 材料を持つ＝作れるもの（記録で「作った」が押せる） */
 function cookableFavs(){ return S.favorites.filter(f=>(f.ingredients||[]).length > 0); }
 /* そのうち★が付いたもの＝献立づくりに渡すもの */
@@ -802,6 +821,7 @@ noteには、残り枠の使い方のひとことを1文で。`;
     const o = await askJSON(prompt, FILL_SCHEMA, 6000);
     S.fill = { date:k, at:new Date().toISOString(),
                meals:(o.meals||[]).map(m=>Object.assign({}, m)), note:o.note||'' };
+    rememberSuggestions(S.fill.meals);
     save();
     toast('残り枠で組みました');
   }catch(e){
@@ -1225,7 +1245,80 @@ function renderPlan(){
     }
     if(P.note) h += `<div class="card"><h2>ひとこと</h2><div class="muted">${esc(P.note)}</div></div>`;
   }
+  h += suggestedCard();
   el.innerHTML = h;
+}
+
+/* これまでに出た提案の控え。捨てた献立からも拾える */
+let sugAll = false;
+function suggestedCard(){
+  const list = S.suggested || [];
+  if(!list.length) return '';
+  const show = sugAll ? list : list.slice(0, 8);
+  let h = `<div class="card"><h2>これまでの提案<span class="sub">${list.length}品</span></h2>
+    <div class="muted" style="margin-bottom:8px">
+      AIが出した料理は、保存しなくてもここに残ります（新しい順・最大40品）。</div>`;
+  show.forEach((m,i)=>{
+    const sv = favByName(m.name);
+    h += `<button class="pick" onclick="openSuggested(${list.indexOf(m)})">
+            <span class="n">${sv?(sv.star?'★ ':'✓ '):''}${esc(m.name)}
+              <span class="muted">${SLOT_NAME[m.slot]||''}</span>${m.bento?'<span class="tag">弁当</span>':''}</span>
+            <span class="v">${fmt(m.kcal)}kcal ・ P${num(m.protein).toFixed(0)}</span>
+          </button>`;
+  });
+  if(list.length > 8){
+    h += `<button class="btn btn-ghost" style="margin-top:10px" onclick="sugAll=!sugAll;renderPlan()">
+            ${sugAll?'たたむ':`のこり ${list.length-8} 品を見る`}</button>`;
+  }
+  return h + `</div>`;
+}
+function openSuggested(i){
+  const m = (S.suggested||[])[i]; if(!m) return;
+  const sv = favByName(m.name);
+  const cook = (m.ingredients||[]).length > 0;
+  let h = `<h3>${esc(m.name)}<button class="x" onclick="closeSheet()">×</button></h3>
+    <div class="muted" style="margin-bottom:10px">${fmt(m.kcal)}kcal ・ たんぱく質 ${num(m.protein).toFixed(0)}g ・ 塩分 ${num(m.salt).toFixed(1)}g</div>`;
+  if(cook){
+    h += `<div class="sec-label">材料（1人分）</div>`;
+    m.ingredients.forEach(x=>{
+      h += `<div class="li"><span class="n">${esc(x.name)}</span><span class="muted">${num(x.amount)?fmt(x.amount)+esc(x.unit||''):esc(x.unit||'')}</span></div>`;
+    });
+  }
+  if((m.steps||[]).length){
+    h += `<div class="sec-label">作り方</div>`;
+    m.steps.forEach((x,n)=>{ h += `<div class="li"><span class="n"><b>${n+1}.</b> ${esc(x)}</span></div>`; });
+  }
+  if(m.memo) h += `<div class="sec-label">メモ</div><div class="muted">${esc(m.memo)}</div>`;
+  h += `<button class="btn" style="margin-top:14px" onclick="sugCook(${i})">
+          ${cook?'今日つくる（在庫を減らして記録）':'今日に記録する'}</button>
+        <button class="btn btn-ghost" style="margin-top:8px" onclick="sugSave(${i})">
+          ${sv?'保存した内容を更新する':'＋ 保存する（材料と作り方を控える）'}</button>`;
+  if(sv){
+    h += `<button class="btn btn-ghost" style="margin-top:8px" onclick="toggleStar('${esc(m.name).replace(/'/g,"\\'")}', ()=>{renderPlan();openSuggested(${i})})">
+            ${sv.star?'★ お気に入りを外す（保存は残る）':'☆ お気に入りにする（献立に使う）'}</button>`;
+  }
+  h += `<button class="btn btn-danger" style="margin-top:8px" onclick="sugDrop(${i})">この提案を履歴から消す</button>`;
+  openSheet(h);
+}
+function sugSave(i){
+  const m = S.suggested[i]; if(!m) return;
+  saveDish({ name:m.name, slot:m.slot, bento:!!m.bento,
+             kcal:num(m.kcal), protein:num(m.protein), salt:num(m.salt),
+             ingredients:m.ingredients||[], steps:m.steps||[], memo:m.memo||'' },
+           ()=>{ renderPlan(); openSuggested(i); });
+}
+function sugCook(i){
+  const m = S.suggested[i]; if(!m) return;
+  const cook = (m.ingredients||[]).length > 0;
+  const r = cook ? consumeStock(m.ingredients) : {ok:true, n:0};
+  logMeal(todayKey(), m.slot, {name:m.name, kcal:num(m.kcal), protein:num(m.protein),
+                               salt:num(m.salt), bento:!!m.bento, source:'sug'});
+  closeSheet(); renderPlan(); renderToday();
+  toast(r.n ? `今日に記録しました（在庫を${r.n}品減らしました）` : '今日に記録しました');
+}
+function sugDrop(i){
+  S.suggested.splice(i,1); save(); closeSheet(); renderPlan();
+  toast('履歴から消しました');
 }
 function openDish(di,mi){
   const m = S.plan.days[di].meals[mi];
@@ -1912,8 +2005,9 @@ noteには、この${planDays}日をうまく回すためのひとことを1〜2
 
     const o = await askJSON(prompt, PLAN_SCHEMA, 16000);
     const pdays = (o.days||[]).map((d,i)=>({ date: dates[i] || d.date, meals: d.meals||[] }));
-    /* 今の計画は捨てずに履歴へ（直近5件） */
+    /* 今の計画は捨てずに履歴へ（直近5件）。料理単位でも控えておく */
     if(S.plan){ S.planHistory = [S.plan].concat(S.planHistory||[]).slice(0,5); }
+    rememberSuggestions(pdays.flatMap(d=>d.meals||[]));
     S.plan = {
       id: uid(), createdAt: new Date().toISOString(),
       days: pdays,
