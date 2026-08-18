@@ -279,6 +279,9 @@ function proteinTargetOf(p){
   return { g: null, basis:'', per:L.bw, base:null };
 }
 
+/* カルシウムの推奨量（日本人の食事摂取基準・成人女性）。骨量が落ちる年代なので献立で意識させる */
+const CALCIUM_TARGET = 650;
+
 /* 塩分の目標量（日本人の食事摂取基準・成人女性）。上限として扱う */
 const SALT_MAX = 6.5;
 
@@ -782,11 +785,12 @@ function fillCard(k, t, tot){
 
 const FILL_MEAL = {
   type:'object', additionalProperties:false,
-  required:['slot','name','bento','kcal','protein','salt','ingredients','steps','memo'],
+  required:['slot','name','bento','kcal','protein','salt','calcium','ingredients','steps','memo'],
   properties:{
     slot:{type:'string', enum:['breakfast','lunch','dinner','snack']},
     name:{type:'string'}, bento:{type:'boolean'},
     kcal:{type:'number'}, protein:{type:'number'}, salt:{type:'number'},
+    calcium:{type:'number', description:'1人分のカルシウム(mg)'},
     ingredients:{ type:'array', items:{
       type:'object', additionalProperties:false, required:['name','amount','unit'],
       properties:{ name:{type:'string'}, amount:{type:'number'}, unit:{type:'string'} } } },
@@ -841,6 +845,7 @@ ${favs.length?`\n【お気に入り（合うものがあればそのまま使う
 【条件】
 - 合計が残り枠を超えないこと。**枠が小さければ品数を減らす**。無理に全部の枠を埋めなくてよい
 - たんぱく質を優先する。減量中なのでここが足りないと筋肉が落ちる
+- カルシウム（乳製品・小魚・大豆製品・青菜）も意識して入れる。各料理の calcium に1人分のmgを入れる
 - **主食（ごはん・パン・麺）を付けるなら、材料と栄養に必ず算入すること。**
   分量は具体的に書く（例「ごはん 150g」）。残り枠が小さければ主食を減らすか外し、
   外したときは memo に「主食なし」と明記する
@@ -1228,7 +1233,10 @@ function renderPlan(){
       const dt = d.date===todayKey() ? '今日' : labelOf(d.date);
       const dk = (d.meals||[]).reduce((a,m)=>a+num(m.kcal),0);
       const dp = (d.meals||[]).reduce((a,m)=>a+num(m.protein),0);
+      const dc = (d.meals||[]).reduce((a,m)=>a+num(m.calcium),0);
       h += `<div class="card"><h2>${esc(dt)}<span class="sub">${fmt(dk)}kcal ・ P${dp.toFixed(0)}g</span></h2>
+        ${dc?`<div class="kv" style="margin-bottom:6px"><span>カルシウム</span>
+          <b style="color:${dc>=CALCIUM_TARGET?'var(--good)':'var(--warn)'}">${fmt(dc)} / ${CALCIUM_TARGET} mg</b></div>`:''}
         ${di===0?`<div class="muted" style="margin-bottom:6px">
           <b>「＋ 保存」</b>で材料と作り方ごと控えられます。<b>献立にも使いたいときは、
           「作り方」の中で★を付けてください。</b></div>`:''}`;
@@ -1357,7 +1365,7 @@ function sugDrop(i){
 function openDish(di,mi){
   const m = S.plan.days[di].meals[mi];
   let h = `<h3>${esc(m.name)}<button class="x" onclick="closeSheet()">×</button></h3>
-    <div class="muted" style="margin-bottom:10px">${fmt(m.kcal)}kcal ・ たんぱく質 ${num(m.protein).toFixed(0)}g ・ 塩分 ${num(m.salt).toFixed(1)}g</div>`;
+    <div class="muted" style="margin-bottom:10px">${fmt(m.kcal)}kcal ・ たんぱく質 ${num(m.protein).toFixed(0)}g ・ 塩分 ${num(m.salt).toFixed(1)}g${num(m.calcium)?` ・ カルシウム ${fmt(m.calcium)}mg`:''}</div>`;
   if((m.ingredients||[]).length){
     h += `<div class="sec-label">材料（1人分）</div>`;
     m.ingredients.forEach(i=>{
@@ -1918,12 +1926,13 @@ const NUTRI_SCHEMA = {
 
 const MEAL_SCHEMA = {
   type:'object', additionalProperties:false,
-  required:['slot','name','bento','kcal','protein','salt','ingredients','steps','memo'],
+  required:['slot','name','bento','kcal','protein','salt','calcium','ingredients','steps','memo'],
   properties:{
     slot:{type:'string', enum:['breakfast','lunch','dinner']},
     name:{type:'string'},
     bento:{type:'boolean', description:'お弁当に詰めて持って行くものなら true'},
     kcal:{type:'number'}, protein:{type:'number'}, salt:{type:'number'},
+    calcium:{type:'number', description:'1人分のカルシウム(mg)'},
     ingredients:{ type:'array', items:{
       type:'object', additionalProperties:false, required:['name','amount','unit'],
       properties:{ name:{type:'string'}, amount:{type:'number'}, unit:{type:'string'} } } },
@@ -2038,6 +2047,12 @@ ${favBlock}
 - 朝は10分以内でできるものにする${S.prefs.bento?'\n- 昼はお弁当にする。前日の夜に作り置きして詰められるものにし、bentoをtrueにする。冷めてもおいしく、汁気が出ないもの' : ''}
 - 外食やコンビニに頼らず自分で作れる献立にする
 - 同じ主菜を繰り返さない。和洋中を散らす
+- **1日のカルシウムを ${CALCIUM_TARGET}mg 以上にする。**50代女性は骨量が落ちやすく、
+  減量中はさらに落ちやすい。乳製品・小魚・大豆製品（豆腐/納豆/厚揚げ）・青菜（小松菜・チンゲン菜）
+  ・ごまを毎日どこかに入れる。各料理の calcium に1人分のmgを入れること
+- 鉄（赤身肉・レバー・あさり・小松菜）と食物繊維（野菜・きのこ・海藻・豆）も日々入れる。
+  ビタミンDは骨に効くので、鮭・さんま・さば・きのこを週に数回入れる
+- 野菜は1日350g以上を目安に、色の濃い野菜を毎日入れる
 - **主食（ごはん・パン・麺）も1食に含め、材料と栄養に必ず算入すること。**
   分量は具体的に書く（例「ごはん 150g」「食パン6枚切 1枚」）。
   主食を出さない食事にするなら、memoに「主食なし」と明記する
