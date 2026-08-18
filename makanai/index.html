@@ -284,7 +284,10 @@ const SEED_FAV = [
 
 const DEF = {
   app:'makanai', schema:1,
-  profile:{ age:null, heightCm:null, weightKg:null, activity:1.375, goal:0.88 },
+  /* proteinPerKg … たんぱく質目標の係数（体重×何g）。減量中に筋肉を残す一般的な推奨は
+     1.6〜2.2 だが、体重には体脂肪も含まれるので、実務上は 1.2〜1.6 でも足りる。
+     ここが高いと献立の肉・卵の量がそのまま増えるので、選べるようにしてある */
+  profile:{ age:null, heightCm:null, weightKg:null, activity:1.375, goal:0.88, proteinPerKg:1.6 },
   targets:{ manual:false, kcal:null, protein:null },
   prefs:{ avoid:'', likes:'', model:'claude-opus-5', trainBonus:200, bento:true, useFav:true },
   days:{},          // 'YYYY-MM-DD' -> {meals:[...], weightKg}
@@ -575,13 +578,13 @@ function targetsFor(k){
   let kcal=null, protein=null, basis='';
   if(S.targets.manual && S.targets.kcal){
     kcal = num(S.targets.kcal);
-    protein = num(S.targets.protein) || (p.weightKg ? Math.round(p.weightKg*1.6) : null);
+    protein = num(S.targets.protein) || (p.weightKg ? Math.round(p.weightKg * num(p.proteinPerKg || 1.6)) : null);
     basis = '手動設定';
   }else if(p.age && p.heightCm && p.weightKg){
     const bmr  = 10*p.weightKg + 6.25*p.heightCm - 5*p.age - 161;
     const tdee = bmr * num(p.activity || 1.375);
     kcal = Math.round(tdee * num(p.goal || 0.88) / 10) * 10;
-    protein = Math.round(p.weightKg * 1.6);
+    protein = Math.round(p.weightKg * num(p.proteinPerKg || 1.6));
     basis = `基礎代謝 ${fmt(bmr)} → 消費 ${fmt(tdee)}`;
   }
   const bonus = (kcal && isTrainingDay(k)) ? num(S.prefs.trainBonus) : 0;
@@ -1610,8 +1613,15 @@ function renderSet(){
         <option value="0.88" ${p.goal==0.88?'selected':''}>減らしながら筋肉を残す（−12%）</option>
         <option value="1"    ${p.goal==1?'selected':''}>維持する</option>
       </select></label>
+    <label class="f"><span>たんぱく質の量（献立の肉・卵の量に直結します）</span>
+      <select id="s-ppk" onchange="setProf('proteinPerKg',this.value)">
+        <option value="1.2" ${p.proteinPerKg==1.2?'selected':''}>控えめ（体重×1.2）${p.weightKg?` … ${Math.round(p.weightKg*1.2)}g`:''}</option>
+        <option value="1.4" ${p.proteinPerKg==1.4?'selected':''}>ふつう（体重×1.4）${p.weightKg?` … ${Math.round(p.weightKg*1.4)}g`:''}</option>
+        <option value="1.6" ${(p.proteinPerKg==1.6||!p.proteinPerKg)?'selected':''}>しっかり（体重×1.6）${p.weightKg?` … ${Math.round(p.weightKg*1.6)}g`:''}</option>
+        <option value="1.8" ${p.proteinPerKg==1.8?'selected':''}>多め（体重×1.8）${p.weightKg?` … ${Math.round(p.weightKg*1.8)}g`:''}</option>
+      </select></label>
     <div class="kv"><span>1日の目安</span><b>${t.kcal?fmt(t.kcal - t.bonus)+' kcal':'—'}</b></div>
-    <div class="kv"><span>たんぱく質</span><b>${t.protein?t.protein+' g':'—'}（体重×1.6）</b></div>
+    <div class="kv"><span>たんぱく質</span><b>${t.protein?t.protein+' g':'—'}（体重×${num(p.proteinPerKg||1.6)}）</b></div>
     <div class="kv"><span>塩分の上限</span><b>${SALT_MAX} g</b></div>
     ${t.basis?`<div class="muted" style="margin-top:6px">${esc(t.basis)}</div>`:''}
     <div class="muted" style="margin-top:6px">トレーニングした日は KIHON の記録を見て自動で +${num(S.prefs.trainBonus)}kcal します。</div>
@@ -1974,6 +1984,7 @@ ${favTxt}
 
 【この人の目標】
 ${t.kcal ? `1日 ${t.kcal - t.bonus} kcal / たんぱく質 ${t.protein} g / 食塩相当量 ${SALT_MAX} g 以下` : '一般的な成人女性の基準'}
+すべて**1人ぶん**の量。家族の分は含めない。
 体脂肪を減らしながら筋肉を保ちたい。たんぱく質は毎食に分けて入れる。
 
 【日付】
