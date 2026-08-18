@@ -255,6 +255,30 @@ const SLOTS = [
 ];
 const SLOT_NAME = Object.fromEntries(SLOTS.map(s=>[s.id,s.name]));
 
+/* たんぱく質の量。除脂肪体重が分かるときは lbm、分からないときは体重に bw を掛ける。
+   lbm 側の 1.6〜2.2 g/kg は、減量中に筋肉を保つ目的での一般的な範囲。
+   bw 側はそれを体脂肪込みの体重に換算した、ざっくりの近似値 */
+const PROTEIN_LEVELS = [
+  { id:'low',  n:'控えめ',   bw:1.2, lbm:1.6 },
+  { id:'mid',  n:'ふつう',   bw:1.4, lbm:1.8 },
+  { id:'high', n:'しっかり', bw:1.6, lbm:2.0 },
+  { id:'max',  n:'多め',     bw:1.8, lbm:2.2 },
+];
+function levelOf(id){ return PROTEIN_LEVELS.find(l=>l.id===id) || PROTEIN_LEVELS[2]; }
+/* 除脂肪体重。体脂肪率が未入力なら null */
+function lbmOf(p){
+  const w = num(p.weightKg), f = num(p.bodyFatPct);
+  if(!w || !f || f <= 0 || f >= 70) return null;
+  return Math.round(w * (1 - f/100) * 10) / 10;
+}
+function proteinTargetOf(p){
+  const L = levelOf(p.proteinLevel);
+  const lbm = lbmOf(p);
+  if(lbm) return { g: Math.round(lbm * L.lbm), basis:'除脂肪体重', per: L.lbm, base: lbm };
+  if(num(p.weightKg)) return { g: Math.round(num(p.weightKg) * L.bw), basis:'体重', per: L.bw, base: num(p.weightKg) };
+  return { g: null, basis:'', per:L.bw, base:null };
+}
+
 /* 塩分の目標量（日本人の食事摂取基準・成人女性）。上限として扱う */
 const SALT_MAX = 6.5;
 
@@ -284,10 +308,12 @@ const SEED_FAV = [
 
 const DEF = {
   app:'makanai', schema:1,
-  /* proteinPerKg … たんぱく質目標の係数（体重×何g）。減量中に筋肉を残す一般的な推奨は
-     1.6〜2.2 だが、体重には体脂肪も含まれるので、実務上は 1.2〜1.6 でも足りる。
-     ここが高いと献立の肉・卵の量がそのまま増えるので、選べるようにしてある */
-  profile:{ age:null, heightCm:null, weightKg:null, activity:1.375, goal:0.88, proteinPerKg:1.6 },
+  /* proteinLevel … たんぱく質の量（控えめ〜多め）。実際の g は下の PROTEIN_LEVELS で決まる。
+     bodyFatPct を入れると除脂肪体重（＝筋肉・骨・内臓）基準になる。
+     たんぱく質が必要なのは体脂肪ではなく除脂肪部分なので、体脂肪が多い人ほど
+     体重基準は過大に出る。体脂肪率が分かるならそちらを使う。 */
+  profile:{ age:null, heightCm:null, weightKg:null, bodyFatPct:null,
+            activity:1.375, goal:0.88, proteinLevel:'high' },
   targets:{ manual:false, kcal:null, protein:null },
   prefs:{ avoid:'', likes:'', model:'claude-opus-5', trainBonus:200, bento:true, useFav:true },
   days:{},          // 'YYYY-MM-DD' -> {meals:[...], weightKg}
@@ -383,6 +409,11 @@ function load(){
     if(f.memo === undefined)       f.memo = '';
     if(typeof f.uses !== 'number') f.uses = 0;
   });
+  /* 旧版の proteinPerKg（体重基準の数値）を段階に読み替える */
+  if(!S.profile.proteinLevel){
+    const old = num(S.profile.proteinPerKg);
+    S.profile.proteinLevel = old===1.2?'low' : old===1.4?'mid' : old===1.8?'max' : 'high';
+  }
   if(!Array.isArray(S.planHistory)) S.planHistory = [];
   if(!Array.isArray(S.suggested))   S.suggested = [];
   apiKey = localStorage.getItem(AKEY) || '';
@@ -578,13 +609,13 @@ function targetsFor(k){
   let kcal=null, protein=null, basis='';
   if(S.targets.manual && S.targets.kcal){
     kcal = num(S.targets.kcal);
-    protein = num(S.targets.protein) || (p.weightKg ? Math.round(p.weightKg * num(p.proteinPerKg || 1.6)) : null);
+    protein = num(S.targets.protein) || proteinTargetOf(p).g;
     basis = '手動設定';
   }else if(p.age && p.heightCm && p.weightKg){
     const bmr  = 10*p.weightKg + 6.25*p.heightCm - 5*p.age - 161;
     const tdee = bmr * num(p.activity || 1.375);
     kcal = Math.round(tdee * num(p.goal || 0.88) / 10) * 10;
-    protein = Math.round(p.weightKg * num(p.proteinPerKg || 1.6));
+    protein = proteinTargetOf(p).g;
     basis = `基礎代謝 ${fmt(bmr)} → 消費 ${fmt(tdee)}`;
   }
   const bonus = (kcal && isTrainingDay(k)) ? num(S.prefs.trainBonus) : 0;
@@ -1591,6 +1622,7 @@ function drawChart(id, data, o){
 function renderSet(){
   const el = document.getElementById('set-body');
   const p = S.profile, t = targetsFor(todayKey());
+  const lbm = lbmOf(p), pt = proteinTargetOf(p), base = lbm || num(p.weightKg);
   let h = '';
 
   h += `<div class="card"><h2>からだと目標</h2>
@@ -1598,6 +1630,7 @@ function renderSet(){
       <label class="f"><span>年齢</span><input type="number" inputmode="numeric" id="s-age" value="${p.age??''}" onchange="setProf('age',this.value)"></label>
       <label class="f"><span>身長 cm</span><input type="number" inputmode="decimal" step="0.1" id="s-h" value="${p.heightCm??''}" onchange="setProf('heightCm',this.value)"></label>
       <label class="f"><span>体重 kg</span><input type="number" inputmode="decimal" step="0.1" id="s-w" value="${p.weightKg??''}" onchange="setProf('weightKg',this.value)"></label>
+      <label class="f"><span>体脂肪率 %（任意）</span><input type="number" inputmode="decimal" step="0.1" id="s-bf" value="${p.bodyFatPct??''}" onchange="setProf('bodyFatPct',this.value)"></label>
     </div>
     <button class="btn btn-ghost" style="margin-bottom:12px" onclick="pullKihonWeightToProfile()">KIHONの7日平均を体重に入れる</button>
     <label class="f"><span>ふだんの活動量</span>
@@ -1614,14 +1647,19 @@ function renderSet(){
         <option value="1"    ${p.goal==1?'selected':''}>維持する</option>
       </select></label>
     <label class="f"><span>たんぱく質の量（献立の肉・卵の量に直結します）</span>
-      <select id="s-ppk" onchange="setProf('proteinPerKg',this.value)">
-        <option value="1.2" ${p.proteinPerKg==1.2?'selected':''}>控えめ（体重×1.2）${p.weightKg?` … ${Math.round(p.weightKg*1.2)}g`:''}</option>
-        <option value="1.4" ${p.proteinPerKg==1.4?'selected':''}>ふつう（体重×1.4）${p.weightKg?` … ${Math.round(p.weightKg*1.4)}g`:''}</option>
-        <option value="1.6" ${(p.proteinPerKg==1.6||!p.proteinPerKg)?'selected':''}>しっかり（体重×1.6）${p.weightKg?` … ${Math.round(p.weightKg*1.6)}g`:''}</option>
-        <option value="1.8" ${p.proteinPerKg==1.8?'selected':''}>多め（体重×1.8）${p.weightKg?` … ${Math.round(p.weightKg*1.8)}g`:''}</option>
+      <select id="s-ppk" onchange="setProf('proteinLevel',this.value)">
+        ${PROTEIN_LEVELS.map(L=>{
+          const per = lbm ? L.lbm : L.bw;
+          const g = base ? Math.round(base*per) : null;
+          return `<option value="${L.id}" ${p.proteinLevel===L.id?'selected':''}>${L.n}（${lbm?'除脂肪':'体重'}×${per}）${g?` … ${g}g`:''}</option>`;
+        }).join('')}
       </select></label>
     <div class="kv"><span>1日の目安</span><b>${t.kcal?fmt(t.kcal - t.bonus)+' kcal':'—'}</b></div>
-    <div class="kv"><span>たんぱく質</span><b>${t.protein?t.protein+' g':'—'}（体重×${num(p.proteinPerKg||1.6)}）</b></div>
+    ${lbm?`<div class="kv"><span>除脂肪体重</span><b>${lbm} kg</b>　<span class="muted">体脂肪 ${Math.round(num(p.weightKg)-lbm)}kg</span></div>`:''}
+    <div class="kv"><span>たんぱく質</span><b>${t.protein?t.protein+' g':'—'}</b>　<span class="muted">${esc(pt.basis)}×${pt.per}</span></div>
+    ${lbm?'':`<div class="muted" style="margin-top:4px">
+      体脂肪率を入れると<b>除脂肪体重</b>を基準にします。たんぱく質が要るのは体脂肪ではないので、
+      体脂肪が多いほど体重基準は多めに出ます。</div>`}
     <div class="kv"><span>塩分の上限</span><b>${SALT_MAX} g</b></div>
     ${t.basis?`<div class="muted" style="margin-top:6px">${esc(t.basis)}</div>`:''}
     <div class="muted" style="margin-top:6px">トレーニングした日は KIHON の記録を見て自動で +${num(S.prefs.trainBonus)}kcal します。</div>
