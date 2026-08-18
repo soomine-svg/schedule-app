@@ -258,7 +258,7 @@ const SLOT_NAME = Object.fromEntries(SLOTS.map(s=>[s.id,s.name]));
 /* 塩分の目標量（日本人の食事摂取基準・成人女性）。上限として扱う */
 const SALT_MAX = 6.5;
 
-/* よく食べるものの初期セット。数値はすべて目安なので、実物に合わせて設定で直す */
+/* 保存したものの初期セット。数値はすべて目安なので、実物に合わせて設定で直す */
 const SEED_FAV = [
   {name:'ごはん 150g',           slot:'breakfast', kcal:234, protein:3.8,  salt:0},
   {name:'納豆 1パック',           slot:'breakfast', kcal:100, protein:8.3,  salt:0.6},
@@ -966,7 +966,7 @@ function renderAdd(tab){
   const k = cursor;
   let h = `<h3>${SLOT_NAME[addSlot]}を記録<button class="x" onclick="closeSheet()">×</button></h3>
     <div class="chips" style="margin-bottom:10px">
-      <button class="chip ${tab==='fav'?'on':''}" onclick="renderAdd('fav')">よく食べる</button>
+      <button class="chip ${tab==='fav'?'on':''}" onclick="renderAdd('fav')">保存したもの</button>
       <button class="chip ${tab==='plan'?'on':''}" onclick="renderAdd('plan')">計画から</button>
       <button class="chip ${tab==='manual'?'on':''}" onclick="renderAdd('manual')">手入力</button>
     </div>`;
@@ -994,7 +994,8 @@ function renderAdd(tab){
             </div>`;
     });
     h += `<div class="muted" style="margin-top:10px">
-            左を押すと<b>記録だけ</b>。「作った」は<b>在庫も減らします</b>。数値は設定で直せます。</div>`;
+            左を押すと<b>記録だけ</b>。「作った」は<b>在庫も減らします</b>。<br>
+            <b>★</b>が付いたものは献立づくりにも使われます。中身の確認と編集は<b>設定 → 保存したもの</b>から。</div>`;
   }
 
   if(tab==='plan'){
@@ -1020,7 +1021,7 @@ function renderAdd(tab){
       </div>
       <label class="f" style="display:flex;gap:8px;align-items:center">
         <input type="checkbox" id="m-fav" style="width:19px;height:19px;accent-color:var(--accent)">
-        <span style="margin:0">よく食べるものに登録する</span></label>`;
+        <span style="margin:0">これを保存しておく（次から1タップ）</span></label>`;
     if(apiKey) h += `<button class="btn btn-ghost" style="margin-bottom:8px" onclick="guessNutrition()">
         <span id="guess-l">名前から栄養を推定する</span></button>`;
     h += `<button class="btn" onclick="addManual()">記録する</button>`;
