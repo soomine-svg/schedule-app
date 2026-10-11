@@ -89,6 +89,15 @@ header h1{font-size:1.1rem;font-weight:700}
   opacity: 0.25 !important;
   transform: scale(0.97);
 }
+/* ===== 案件入力タブ：一番下へ／一番上へ フローティングボタン ===== */
+.jump-fab{position:fixed;right:16px;bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:900;
+  display:none;align-items:center;gap:6px;padding:12px 18px;min-height:48px;border:none;border-radius:24px;
+  background:#2b6cb0;color:white;font-family:inherit;font-size:.9rem;font-weight:700;cursor:pointer;
+  box-shadow:0 4px 14px rgba(43,108,176,.35);-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.jump-fab.on{display:flex}
+#p-input{padding-bottom:64px} /* 最下部の案件がボタンに隠れないよう余白 */
+.jump-fab:active{transform:scale(.96);background:#2c5282}
+.ci.just-added{box-shadow:0 0 0 2px #4299e1;background:#ebf8ff;transition:box-shadow .3s,background .3s}
 </style>
 <link rel="apple-touch-icon" id="ap-icon" href="data:image/png;base64,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">
 <link rel="icon" id="fav-icon" href="">
@@ -1018,7 +1027,36 @@ function tab(name){
   });
   if(name==="hist") renderHist();
   if(name==="visitlog") renderVisitLog();
+  updateJumpFab();
 }
+
+// ===== 案件入力タブ：一番下へ／一番上へ フローティングボタン =====
+// 案件一覧は「登録順」既定で cases.push 順＝新規は最下部。そこへ1タップで飛ぶ。
+// ページの下半分にいる時は「↑ 一番上へ」（入力フォームへ戻る）に切り替わる。
+var _jumpFabDir = 'down';
+var _justAddedNo = null; // 直前に追加した案件の no（一覧でハイライト）
+function updateJumpFab(){
+  var b=document.getElementById('jump-fab'); if(!b) return;
+  var p=document.getElementById('p-input');
+  var docH=document.documentElement.scrollHeight, winH=window.innerHeight;
+  var y=window.pageYOffset||document.documentElement.scrollTop||0;
+  // 入力タブ以外・スクロール不要な短いページでは出さない
+  var show = p && p.classList.contains('on') && (docH - winH > 200);
+  b.classList.toggle('on', !!show);
+  if(!show) return;
+  var dir = (y + winH/2 > docH/2) ? 'up' : 'down';
+  if(dir!==_jumpFabDir){
+    _jumpFabDir=dir;
+    b.textContent = dir==='up' ? '↑ 一番上へ' : '↓ 一番下へ';
+    b.setAttribute('aria-label', dir==='up' ? '一番上へ' : '一番下へ');
+  }
+}
+function jumpFabTap(){
+  var top = _jumpFabDir==='up' ? 0 : document.documentElement.scrollHeight;
+  try { window.scrollTo({top:top, behavior:'smooth'}); } catch(e){ window.scrollTo(0, top); }
+}
+window.addEventListener('scroll', updateJumpFab, {passive:true});
+window.addEventListener('resize', updateJumpFab);
 
 // ===== 納期バッジ共通ヘルパー（Y-3: renderCases/renderDay 両方から使用）=====
 // referenceDateStr: 基準日のYYYY-MM-DD文字列。省略時は今日
@@ -1280,6 +1318,10 @@ function addCase(){
   var newCase={no:seq++,id:id,adr:adr,d1:d1,d2:d2,tm:tm,pin:pin,pinDate:pinDate,dur:dur,ely:ely,lat:null,lng:null,geocoded:false};
   cases.push(newCase);
   saveCases();
+  // 追加直後の案件を数秒ハイライト（「↓ 一番下へ」で飛んだ先で見つけやすく）。自動スクロールはしない＝連続入力を妨げない
+  _justAddedNo=newCase.no;
+  clearTimeout(window._justAddedTimer);
+  window._justAddedTimer=setTimeout(function(){ _justAddedNo=null; document.querySelectorAll('.ci.just-added').forEach(function(e){e.classList.remove('just-added');}); },6000);
   renderCases();
   // Geocoding APIで座標取得
   var caseRef=newCase;
@@ -1960,7 +2002,7 @@ function renderCases(){
     var geoTag=c.geocoded
       ?'<span style="color:#38a169;font-size:.7rem" title="'+c.lat.toFixed(5)+', '+c.lng.toFixed(5)+'">📍 '+c.lat.toFixed(4)+','+c.lng.toFixed(4)+'</span>'
       :'<span style="color:#e53e3e;font-size:.7rem">📍 座標未取得</span>';
-    return '<div class="ci'+(c.ely?" ely":"")+'">'
+    return '<div class="ci'+(c.ely?" ely":"")+(c.no===_justAddedNo?" just-added":"")+'">'
       +'<div class="ci-body">'
       +'<div class="ci-name">'+deadlineBadgeHtml(c.d2, todayStr, false)+c.id+'　<a href="https://maps.google.com/?q='+encodeURIComponent(c.adr)+'" target="_blank" style="color:inherit;text-decoration:none">'+c.adr+' 🗺️</a></div>'
       +'<div class="ci-sub">納期:'+c.d2+(c.pin!=null?'　📌'+(c.pinDate?c.pinDate+' ':'')+fmt(c.pin)+'着':(c.tm?'　指定:'+c.tm:''))+'　所要:'+c.dur+'分'+(c.ely?'　⭐':'')+'　'+geoTag+'</div>'
@@ -1973,6 +2015,7 @@ function renderCases(){
       +'<button class="br" onclick="delCase('+i+')">🗑</button>'
       +'</div></div>';
   }).join("");
+  updateJumpFab();
 }
 
 
@@ -6136,5 +6179,7 @@ document.addEventListener('DOMContentLoaded', function(){
 });
 
 </script>
+<!-- 案件入力タブ専用：一番下へ／一番上へ -->
+<button id="jump-fab" class="jump-fab" type="button" onclick="jumpFabTap()" aria-label="一番下へ">↓ 一番下へ</button>
 </body>
 </html>
