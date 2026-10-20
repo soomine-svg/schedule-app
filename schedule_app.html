@@ -5701,6 +5701,51 @@ function buildAllCore(){
       }
     }
 
+    // ── 納期優先の救済：今日行かないと納期に間に合わない案件（isMustVisitOnDate）が入りきらなかった日 ──
+    // 余裕のある案件（今日でなくてよい・ピンなし）を、納期の遠い順に1件ずつ外して組み直す。外した案件は翌日以降へ。
+    // 今日行くべき案件が1件も増えないときは元の結果のまま。
+    (function(){
+      function mustIds(sch){
+        var m = {};
+        sch.forEach(function(sc){ if(isMustVisitOnDate(sc, dStr)) m[sc.id] = true; });
+        return m;
+      }
+      var must = todayPool.filter(function(c){ return isMustVisitOnDate(c, dStr); });
+      if(!must.length) return;
+      var missing = must.filter(function(c){ return !result.consumedIds[c.id]; });
+      if(!missing.length) return;
+      var bestRes = result, bestMust = Object.keys(mustIds(result.sched)).length;
+      // 候補は「今日行くべき案件・ピン案件・今の結果に入っている案件」だけにする
+      // （入っていなかった余裕のある案件が、外した空きに入り直さないように）
+      var inRes = {}; result.sched.forEach(function(sc){ inRes[sc.id] = true; });
+      var pool2 = todayPool.filter(function(c){ return inRes[c.id] || c.pin != null || isMustVisitOnDate(c, dStr); });
+      var calBase = calBlocksExt.filter(function(b){ return !b.isReservation; });
+      for(var it=0; it<15; it++){
+        // 今の結果に入っている「余裕のある案件」から、納期の最も遠いものを外す
+        var placedFlex = bestRes.sched.filter(function(sc){
+          return sc.pin == null && !isMustVisitOnDate(sc, dStr) && pool2.some(function(c){ return c.id === sc.id; });
+        });
+        if(!placedFlex.length) break;
+        placedFlex.sort(function(a,b){
+          var ad = a.d2 || '9999-99-99', bd = b.d2 || '9999-99-99';
+          return ad < bd ? 1 : ad > bd ? -1 : 0;
+        });
+        var drop = placedFlex[0].id;
+        pool2 = pool2.filter(function(c){ return c.id !== drop; });
+        var r2 = scheduleDay(pool2, effectiveStartMin, effectiveStartAdr, spd, date, calBase.slice(), effectiveDayEnd, !isNow && d===0);
+        var m2 = Object.keys(mustIds(r2.sched)).length;
+        console.log('[MustRescue] Day'+(d+1)+' '+dStr+' 外す:'+drop+' 今日必須の配置 '+bestMust+'→'+m2+'件');
+        if(m2 > bestMust){ bestRes = r2; bestMust = m2; }
+        if(bestMust >= must.length) break;
+      }
+      if(bestRes !== result){
+        result = bestRes;
+        todaySch = result.sched;
+        consumed = result.consumedIds;
+        notAvail = result.notAvailTimed||[];
+      }
+    })();
+
     window._visitBandMap = null;
     todaySch.forEach(function(sc){ _buildVisits.push({id:sc.id, st:sc.st}); });
 
