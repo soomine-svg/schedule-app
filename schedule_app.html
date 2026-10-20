@@ -249,6 +249,12 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
         <input type="checkbox" id="fely">
         <label for="fely" style="font-size:.88rem;cursor:pointer">⭐ 早朝優先</label>
       </div>
+      <div class="ck" style="gap:14px">
+        <span style="font-size:.88rem;color:#4a5568">🔁 訪問回数</span>
+        <label style="font-size:.88rem;cursor:pointer;display:flex;align-items:center;gap:4px"><input type="checkbox" id="fvis2" onchange="onVisitsChk(2)"> 2回</label>
+        <label style="font-size:.88rem;cursor:pointer;display:flex;align-items:center;gap:4px"><input type="checkbox" id="fvis3" onchange="onVisitsChk(3)"> 3回</label>
+        <span style="font-size:.72rem;color:#a0aec0">合計の訪問回数。枝番付き（-1, -2）を自動で追加</span>
+      </div>
       <div class="btn-row">
         <button class="btn bb" onclick="addCase()">＋ 追加</button>
         <button class="btn bg" onclick="loadSample()">サンプル</button>
@@ -537,6 +543,31 @@ var TM_RANGE={
   "休日":[510,1215],"休日6-7":[360,420],"休日8-10":[480,600],"休日9-12":[540,720],"休日12-17":[720,1020],"休日17-20":[1020,1200]
 };
 
+// ===== 複数回訪問（同じ枝番グループ）の時間帯ずらし =====
+// 1回目を訪問した時間帯（午前・午後・夕方）と違う時間帯に2回目以降を入れる。夕方が未訪問なら夕方を優先。
+// 入力欄の選択肢には出さない「スケジュール作成時だけの時間指定」。平日・休日の指定がある案件は頭に付けて曜日条件を保つ。
+var VISIT_BANDS = {"午前":[510,720], "午後":[720,960], "夕方":[960,1215], "午前〜午後":[510,960]};
+var VISIT_BAND_SUFFIX = "（時間帯ずらし）";
+["", "平日", "休日"].forEach(function(pre){
+  Object.keys(VISIT_BANDS).forEach(function(b){ TM_RANGE[pre+b+VISIT_BAND_SUFFIX] = VISIT_BANDS[b]; });
+});
+// 訪問開始時刻（分）→ 時間帯
+function visitBandOf(min){ return min < 720 ? "午前" : (min < 960 ? "午後" : "夕方"); }
+// 訪問済みの時間帯 → 次に入れる時間帯（null＝ずらさない）
+function nextVisitBand(used){
+  if(!used["夕方"]) return (used["午前"] || used["午後"]) ? "夕方" : null; // 未訪問ならずらさない
+  if(used["午前"] && used["午後"]) return null; // 3つとも訪問済み
+  if(used["午前"]) return "午後";
+  if(used["午後"]) return "午前";
+  return "午前〜午後"; // 夕方だけ訪問済み
+}
+// 完了済み案件の訪問時刻（分）：スケジュールから完了した時は訪問予定時刻、それ以外は完了ボタンを押した時刻
+function doneVisitMin(c){
+  if(c.visitMin != null) return c.visitMin;
+  var m = c.doneAt ? String(c.doneAt).match(/(\d{1,2}):(\d{2})(?::\d{2})?\s*$/) : null;
+  return m ? parseInt(m[1],10)*60+parseInt(m[2],10) : null;
+}
+
 // 時間帯別カラーテーマ（背景色・左ボーダー色・バッジ背景・バッジ文字色）
 function tmColorTheme(tm){
   if(!tm) return null;
@@ -556,6 +587,10 @@ function tmColorTheme(tm){
   if(tm==='平日16-18'||tm==='平日17-20'||tm==='休日17-20')
     return {row:'background:#fffaf0;border-left:3px solid #ed8936;padding-left:6px;border-radius:4px;',
             dot:'#ed8936', badge:'background:#fbd38d;color:#7b341e;'};
+  // 複数回訪問の時間帯ずらし: ティール
+  if(tm.indexOf(VISIT_BAND_SUFFIX)>=0)
+    return {row:'background:#e6fffa;border-left:3px solid #38b2ac;padding-left:6px;border-radius:4px;',
+            dot:'#38b2ac', badge:'background:#b2f5ea;color:#234e52;'};
   // 夜（18〜22）: 紫
   if(tm==='平日18-20'||tm==='平日20-22')
     return {row:'background:#faf5ff;border-left:3px solid #9f7aea;padding-left:6px;border-radius:4px;',
@@ -1031,7 +1066,7 @@ function tab(name){
 }
 
 // ===== 案件入力タブ：一番下へ／一番上へ フローティングボタン =====
-// 案件一覧は「登録順」既定で cases.push 順＝新規は最下部。そこへ1タップで飛ぶ。
+// 案件一覧は「登録順」既定で新しい順＝新規は最上部。古い案件（最下部）へ1タップで飛ぶ。
 // ページの下半分にいる時は「↑ 一番上へ」（入力フォームへ戻る）に切り替わる。
 var _jumpFabDir = 'down';
 var _justAddedNo = null; // 直前に追加した案件の no（一覧でハイライト）
@@ -1291,6 +1326,12 @@ function chkId(){
     (v&&cases.some(function(c){return c.id===v;}))?"inline":"none";
 }
 
+// ===== 訪問回数（2回・3回）チェック：どちらか一方だけ =====
+function onVisitsChk(n){
+  var other=document.getElementById(n===2?"fvis3":"fvis2");
+  if(document.getElementById("fvis"+n).checked) other.checked=false;
+}
+
 // ===== 案件追加 =====
 function addCase(){
   var id=document.getElementById("fid").value.trim();
@@ -1300,6 +1341,7 @@ function addCase(){
   var tm=document.getElementById("ftm").value;
   var dur=parseInt(document.getElementById("fdur").value)||10;
   var ely=document.getElementById("fely").checked;
+  var visits=document.getElementById("fvis3").checked?3:(document.getElementById("fvis2").checked?2:1);
   // ピンポイント日時
   var pin=null, pinDate=null;
   if(tm==="pinpoint"){
@@ -1317,24 +1359,32 @@ function addCase(){
   if(!d2){alert("最終納期を入力してください");return;}
   var newCase={no:seq++,id:id,adr:adr,d1:d1,d2:d2,tm:tm,pin:pin,pinDate:pinDate,dur:dur,ely:ely,lat:null,lng:null,geocoded:false};
   cases.push(newCase);
+  // 訪問回数2回・3回：枝番付きを自動追加（copyCase と同じ付け方。元の案件＋枝番で合計 visits 件）
+  var addedRefs=[newCase];
+  for(var vi=1; vi<visits; vi++){
+    var bIdStr=id.replace(/-\d+$/,""), bn=1;
+    while(cases.some(function(x){return x.id===bIdStr+"-"+bn;}))bn++;
+    var sib=Object.assign({},newCase,{no:seq++,id:bIdStr+"-"+bn});
+    cases.push(sib);
+    addedRefs.push(sib);
+  }
   saveCases();
-  // 追加直後の案件を数秒ハイライト（「↓ 一番下へ」で飛んだ先で見つけやすく）。自動スクロールはしない＝連続入力を妨げない
+  // 追加直後の案件を数秒ハイライト（一覧の先頭で見つけやすく）。自動スクロールはしない＝連続入力を妨げない
   _justAddedNo=newCase.no;
   clearTimeout(window._justAddedTimer);
   window._justAddedTimer=setTimeout(function(){ _justAddedNo=null; document.querySelectorAll('.ci.just-added').forEach(function(e){e.classList.remove('just-added');}); },6000);
   renderCases();
   // Geocoding APIで座標取得
-  var caseRef=newCase;
   document.getElementById("geocode-status-add").textContent="📍 座標取得中...";
   geocodeAddress(adr, function(lat,lng,err){
     if(lat&&lng){
-      caseRef.lat=lat; caseRef.lng=lng; caseRef.geocoded=true;
+      addedRefs.forEach(function(r){ r.lat=lat; r.lng=lng; r.geocoded=true; });
       document.getElementById("geocode-status-add").textContent="✅ 座標取得完了（精密）";
     } else {
       // APIが失敗した場合は内部キーワードテーブルで補完
       var pos = getPos(adr, null);
       if(pos && pos.lat){
-        caseRef.lat=pos.lat; caseRef.lng=pos.lng; caseRef.geocoded=true;
+        addedRefs.forEach(function(r){ r.lat=pos.lat; r.lng=pos.lng; r.geocoded=true; });
         document.getElementById("geocode-status-add").textContent="📍 座標取得完了（概算）";
       } else {
         document.getElementById("geocode-status-add").textContent="⚠️ 座標取得失敗（宮崎県外の住所？）";
@@ -1355,6 +1405,8 @@ function addCase(){
   document.getElementById("fd1").value="";
   document.getElementById("fdur").value=10;
   document.getElementById("fely").checked=false;
+  document.getElementById("fvis2").checked=false;
+  document.getElementById("fvis3").checked=false;
   document.getElementById("ftm").value="";
   document.getElementById("fpin").value="10:00";
   document.getElementById("fpindate").value="";
@@ -1992,6 +2044,9 @@ function renderCases(){
     filtered.sort(function(a,b){
       return String(a.id).localeCompare(String(b.id),'ja',{numeric:true});
     });
+  } else {
+    // 登録順：新しく登録した案件が先頭（no は登録ごとに増える通し番号）
+    filtered.sort(function(a,b){ return ((b.no||0)-(a.no||0)) || (cases.indexOf(b)-cases.indexOf(a)); });
   }
   var today=new Date();
   var ty=today.getFullYear(),tm2=("0"+(today.getMonth()+1)).slice(-2),td2=("0"+today.getDate()).slice(-2);
@@ -2476,6 +2531,10 @@ function schedDone(cid){
   }
   var c=cases.splice(idx,1)[0];
   c.doneAt=new Date().toLocaleString("ja-JP");
+  // 複数回訪問の時間帯ずらし用に、スケジュール上の訪問時刻を残す
+  (window._dayScheds||[]).forEach(function(ds){
+    if(ds && ds.sched) ds.sched.forEach(function(sc){ if(sc.id===cid && sc.st!=null) c.visitMin=sc.st; });
+  });
   done.push(c);
   recordVisit(c);
   document.getElementById("hcnt").textContent=done.length;
@@ -3742,6 +3801,15 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     pool = filteredPool;
   }
 
+  // ── 複数回訪問の時間帯ずらし（buildAllCore が日ごとに window._visitBandMap を用意）──
+  // 元の案件は書き換えず、この日の計算用の写しに時間指定を付ける（id は同じ＝消化判定はそのまま）
+  var _bandMap = window._visitBandMap;
+  if(_bandMap){
+    pool = pool.map(function(c){
+      return _bandMap[c.id] ? Object.assign({}, c, {tm:_bandMap[c.id]}) : c;
+    });
+  }
+
   // ── 休日判定でtimedPoolを分類 ──
   var timedAvail = [];   // 今日訪問できる時間指定案件
   var timedNG    = [];   // 今日は訪問不可（平日→休日、休日→平日）
@@ -4552,6 +4620,9 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
   function tlDeadlineBadge(d2){ return deadlineBadgeHtml(d2, dStr, true); }
   var tw  = sched.reduce(function(s,c){ return s+c.dur; },0);
   var end = sched.length ? sched[sched.length-1].st+sched[sched.length-1].dur : startMin;
+  // 休憩1時間：ルートの途中には入れず、終了予定・自宅着にだけ足す（出発〜最終訪問終了が4時間を超える日）
+  var BREAK_MIN = 60;
+  var breakMin = (sched.length && end - startMin > 4*60) ? BREAK_MIN : 0;
   var totalKm=0;
   for(var i=0;i<sched.length-1;i++){
     totalKm+=km(
@@ -4718,13 +4789,13 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
         homeTrv = Math.max(3, Math.round(dHome2 * 1.5 / 80 * 60));
       }
     }
-    homeArrival = end + homeTrv;
+    homeArrival = end + breakMin + homeTrv;
   }
 
   h+='<div class="sum-row">'+
     '<div class="sum-box"><div class="n">'+sched.length+'</div><div class="l">訪問件数</div></div>'+
     '<div class="sum-box"><div class="n">'+Math.floor(tw/60)+'h'+(tw%60?tw%60+'m':'')+'</div><div class="l">作業時間</div></div>'+
-    '<div class="sum-box"><div class="n">'+fmt(end)+'</div><div class="l">終了予定</div></div>'+
+    '<div class="sum-box"><div class="n">'+fmt(end+breakMin)+'</div><div class="l">終了予定'+(breakMin?'<br><span style="font-size:.68rem">（休憩1h込み）</span>':'')+'</div></div>'+
     (homeArrival !== null ? '<div class="sum-box"><div class="n" style="color:#c05621">'+fmt(homeArrival)+'</div><div class="l">🏠 自宅着</div></div>' : '')+
     '</div>';
   if(totalKm>0) h+='<div style="text-align:center;margin-bottom:10px;font-size:.82rem;color:#4a5568">🗺 総移動距離（直線）: 約'+totalKm.toFixed(1)+'km</div>';
@@ -5092,6 +5163,8 @@ function buildAllCore(){
     return aD < bD ? -1 : aD > bD ? 1 : 0;
   });
   var html = '';
+  var _buildVisits = []; // この作成で前の日までに入れた訪問 {id, st}（複数回訪問の時間帯ずらし用）
+  window._visitBandMap = null;
 
   for(var d=0; d<3; d++){
     var date = new Date(baseDate+'T00:00:00');
@@ -5425,6 +5498,30 @@ function buildAllCore(){
       }
     }
 
+    // ── 複数回訪問の時間帯ずらし：同じ枝番グループの訪問済み時間帯（完了分＋この作成の前の日）を集める ──
+    // 納期に間に合わせるために今日行く必要がある案件（isMustVisitOnDate）は、ずらさない＝納期優先
+    var _usedBands = {};
+    function _addUsed(cid, min){
+      if(min == null) return;
+      var b0 = baseId(cid);
+      (_usedBands[b0] = _usedBands[b0] || {})[visitBandOf(min)] = true;
+    }
+    done.forEach(function(c){ _addUsed(c.id, doneVisitMin(c)); });
+    _buildVisits.forEach(function(v){ _addUsed(v.id, v.st); });
+    var _bandMap = {};
+    todayPool.forEach(function(c){
+      if(c.pin != null) return;
+      if(c.tm && c.tm !== '平日' && c.tm !== '休日') return; // 時間帯の指定がある案件はそのまま
+      var used = _usedBands[baseId(c.id)];
+      if(!used) return;
+      var nb = nextVisitBand(used);
+      if(!nb) return;
+      if(isMustVisitOnDate(c, dStr)) return;
+      _bandMap[c.id] = (c.tm||'') + nb + VISIT_BAND_SUFFIX;
+    });
+    window._visitBandMap = Object.keys(_bandMap).length ? _bandMap : null;
+    if(window._visitBandMap) console.log('[VisitBand] Day'+(d+1)+' '+dStr+' '+JSON.stringify(_bandMap));
+
     var result = scheduleDay(todayPool, effectiveStartMin, effectiveStartAdr, spd, date, calBlocksExt, effectiveDayEnd, !isNow && d===0);
     var todaySch = result.sched;
     var consumed = result.consumedIds;
@@ -5524,6 +5621,9 @@ function buildAllCore(){
         console.log('[PushBack2nd] Day'+(d+1)+' '+dStr+': 60分超の待機なし（最大wait='+maxUsableWait+'分）');
       }
     }
+
+    window._visitBandMap = null;
+    todaySch.forEach(function(sc){ _buildVisits.push({id:sc.id, st:sc.st}); });
 
     // 今日消化できなかった案件
     var notDone = todayPool.filter(function(c){ return !consumed[c.id]; }); // 完全IDで判定
