@@ -3472,21 +3472,33 @@ function renderDeadlineAlerts(alerts){
   el.innerHTML = html;
 }
 
-// 待機時間から制作可能ウィンドウを抽出（30分以上の待機のみ）
-function extractCreativeWindows(sched){
+// 待機時間から制作可能ウィンドウを抽出（30分以上の空きのみ）
+// 前の訪問の終了（1件目は出発時刻）〜次の訪問の開始のうち、移動と休憩を除いた時間。
+// 移動は、休憩の前に着けるなら休憩前、着けないなら休憩明けに走る（breakShift と同じ考え方）。
+function extractCreativeWindows(sched, startMin, calBlocks){
   var windows = [];
   var THRESHOLD = 30; // 30分以上で制作可能とみなす
-  sched.forEach(function(c){
-    if(c.wait && c.wait >= THRESHOLD){
-      var wStart = c.st - c.wait;
-      windows.push({start:wStart, end:c.st, duration:c.wait});
-    }
+  var breaks = (calBlocks||[]).filter(function(b){ return b.isBreak; });
+  sched.forEach(function(c, i){
+    if(!c.wait || c.wait <= 0) return;
+    var from = i === 0 ? (startMin != null ? startMin : c.st - c.wait - (c.trv||0)) : sched[i-1].st + sched[i-1].dur;
+    var to = c.st, t = c.trv||0;
+    var busy = breaks.filter(function(b){ return b.start < to && b.end > from; }).map(function(b){ return {start:b.start, end:b.end}; });
+    var driveFirst = !busy.length || busy.every(function(b){ return from + t <= b.start; });
+    busy.push(driveFirst ? {start:from, end:from+t} : {start:to-t, end:to});
+    busy.sort(function(a,b){ return a.start - b.start; });
+    var cur = from;
+    busy.forEach(function(b){
+      if(b.start - cur >= THRESHOLD) windows.push({start:cur, end:b.start, duration:b.start-cur});
+      cur = Math.max(cur, b.end);
+    });
+    if(to - cur >= THRESHOLD) windows.push({start:cur, end:to, duration:to-cur});
   });
   return windows;
 }
 
-function renderCreativeWindows(dayIdx, sched, startMin, dStr){
-  var windows = extractCreativeWindows(sched);
+function renderCreativeWindows(dayIdx, sched, startMin, dStr, calBlocks){
+  var windows = extractCreativeWindows(sched, startMin, calBlocks);
   if(!windows.length) return '';
   var totalMin = windows.reduce(function(s,w){ return s+w.duration; }, 0);
   var html = '<div style="margin-top:8px;padding:10px 12px;background:#faf5ff;border:1.5px solid #d6bcfa;border-radius:9px">'
@@ -3550,7 +3562,7 @@ function injectWorkHoursInfo(){
     }
 
     // 制作可能ウィンドウ
-    var cwHtml = renderCreativeWindows(dayIdx, ds.sched, ds.startMin, ds.dStr);
+    var cwHtml = renderCreativeWindows(dayIdx, ds.sched, ds.startMin, ds.dStr, ds.calBlocks);
     // 稼働時間警告
     var warnHtml = renderWorkHoursWarning(dayIdx, ds.sched, ds.startMin, ds.calBlocks);
     // 後ろ倒し通知
@@ -4900,6 +4912,23 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
       '<div class="al al-y">⚠ '+skip.length+'件を翌日以降に繰越</div>':
       '<div class="al al-g">✅ 全'+sched.length+'件を本日中に消化！</div>';
     h+='<div>';
+    // 案件の並びの中に出す「☕ 休憩」「💻 制作可能」の行（fromMin〜toMin の間にあるもの）
+    var _tlCreative = extractCreativeWindows(sched, startMin, calBlocks);
+    var _tlBreaks = (calBlocks||[]).filter(function(b){ return b.isBreak; });
+    function gapRows(fromMin, toMin){
+      var items = [];
+      _tlBreaks.forEach(function(b){ if(b.start >= fromMin && b.start < toMin) items.push({k:'brk', s:b.start, e:b.end}); });
+      _tlCreative.forEach(function(w){ if(w.start >= fromMin && w.start < toMin) items.push({k:'cw', s:w.start, e:w.end}); });
+      items.sort(function(a,b){ return a.s - b.s; });
+      return items.map(function(it){
+        var isB = it.k === 'brk';
+        return '<div class="mv" style="background:'+(isB?'#fffbeb':'#faf5ff')+';border:1.5px dashed '+(isB?'#f6ad55':'#d6bcfa')+';border-radius:6px;margin:4px 0">'
+          +'<div style="min-width:68px;text-align:right;color:'+(isB?'#c05621':'#553c9a')+';font-size:.72rem;font-weight:700">'+fmt(it.s)+'<br>〜'+fmt(it.e)+'</div>'
+          +'<div style="color:'+(isB?'#c05621':'#553c9a')+';font-weight:700">'+(isB?'☕ 休憩（1時間）':'💻 制作可能（'+(it.e-it.s)+'分）')+'</div>'
+          +'</div>';
+      }).join('');
+    }
+    if(sched.length) h+=gapRows(startMin, sched[0].st);
     sched.forEach(function(c,i){
       var last=i===sched.length-1;
       var nextC=last?null:sched[i+1];
@@ -4936,12 +4965,17 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
         (c.wait>0?'　<span style="color:#d69e2e">⏳待機'+c.wait+'分</span>':'')+
         '</div></div></div>';
       if(!last){
+        // 移動が休憩明けになる時は、休憩・制作可能の行のあとに「移動」を出す（実際の順番どおり）
+        var _gEnd = c.st+c.dur, _gr = gapRows(_gEnd, nextC.st);
+        var _driveLate = _tlBreaks.some(function(b){ return b.start < nextC.st && b.end > _gEnd && _gEnd + (nextC.trv||0) > b.start; });
+        if(_driveLate) h+=_gr;
         h+='<div class="mv">'+
           '<div style="min-width:68px;text-align:right;color:#a0aec0;font-size:.72rem">▼ 移動</div>'+
           '<div>🚗 約'+sched[i+1].trv+'分　'+nkm+
           (c.wait>0?'　<span style="color:#d69e2e;font-size:.72rem">⏳待機'+c.wait+'分後</span>':'')+
           '　<span style="color:#a0aec0;font-size:.7rem">'+getArea(c.adr)+'→'+getArea(nextC.adr)+'</span>'+
           '</div></div>';
+        if(!_driveLate) h+=_gr;
       }
     });
     // 最終訪問→自宅 の帰宅行
