@@ -570,6 +570,19 @@ function _blkResume(b){ return b.end + (b.isBreak ? 0 : 15); }
 
 var BREAK_MIN = 60; // 休憩（分）
 
+// 休憩中は訪問も移動もしない。前の訪問を出てから(cur)次の訪問が終わるまで(st+dur)に休憩がかかる時：
+// 休憩の前に着けるなら、着いてから休憩して休憩明けに訪問。着けないなら休憩明けに出発。
+// cur: 前の訪問の終了時刻 / t: 移動時間 / st: 予定の訪問開始 / 戻り値: ずらした訪問開始
+function breakShift(cur, t, st, dur, blocks){
+  (blocks||[]).forEach(function(b){
+    if(!b.isBreak) return;
+    if(cur < b.end && st + dur > b.start){
+      st = (cur + t <= b.start) ? Math.max(st, b.end) : Math.max(st, b.end + t);
+    }
+  });
+  return st;
+}
+
 // ===== 複数回訪問（同じ枝番グループ）の時間帯ずらし =====
 // 1回目を訪問した時間帯（午前・午後・夕方）と違う時間帯に2回目以降を入れる。夕方が未訪問なら夕方を優先。
 // 入力欄の選択肢には出さない「スケジュール作成時だけの時間指定」。平日・休日の指定がある案件は頭に付けて曜日条件を保つ。
@@ -3956,6 +3969,15 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
   // 案件を配置
   function place(c, st){
     var t = trv(prev, prevC, c.adr, c);
+    // 休憩に移動・訪問がかからないようにずらす（時間指定の枠・終業時刻に収まる時だけ）
+    var stB = breakShift(cur, t, st, c.dur, calBlocks);
+    if(stB !== st){
+      var okB;
+      if(c.pin != null) okB = stB + c.dur <= DAY_END;
+      else if(c.tm && TM_RANGE[c.tm] && !(TM_RANGE[c.tm][0] <= DAY_START && TM_RANGE[c.tm][1] >= 20*60+15)) okB = stB + c.dur <= TM_RANGE[c.tm][1];
+      else okB = stB + c.dur <= FREE_DAY_END;
+      if(okB) st = stB;
+    }
     var waitMin = Math.max(0, st - (cur + t));
     sched.push(Object.assign({}, c, {st:st, trv:t, wait:waitMin}));
     cur   = st + c.dur;
@@ -4533,6 +4555,14 @@ function twoOptImprove(sched, startAdr, startMin, spd, calBlocks, freeStart, fre
       } else {
         st = Math.max(cur + t, freeStart);
         if(st + c.dur > freeDayEnd) return null; // 終業後
+      }
+      // 休憩に移動・訪問がかかる並びは、ずらした上で枠・終業に収まるか見直す
+      var stB = breakShift(cur, t, st, c.dur, calBlocks);
+      if(stB !== st){
+        st = stB;
+        if(c.pin != null){ if(st + c.dur > 22*60+15) return null; }
+        else if(c.tm && TM_RANGE[c.tm]){ if(st > TM_RANGE[c.tm][1] - Math.min(15, c.dur) || st + c.dur > TM_RANGE[c.tm][1]) return null; }
+        else if(st + c.dur > freeDayEnd) return null;
       }
       // カレンダーブロック衝突チェック
       for(var b = 0; b < calBlocks.length; b++){
