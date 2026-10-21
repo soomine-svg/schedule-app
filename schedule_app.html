@@ -336,17 +336,18 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
 
       <!-- ===== 日別 出発時刻・稼働時間設定 ===== -->
       <div style="margin-top:14px;padding:14px;background:#f0fff4;border-radius:10px;border:1.5px solid #9ae6b4">
-        <div style="font-size:.82rem;font-weight:700;color:#276749;margin-bottom:10px">⏱ 日別設定（出発時刻・稼働時間）</div>
+        <div style="font-size:.82rem;font-weight:700;color:#276749;margin-bottom:10px">⏱ 日別設定（出発時刻・稼働可能時刻）</div>
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px">
           <div class="fg">
             <label style="color:#276749">🌅 1日目 出発時刻</label>
             <input id="depart-time-0" type="time" value="08:30"
               style="padding:8px;border:1.5px solid #9ae6b4;border-radius:7px;font-size:.95rem;font-weight:700;color:#276749;text-align:center"
               oninput="saveWorkHours()">
-            <label style="color:#276749;margin-top:6px">稼働時間（h）</label>
-            <input id="work-hours-0" type="number" value="8" min="1" max="24" step="0.5"
+            <label style="color:#276749;margin-top:6px">稼働可能時刻</label>
+            <input id="end-time-0" type="time" value="20:15"
               style="padding:8px;border:1.5px solid #9ae6b4;border-radius:7px;font-size:.95rem;font-weight:700;color:#276749;text-align:center"
               oninput="saveWorkHours()">
+            <label style="display:flex;align-items:center;gap:4px;font-size:.85rem;font-weight:700;color:#276749;cursor:pointer;margin-top:6px"><input type="checkbox" id="early-ok-0" onchange="saveWorkHours()" checked style="width:16px;height:16px;accent-color:#48bb78"> 🌅 早朝案件OK</label>
             <label style="color:#276749;margin-top:6px">☕ 休憩</label>
             <div style="display:flex;flex-direction:column;gap:4px;padding:4px 2px">
               <label style="display:flex;align-items:center;gap:4px;font-size:.85rem;font-weight:700;color:#276749;cursor:pointer"><input type="checkbox" id="brk-0-600" onchange="saveWorkHours()" checked style="width:16px;height:16px;accent-color:#48bb78"> 10〜11時</label>
@@ -359,10 +360,11 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
             <input id="depart-time-1" type="time" value="08:30"
               style="padding:8px;border:1.5px solid #9ae6b4;border-radius:7px;font-size:.95rem;font-weight:700;color:#276749;text-align:center"
               oninput="saveWorkHours()">
-            <label style="color:#276749;margin-top:6px">稼働時間（h）</label>
-            <input id="work-hours-1" type="number" value="8" min="1" max="24" step="0.5"
+            <label style="color:#276749;margin-top:6px">稼働可能時刻</label>
+            <input id="end-time-1" type="time" value="20:15"
               style="padding:8px;border:1.5px solid #9ae6b4;border-radius:7px;font-size:.95rem;font-weight:700;color:#276749;text-align:center"
               oninput="saveWorkHours()">
+            <label style="display:flex;align-items:center;gap:4px;font-size:.85rem;font-weight:700;color:#276749;cursor:pointer;margin-top:6px"><input type="checkbox" id="early-ok-1" onchange="saveWorkHours()" checked style="width:16px;height:16px;accent-color:#48bb78"> 🌅 早朝案件OK</label>
             <label style="color:#276749;margin-top:6px">☕ 休憩</label>
             <div style="display:flex;flex-direction:column;gap:4px;padding:4px 2px">
               <label style="display:flex;align-items:center;gap:4px;font-size:.85rem;font-weight:700;color:#276749;cursor:pointer"><input type="checkbox" id="brk-1-600" onchange="saveWorkHours()" checked style="width:16px;height:16px;accent-color:#48bb78"> 10〜11時</label>
@@ -375,10 +377,11 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
             <input id="depart-time-2" type="time" value="08:30"
               style="padding:8px;border:1.5px solid #9ae6b4;border-radius:7px;font-size:.95rem;font-weight:700;color:#276749;text-align:center"
               oninput="saveWorkHours()">
-            <label style="color:#276749;margin-top:6px">稼働時間（h）</label>
-            <input id="work-hours-2" type="number" value="8" min="1" max="24" step="0.5"
+            <label style="color:#276749;margin-top:6px">稼働可能時刻</label>
+            <input id="end-time-2" type="time" value="20:15"
               style="padding:8px;border:1.5px solid #9ae6b4;border-radius:7px;font-size:.95rem;font-weight:700;color:#276749;text-align:center"
               oninput="saveWorkHours()">
+            <label style="display:flex;align-items:center;gap:4px;font-size:.85rem;font-weight:700;color:#276749;cursor:pointer;margin-top:6px"><input type="checkbox" id="early-ok-2" onchange="saveWorkHours()" checked style="width:16px;height:16px;accent-color:#48bb78"> 🌅 早朝案件OK</label>
             <label style="color:#276749;margin-top:6px">☕ 休憩</label>
             <div style="display:flex;flex-direction:column;gap:4px;padding:4px 2px">
               <label style="display:flex;align-items:center;gap:4px;font-size:.85rem;font-weight:700;color:#276749;cursor:pointer"><input type="checkbox" id="brk-2-600" onchange="saveWorkHours()" checked style="width:16px;height:16px;accent-color:#48bb78"> 10〜11時</label>
@@ -389,9 +392,9 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
         </div>
         <div style="font-size:.75rem;color:#48bb78">
           ※ ⚡今からモードの1日目は現在時刻から出発します（1日目の出発時刻入力は無視）<br>
-          ※ 稼働時間 = 業務時間 + 移動時間（出発時刻からの経過時間）<br>
-          ※ 通常モードは「稼働時間+1時間」までに帰宅できるルートを生成します（最大20:15）<br>
-          ※ チェックした休憩（食事）の時間が出発〜終業にかかる日は、その時間を空けて組みます（訪問も移動もしない）。休憩は稼働時間の中に含みます<br>
+          ※ 稼働可能時刻＝最後の訪問を終える時刻。この時刻まで目一杯組みます（訪問できるのは最大20:15）<br>
+          ※ 「🌅 早朝案件OK」を外した日は早朝の時間指定案件を入れません（その日に行かないと納期に間に合わない案件は入れます）<br>
+          ※ チェックした休憩（食事）の時間が出発〜稼働可能時刻にかかる日は、その時間を空けて組みます（訪問も移動もしない）<br>
           ※ 本日納期超過の恐れがある場合は📛納期優先モードをご使用ください
         </div>
       </div>
@@ -3207,17 +3210,18 @@ function invalidateGpsCache(){
 var WORK_HOURS_KEY = 'schedule_work_hours_v1';
 
 function saveWorkHours(){
-  var wh = [
-    parseFloat(document.getElementById('work-hours-0').value)||8,
-    parseFloat(document.getElementById('work-hours-1').value)||8,
-    parseFloat(document.getElementById('work-hours-2').value)||8
-  ];
+  // 稼働可能時刻（最後の訪問を終える時刻）・早朝案件OK。旧形式の稼働時間 wh はもう使わない
+  var end = [0,1,2].map(function(i){
+    var el = document.getElementById('end-time-'+i);
+    return (el && el.value) ? el.value : '20:15';
+  });
+  var early = [0,1,2].map(function(i){ return getEarlyOk(i); });
   var dep = [0,1,2].map(function(i){
     var el = document.getElementById('depart-time-'+i);
     return (el && el.value) ? el.value : '08:30';
   });
   var brk = [0,1,2].map(function(i){ return getBreakStarts(i); });
-  try{ localStorage.setItem(WORK_HOURS_KEY, JSON.stringify({wh:wh, dep:dep, brk:brk})); }catch(e){}
+  try{ localStorage.setItem(WORK_HOURS_KEY, JSON.stringify({end:end, early:early, dep:dep, brk:brk})); }catch(e){}
 }
 
 function loadWorkHours(){
@@ -3225,10 +3229,17 @@ function loadWorkHours(){
     var raw = localStorage.getItem(WORK_HOURS_KEY);
     if(raw){
       var d = JSON.parse(raw);
-      if(d.wh && d.wh.length===3){
-        document.getElementById('work-hours-0').value = d.wh[0];
-        document.getElementById('work-hours-1').value = d.wh[1];
-        document.getElementById('work-hours-2').value = d.wh[2];
+      if(d.end && d.end.length===3){
+        [0,1,2].forEach(function(i){
+          var el = document.getElementById('end-time-'+i);
+          if(el && /^\d{1,2}:\d{2}$/.test(d.end[i])) el.value = d.end[i];
+        });
+      }
+      if(d.early && d.early.length===3){
+        [0,1,2].forEach(function(i){
+          var el = document.getElementById('early-ok-'+i);
+          if(el) el.checked = d.early[i] !== false;
+        });
       }
       // brk は日ごとの休憩開始（分）の配列。旧形式（1つの数値）は読まずに既定（10〜11時・17〜18時）のまま
       if(d.brk && d.brk.length===3){
@@ -3269,16 +3280,18 @@ function getDepartMin(dayIdx){
   return isNaN(m) ? 8*60+30 : m;
 }
 
-function getWorkHoursMin(dayIdx){
-  var id = 'work-hours-'+dayIdx;
-  var el = document.getElementById(id);
-  return Math.round((parseFloat(el ? el.value : 8)||8) * 60);
+// 日別の稼働可能時刻（分）＝最後の訪問を終える時刻。未入力・不正値は20:15
+function getEndMin(dayIdx){
+  var el = document.getElementById('end-time-'+dayIdx);
+  var v = (el && el.value) ? el.value : '20:15';
+  var p = v.split(':');
+  var m = parseInt(p[0],10)*60 + (parseInt(p[1],10)||0);
+  return isNaN(m) ? 20*60+15 : m;
 }
-
-// 稼働時間 = 業務時間 + 移動時間（出発時刻からの経過時間）
-// 昼休みは差し引かない
-function getEffectiveWorkMin(dayIdx){
-  return getWorkHoursMin(dayIdx);
+// 日別の「早朝案件OK」（既定はOK）
+function getEarlyOk(dayIdx){
+  var el = document.getElementById('early-ok-'+dayIdx);
+  return el ? el.checked : true;
 }
 
 // ===== 3モード排他制御 =====
@@ -3543,30 +3556,14 @@ function renderCreativeWindows(dayIdx, sched, startMin, dStr, calBlocks){
 
 // ===== 稼働時間オーバー警告をrenderDayに注入 =====
 function renderWorkHoursWarning(dayIdx, sched, startMin, calBlocks){
-  var workMin = getWorkHoursMin(dayIdx);
-
+  // 稼働可能時刻を超えた日だけ警告（通常モードでは超えない。📛納期優先モードで超えることがある）
   if(!sched.length) return '';
-
-  // 実際の稼働終了時刻（最終案件終了）
   var lastEnd = sched[sched.length-1].st + sched[sched.length-1].dur;
-  var actualWorkMin = lastEnd - startMin;
-
-  // 移動時間合計
-  var totalTrv = sched.reduce(function(s,c){ return s+(c.trv||0); }, 0);
-
-  // 稼働時間オーバー判定
-  if(actualWorkMin <= workMin) return ''; // 問題なし
-
-  var overMin = actualWorkMin - workMin;
-  var isHeavy = overMin > 60;
-  var color = isHeavy ? '#c53030' : '#744210';
-  var bg = isHeavy ? '#fff5f5' : '#fffbf0';
-  var border = isHeavy ? '#fc8181' : '#f6ad55';
-  var icon = isHeavy ? '🔴' : '🟡';
-
-  return '<div style="margin-top:6px;padding:9px 12px;background:'+bg+';border:1.5px solid '+border+';border-radius:8px;font-size:.8rem;color:'+color+'">'
-    +icon+' <b>稼働時間オーバー</b>　設定：'+Math.floor(workMin/60)+'時間　実際：'+Math.floor(actualWorkMin/60)+'時間'+(actualWorkMin%60?actualWorkMin%60+'分':'')+'　<b>+'+Math.floor(overMin/60)+(overMin%60?'時間'+(overMin%60)+'分':'時間')+'超過</b>'
-    +'<span style="color:#718096;font-size:.75rem;margin-left:8px">移動時間合計：'+totalTrv+'分</span>'
+  var endMin = getEndMin(dayIdx);
+  if(lastEnd <= endMin) return '';
+  var overMin = lastEnd - endMin;
+  return '<div style="margin-top:6px;padding:9px 12px;background:#fff5f5;border:1.5px solid #fc8181;border-radius:8px;font-size:.8rem;color:#c53030">'
+    +'🔴 <b>稼働可能時刻オーバー</b>　設定：'+fmt(endMin)+'　最後の訪問の終わり：'+fmt(lastEnd)+'　<b>+'+(overMin>=60?Math.floor(overMin/60)+'時間':'')+(overMin%60?overMin%60+'分':'')+'</b>'
     +'</div>';
 }
 
@@ -5459,6 +5456,14 @@ function buildAllCore(){
       cannotToday.forEach(function(c){ carriedOver.push(c); });
     });
 
+    // 「🌅 早朝案件OK」を外した日は、早朝の時間指定案件を翌日以降へ（その日に行かないと納期に間に合わない案件は除く）
+    if(!getEarlyOk(d)){
+      todayPool = todayPool.filter(function(c){
+        var isEarly = c.pin == null && c.tm && TM_RANGE[c.tm] && TM_RANGE[c.tm][0] < DAY_START;
+        if(isEarly && !isMustVisitOnDate(c, dStr)){ carriedOver.push(c); return false; }
+        return true;
+      });
+    }
     // 早朝指定案件(06:00〜07:00等)があれば出発を前倒し
     var earlyWindows = todayPool.filter(function(c){
       return c.tm && TM_RANGE[c.tm] && isTmAvailable(c.tm, date) && TM_RANGE[c.tm][0] < DAY_START;
@@ -5481,14 +5486,12 @@ function buildAllCore(){
     // effectiveDayEnd: 夕方以降のブロックが20:15より早く始まる場合はそこで打ち切る
     var effectiveDayEnd = 20*60+15;
 
-    // ===== 通常モードの稼働時間制限 =====
-    // 通常モードでは「出発時刻 + 稼働時間 + 1時間バッファ」を超えない範囲で配置
+    // ===== 通常モードの稼働可能時刻 =====
+    // 通常モードでは日別設定の稼働可能時刻（既定20:15）を超えない範囲で配置
     // 納期優先モードでは制限なし（22:15まで延長されている）
     if(!window._deadlineMode){
-      var workMin = getEffectiveWorkMin(d);
-      // 出発時刻 + 稼働時間 + 60分バッファ
-      // 稼働時間は設定した出発時刻から数える（早朝案件で出発を早めた日も。早めた時刻から数えると昼過ぎに終わってしまう）
-      var workLimitEnd = startMin + workMin + 60;
+      // 日別設定の稼働可能時刻（最後の訪問を終える時刻）まで組む
+      var workLimitEnd = getEndMin(d);
       if(workLimitEnd < effectiveDayEnd){
         effectiveDayEnd = Math.max(workLimitEnd, 8*60+30);
       }
