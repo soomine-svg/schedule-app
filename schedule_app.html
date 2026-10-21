@@ -583,7 +583,8 @@ function breakShift(cur, t, st, dur, blocks){
 // ===== 複数回訪問（同じ枝番グループ）の時間帯ずらし =====
 // 1回目を訪問した時間帯（午前・午後・夕方）と違う時間帯に2回目以降を入れる。夕方が未訪問なら夕方を優先。
 // 入力欄の選択肢には出さない「スケジュール作成時だけの時間指定」。平日・休日の指定がある案件は頭に付けて曜日条件を保つ。
-var VISIT_BANDS = {"午前":[510,720], "午後":[720,960], "夕方":[960,1215], "午前〜午後":[510,960]};
+// 夕方は納期で分ける：余裕あり＝18〜20時、納期が組む日の翌日まで（余裕なし）＝16〜20:15。17〜18時は食事の休憩枠で入らない
+var VISIT_BANDS = {"午前":[510,720], "午後":[720,960], "夕方18〜20時":[1080,1200], "夕方16〜20時":[960,1215], "午前〜午後":[510,960]};
 var VISIT_BAND_SUFFIX = "（時間帯ずらし）";
 ["", "平日", "休日"].forEach(function(pre){
   Object.keys(VISIT_BANDS).forEach(function(b){ TM_RANGE[pre+b+VISIT_BAND_SUFFIX] = VISIT_BANDS[b]; });
@@ -5637,6 +5638,11 @@ function buildAllCore(){
       var nb = nextVisitBand(used);
       if(!nb) return;
       if(isMustVisitOnDate(c, dStr)) return;
+      if(nb === '夕方'){
+        // 納期が組む日の翌日まで＝余裕なし → 16〜20時。それ以外は18〜20時
+        var _dl = c.d2 ? Math.round((new Date(c.d2+'T00:00:00') - new Date(dStr+'T00:00:00')) / 86400000) : 99;
+        nb = _dl <= 1 ? '夕方16〜20時' : '夕方18〜20時';
+      }
       _bandMap[c.id] = (c.tm||'') + nb + VISIT_BAND_SUFFIX;
     });
     window._visitBandMap = Object.keys(_bandMap).length ? _bandMap : null;
