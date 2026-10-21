@@ -3859,7 +3859,7 @@ function fmt(m){
 // 8. 夜間窓（wStart ≥ 20:00）→ fillFree完了後に処理
 //
 // 本日納期案件は窓を過ぎていてもtimedAvailに入れてASAP救済対象とする（当日絶対配置）
-function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effectiveDayEnd, isNextDay){
+function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effectiveDayEnd, isNextDay, freeStartMin){
   calBlocks = calBlocks || [];
 
   // ===== モード判定 =====
@@ -3875,7 +3875,8 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     FREE_DAY_END = effectiveDayEnd ? Math.min(20*60+15, effectiveDayEnd) : 20*60+15;
   }
   var DAY_START    = 8*60+30;
-  var FREE_START   = Math.max(startMin, DAY_START);
+  // freeStartMin：早朝案件で出発を早めた日でも、自由案件は設定した出発時刻から組む（buildAllCore が渡す）
+  var FREE_START   = Math.max(freeStartMin != null ? Math.max(startMin, freeStartMin) : startMin, DAY_START);
 
   // 今日納期判定（曜日OK前提で窓を緩めてASAP配置するため）
   var _dStr = targetDate
@@ -5472,6 +5473,8 @@ function buildAllCore(){
     }
     // 今からモードの1日目は現在時刻より前に巻き戻さない
     if(isNow && d===0) adjustedStart = Math.max(adjustedStart, startMin);
+    // 早朝案件のために出発を早めた日も、自由案件は設定した出発時刻から組む
+    var _freeStartDay = hasEarlyWindow ? startMin : null;
     // カレンダーブロック取得
     var calBlocks = (typeof gcalGetBlocks==='function') ? gcalGetBlocks(dStr) : [];
 
@@ -5484,7 +5487,8 @@ function buildAllCore(){
     if(!window._deadlineMode){
       var workMin = getEffectiveWorkMin(d);
       // 出発時刻 + 稼働時間 + 60分バッファ
-      var workLimitEnd = adjustedStart + workMin + 60;
+      // 稼働時間は設定した出発時刻から数える（早朝案件で出発を早めた日も。早めた時刻から数えると昼過ぎに終わってしまう）
+      var workLimitEnd = startMin + workMin + 60;
       if(workLimitEnd < effectiveDayEnd){
         effectiveDayEnd = Math.max(workLimitEnd, 8*60+30);
       }
@@ -5707,7 +5711,7 @@ function buildAllCore(){
     });
     calBlocksExt.sort(function(a,b){ return a.start - b.start; });
 
-    var result = scheduleDay(todayPool, effectiveStartMin, effectiveStartAdr, spd, date, calBlocksExt, effectiveDayEnd, !isNow && d===0);
+    var result = scheduleDay(todayPool, effectiveStartMin, effectiveStartAdr, spd, date, calBlocksExt, effectiveDayEnd, !isNow && d===0, _freeStartDay);
     var todaySch = result.sched;
     var consumed = result.consumedIds;
     var notAvail = result.notAvailTimed||[];
@@ -5736,7 +5740,7 @@ function buildAllCore(){
         console.log('[PushBack2nd] Day'+(d+1)+' '+dStr+' 実走後検出: target='+targetSch.id+' wait='+maxUsableWait+'分 → 後ろ倒し候補='+pushBackMin+'分（'+Math.floor(effectiveStartMin/60)+':'+(('0'+(effectiveStartMin%60)).slice(-2))+' → '+Math.floor(newStartMin/60)+':'+(('0'+(newStartMin%60)).slice(-2))+'）');
 
         // 2回目スケジューラ実行
-        var result2 = scheduleDay(todayPool, newStartMin, effectiveStartAdr, spd, date, calBlocksExt, effectiveDayEnd, !isNow && d===0);
+        var result2 = scheduleDay(todayPool, newStartMin, effectiveStartAdr, spd, date, calBlocksExt, effectiveDayEnd, !isNow && d===0, _freeStartDay);
 
         // ガード判定：2回目の繰越が1回目より増えていないこと
         var sched1Count = (result.sched||[]).length;
@@ -5838,7 +5842,7 @@ function buildAllCore(){
         });
         var drop = placedFlex[0].id;
         pool2 = pool2.filter(function(c){ return c.id !== drop; });
-        var r2 = scheduleDay(pool2, effectiveStartMin, effectiveStartAdr, spd, date, calBase.slice(), effectiveDayEnd, !isNow && d===0);
+        var r2 = scheduleDay(pool2, effectiveStartMin, effectiveStartAdr, spd, date, calBase.slice(), effectiveDayEnd, !isNow && d===0, _freeStartDay);
         var m2 = Object.keys(mustIds(r2.sched)).length;
         console.log('[MustRescue] Day'+(d+1)+' '+dStr+' 外す:'+drop+' 今日必須の配置 '+bestMust+'→'+m2+'件');
         if(m2 > bestMust){ bestRes = r2; bestMust = m2; }
@@ -6068,9 +6072,17 @@ function gcalFetchEvents(callback){
         return e.start && e.start.date && !e.start.dateTime
           && e.transparency !== 'transparent'; // 祝日カレンダー等のfree予定を除外
       });
-      gcalAllDayDates  = _allDayItems.map(function(e){ return e.start.date; });
-      gcalAllDayEvents = _allDayItems.map(function(e){
-        return { date: e.start.date, title: e.summary || '（タイトルなし）' };
+      // 2日以上続く終日予定は、開始日〜終了日の前日まで全部の日を数える（end.date は翌日＝含まない）
+      gcalAllDayDates = []; gcalAllDayEvents = [];
+      _allDayItems.forEach(function(e){
+        var d0 = new Date(e.start.date+'T00:00:00');
+        var d1 = new Date(((e.end && e.end.date) || e.start.date)+'T00:00:00');
+        do {
+          var ds = d0.getFullYear()+'-'+('0'+(d0.getMonth()+1)).slice(-2)+'-'+('0'+d0.getDate()).slice(-2);
+          gcalAllDayDates.push(ds);
+          gcalAllDayEvents.push({ date: ds, title: e.summary || '（タイトルなし）' });
+          d0.setDate(d0.getDate()+1);
+        } while(d0 < d1);
       });
 
       gcalEvents = (data.items||[]).filter(function(e){
