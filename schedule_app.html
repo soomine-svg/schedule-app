@@ -3991,7 +3991,8 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     if(stB !== st){
       var okB;
       if(c.pin != null) okB = stB + c.dur <= DAY_END;
-      else if(c.tm && TM_RANGE[c.tm] && !(TM_RANGE[c.tm][0] <= DAY_START && TM_RANGE[c.tm][1] >= 20*60+15)) okB = stB + c.dur <= TM_RANGE[c.tm][1];
+      else if(c.tm && TM_RANGE[c.tm] && !(TM_RANGE[c.tm][0] <= DAY_START && TM_RANGE[c.tm][1] >= 20*60+15))
+        okB = stB + c.dur <= (TM_RANGE[c.tm][0] < 20*60 ? Math.min(TM_RANGE[c.tm][1], FREE_DAY_END) : TM_RANGE[c.tm][1]); // 夜間窓以外は終業も超えない
       else okB = stB + c.dur <= FREE_DAY_END;
       if(okB) st = stB;
     }
@@ -4387,7 +4388,10 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
       // 時間指定窓は wStart〜wEnd の幅があるので、wEnd までに着けば良い
       // → 待機時間を埋める自由案件を多く配置できるようになる
       // ただし後続の時間指定案件があれば、その窓開始までに収めるよう制限
-      var latestDepart = wLatestArrival - trvToTc;
+      // 窓の終わりより先にその日が終わる日（例：終業17:00・窓16〜20時）は、終業までに訪問を終えられる時刻から逆算する
+      // （窓の終わりで逆算すると自由案件で終業まで埋まり、時間指定案件が入らなかった）
+      var _latestArr = Math.min(wLatestArrival, Math.min(wEnd, FREE_DAY_END) - tc.dur);
+      var latestDepart = _latestArr - trvToTc;
       if(_nextTimedStart != null){
         // 後続の時間指定案件への移動余裕を持たせるため、最低15分のバッファ
         var _capByNext = _nextTimedStart - tc.dur - 15;
