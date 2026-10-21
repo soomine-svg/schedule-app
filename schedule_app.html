@@ -255,6 +255,11 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
         <label style="font-size:.88rem;cursor:pointer;display:flex;align-items:center;gap:4px"><input type="checkbox" id="fvis3" onchange="onVisitsChk(3)"> 3回</label>
         <span style="font-size:.72rem;color:#a0aec0">合計の訪問回数。枝番付き（-1, -2）を自動で追加</span>
       </div>
+      <div class="ck">
+        <input type="checkbox" id="fseq">
+        <label for="fseq" style="font-size:.88rem;cursor:pointer">📌 初回だけ時間指定（枝番の順に訪問）</label>
+        <span style="font-size:.72rem;color:#a0aec0">時間指定は初回だけに付け、2回目以降は前の回が済んでから組む</span>
+      </div>
       <div class="btn-row">
         <button class="btn bb" onclick="addCase()">＋ 追加</button>
         <button class="btn bg" onclick="loadSample()">サンプル</button>
@@ -526,6 +531,10 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
       <input type="checkbox" id="eEly">
       <label for="eEly" style="font-size:.88rem;cursor:pointer">⭐ 早朝優先</label>
     </div>
+    <div class="ck">
+      <input type="checkbox" id="eSeq">
+      <label for="eSeq" style="font-size:.88rem;cursor:pointer">🔢 枝番の順に訪問（同じ案件の枝番すべてに反映）</label>
+    </div>
     <div class="btn-row">
       <button class="btn bb" onclick="saveEdit()">💾 保存</button>
       <button class="btn br" onclick="closeModal('editModal')">キャンセル</button>
@@ -578,6 +587,14 @@ function breakShift(cur, t, st, dur, blocks){
     }
   });
   return st;
+}
+
+// ===== 枝番の順に訪問（ord）=====
+// 何回目か：番号なし＝1回目(0)、-1＝2回目、-2＝3回目
+function visitOrderOf(id){ var m = String(id).match(/-(\d+)$/); return m ? parseInt(m[1],10) : 0; }
+// 同じ案件（baseId）のどれかに ord が付いていれば、枝番の順に訪問する
+function isOrderedGroup(b){
+  return cases.some(function(x){ return x.ord && baseId(x.id) === b; }) || done.some(function(x){ return x.ord && baseId(x.id) === b; });
 }
 
 // ===== 複数回訪問（同じ枝番グループ）の時間帯ずらし =====
@@ -1380,6 +1397,7 @@ function addCase(){
   var dur=parseInt(document.getElementById("fdur").value)||10;
   var ely=document.getElementById("fely").checked;
   var visits=document.getElementById("fvis3").checked?3:(document.getElementById("fvis2").checked?2:1);
+  var ord=document.getElementById("fseq").checked; // 初回だけ時間指定・枝番の順に訪問
   // ピンポイント日時
   var pin=null, pinDate=null;
   if(tm==="pinpoint"){
@@ -1396,6 +1414,7 @@ function addCase(){
   if(cases.some(function(c){return c.id===id;})){alert("IDが重複しています");return;}
   if(!d2){alert("最終納期を入力してください");return;}
   var newCase={no:seq++,id:id,adr:adr,d1:d1,d2:d2,tm:tm,pin:pin,pinDate:pinDate,dur:dur,ely:ely,lat:null,lng:null,geocoded:false};
+  if(ord) newCase.ord=true;
   cases.push(newCase);
   // 訪問回数2回・3回：枝番付きを自動追加（copyCase と同じ付け方。元の案件＋枝番で合計 visits 件）
   var addedRefs=[newCase];
@@ -1403,6 +1422,7 @@ function addCase(){
     var bIdStr=id.replace(/-\d+$/,""), bn=1;
     while(cases.some(function(x){return x.id===bIdStr+"-"+bn;}))bn++;
     var sib=Object.assign({},newCase,{no:seq++,id:bIdStr+"-"+bn});
+    if(ord){ sib.tm=""; sib.pin=null; sib.pinDate=null; } // 時間指定は初回だけ
     cases.push(sib);
     addedRefs.push(sib);
   }
@@ -1445,6 +1465,7 @@ function addCase(){
   document.getElementById("fely").checked=false;
   document.getElementById("fvis2").checked=false;
   document.getElementById("fvis3").checked=false;
+  document.getElementById("fseq").checked=false;
   document.getElementById("ftm").value="";
   document.getElementById("fpin").value="10:00";
   document.getElementById("fpindate").value="";
@@ -2098,7 +2119,7 @@ function renderCases(){
     return '<div class="ci'+(c.ely?" ely":"")+(c.no===_justAddedNo?" just-added":"")+'">'
       +'<div class="ci-body">'
       +'<div class="ci-name">'+deadlineBadgeHtml(c.d2, todayStr, false)+c.id+'　<a href="https://maps.google.com/?q='+encodeURIComponent(c.adr)+'" target="_blank" style="color:inherit;text-decoration:none">'+c.adr+' 🗺️</a></div>'
-      +'<div class="ci-sub">納期:'+c.d2+(c.pin!=null?'　📌'+(c.pinDate?c.pinDate+' ':'')+fmt(c.pin)+'着':(c.tm?'　指定:'+c.tm:''))+'　所要:'+c.dur+'分'+(c.ely?'　⭐':'')+'　'+geoTag+'</div>'
+      +'<div class="ci-sub">納期:'+c.d2+(c.pin!=null?'　📌'+(c.pinDate?c.pinDate+' ':'')+fmt(c.pin)+'着':(c.tm?'　指定:'+c.tm:''))+'　所要:'+c.dur+'分'+(c.ely?'　⭐':'')+(c.ord?'　🔢順番':'')+'　'+geoTag+'</div>'
       +'</div>'
       +'<div class="ci-btns">'
       +'<button class="bg" onclick="editCase('+i+')">✏️</button>'
@@ -2166,6 +2187,7 @@ function editCase(i){
   document.getElementById("eDd2").value=c.d2||"";
   document.getElementById("eDur").value=c.dur;
   document.getElementById("eEly").checked=c.ely;
+  document.getElementById("eSeq").checked=isOrderedGroup(baseId(c.id));
   // ピンポイント判定
   if(c.pin!=null){
     document.getElementById("eTm").value="pinpoint";
@@ -2226,6 +2248,9 @@ function saveEdit(){
     dur:parseInt(document.getElementById("eDur").value)||10,
     ely:document.getElementById("eEly").checked
   });
+  // 枝番の順に訪問：同じ案件の枝番すべてに反映
+  var _ordOn=document.getElementById("eSeq").checked, _ob=baseId(newId);
+  cases.forEach(function(x){ if(baseId(x.id)===_ob){ if(_ordOn) x.ord=true; else delete x.ord; } });
   if(adrChanged){
     cases[i].lat=null; cases[i].lng=null; cases[i].geocoded=false;
     var caseRef2=cases[i];
@@ -3987,7 +4012,8 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
   function place(c, st){
     var t = trv(prev, prevC, c.adr, c);
     // 休憩に移動・訪問がかからないようにずらす（時間指定の枠・終業時刻に収まる時だけ）
-    var stB = breakShift(cur, t, st, c.dur, calBlocks);
+    // 📌ピン案件は先方との約束の時刻なので、休憩でずらさない
+    var stB = c.pin != null ? st : breakShift(cur, t, st, c.dur, calBlocks);
     if(stB !== st){
       var okB;
       if(c.pin != null) okB = stB + c.dur <= DAY_END;
@@ -4590,7 +4616,7 @@ function twoOptImprove(sched, startAdr, startMin, spd, calBlocks, freeStart, fre
         if(st + c.dur > freeDayEnd) return null; // 終業後
       }
       // 休憩に移動・訪問がかかる並びは、ずらした上で枠・終業に収まるか見直す
-      var stB = breakShift(cur, t, st, c.dur, calBlocks);
+      var stB = c.pin != null ? st : breakShift(cur, t, st, c.dur, calBlocks); // 📌ピンは休憩でずらさない
       if(stB !== st){
         st = stB;
         if(c.pin != null){ if(st + c.dur > 22*60+15) return null; }
@@ -4599,6 +4625,7 @@ function twoOptImprove(sched, startAdr, startMin, spd, calBlocks, freeStart, fre
       }
       // カレンダーブロック衝突チェック
       for(var b = 0; b < calBlocks.length; b++){
+        if(c.pin != null && calBlocks[b].isBreak) continue; // 📌ピンは休憩と重なってもよい（約束の時刻を優先）
         if(st < calBlocks[b].end && st + c.dur > calBlocks[b].start) return null;
       }
       out.push(Object.assign({}, c, {st:st, trv:t, wait:Math.max(0, st-(cur+t))}));
@@ -5368,6 +5395,21 @@ function buildAllCore(){
 
     Object.keys(byBase).forEach(function(b){
       var arr=byBase[b];
+      // 枝番の順に訪問：前の回が未完了で、この作成の前の日にも入っていない枝番は翌日以降へ
+      if(isOrderedGroup(b)){
+        var _visitedIds = {};
+        done.forEach(function(x){ _visitedIds[x.id] = true; });
+        _buildVisits.forEach(function(v){ _visitedIds[v.id] = true; });
+        var _blocked = arr.filter(function(c){
+          var k = visitOrderOf(c.id);
+          return cases.some(function(x){ return baseId(x.id) === b && visitOrderOf(x.id) < k && !_visitedIds[x.id]; });
+        });
+        if(_blocked.length){
+          _blocked.forEach(function(c){ carriedOver.push(c); });
+          arr = arr.filter(function(c){ return _blocked.indexOf(c) < 0; });
+          if(!arr.length) return;
+        }
+      }
       // 今日すでに同baseIdを完了済みなら全て翌日へ
       if(doneBasesToday[b]){
         arr.forEach(function(c){ carriedOver.push(c); });
