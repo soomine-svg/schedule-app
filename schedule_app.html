@@ -343,12 +343,11 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
               style="padding:8px;border:1.5px solid #9ae6b4;border-radius:7px;font-size:.95rem;font-weight:700;color:#276749;text-align:center"
               oninput="saveWorkHours()">
             <label style="color:#276749;margin-top:6px">☕ 休憩</label>
-            <select id="break-time-0" onchange="saveWorkHours()"
-              style="padding:8px;border:1.5px solid #9ae6b4;border-radius:7px;font-size:.95rem;font-weight:700;color:#276749;background:#fff">
-              <option value="600">10〜11時</option>
-              <option value="720" selected>12〜13時</option>
-              <option value="1020">17〜18時</option>
-            </select>
+            <div style="display:flex;flex-direction:column;gap:4px;padding:4px 2px">
+              <label style="display:flex;align-items:center;gap:4px;font-size:.85rem;font-weight:700;color:#276749;cursor:pointer"><input type="checkbox" id="brk-0-600" onchange="saveWorkHours()" checked style="width:16px;height:16px;accent-color:#48bb78"> 10〜11時</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:.85rem;font-weight:700;color:#276749;cursor:pointer"><input type="checkbox" id="brk-0-720" onchange="saveWorkHours()" style="width:16px;height:16px;accent-color:#48bb78"> 12〜13時</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:.85rem;font-weight:700;color:#276749;cursor:pointer"><input type="checkbox" id="brk-0-1020" onchange="saveWorkHours()" checked style="width:16px;height:16px;accent-color:#48bb78"> 17〜18時</label>
+            </div>
           </div>
           <div class="fg">
             <label style="color:#276749">☀️ 2日目 出発時刻</label>
@@ -360,12 +359,11 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
               style="padding:8px;border:1.5px solid #9ae6b4;border-radius:7px;font-size:.95rem;font-weight:700;color:#276749;text-align:center"
               oninput="saveWorkHours()">
             <label style="color:#276749;margin-top:6px">☕ 休憩</label>
-            <select id="break-time-1" onchange="saveWorkHours()"
-              style="padding:8px;border:1.5px solid #9ae6b4;border-radius:7px;font-size:.95rem;font-weight:700;color:#276749;background:#fff">
-              <option value="600">10〜11時</option>
-              <option value="720" selected>12〜13時</option>
-              <option value="1020">17〜18時</option>
-            </select>
+            <div style="display:flex;flex-direction:column;gap:4px;padding:4px 2px">
+              <label style="display:flex;align-items:center;gap:4px;font-size:.85rem;font-weight:700;color:#276749;cursor:pointer"><input type="checkbox" id="brk-1-600" onchange="saveWorkHours()" checked style="width:16px;height:16px;accent-color:#48bb78"> 10〜11時</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:.85rem;font-weight:700;color:#276749;cursor:pointer"><input type="checkbox" id="brk-1-720" onchange="saveWorkHours()" style="width:16px;height:16px;accent-color:#48bb78"> 12〜13時</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:.85rem;font-weight:700;color:#276749;cursor:pointer"><input type="checkbox" id="brk-1-1020" onchange="saveWorkHours()" checked style="width:16px;height:16px;accent-color:#48bb78"> 17〜18時</label>
+            </div>
           </div>
           <div class="fg">
             <label style="color:#276749">🌆 3日目 出発時刻</label>
@@ -377,19 +375,18 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
               style="padding:8px;border:1.5px solid #9ae6b4;border-radius:7px;font-size:.95rem;font-weight:700;color:#276749;text-align:center"
               oninput="saveWorkHours()">
             <label style="color:#276749;margin-top:6px">☕ 休憩</label>
-            <select id="break-time-2" onchange="saveWorkHours()"
-              style="padding:8px;border:1.5px solid #9ae6b4;border-radius:7px;font-size:.95rem;font-weight:700;color:#276749;background:#fff">
-              <option value="600">10〜11時</option>
-              <option value="720" selected>12〜13時</option>
-              <option value="1020">17〜18時</option>
-            </select>
+            <div style="display:flex;flex-direction:column;gap:4px;padding:4px 2px">
+              <label style="display:flex;align-items:center;gap:4px;font-size:.85rem;font-weight:700;color:#276749;cursor:pointer"><input type="checkbox" id="brk-2-600" onchange="saveWorkHours()" checked style="width:16px;height:16px;accent-color:#48bb78"> 10〜11時</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:.85rem;font-weight:700;color:#276749;cursor:pointer"><input type="checkbox" id="brk-2-720" onchange="saveWorkHours()" style="width:16px;height:16px;accent-color:#48bb78"> 12〜13時</label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:.85rem;font-weight:700;color:#276749;cursor:pointer"><input type="checkbox" id="brk-2-1020" onchange="saveWorkHours()" checked style="width:16px;height:16px;accent-color:#48bb78"> 17〜18時</label>
+            </div>
           </div>
         </div>
         <div style="font-size:.75rem;color:#48bb78">
           ※ ⚡今からモードの1日目は現在時刻から出発します（1日目の出発時刻入力は無視）<br>
           ※ 稼働時間 = 業務時間 + 移動時間（出発時刻からの経過時間）<br>
           ※ 通常モードは「稼働時間+1時間」までに帰宅できるルートを生成します（最大20:15）<br>
-          ※ 出発から4時間を超える日は、選んだ時間に休憩1時間を空けて組みます（その時間が出発前なら出発3時間後。終業後になる日や、その前に訪問が終わる日は12〜13時）。休憩は稼働時間の中に含みます<br>
+          ※ チェックした休憩（食事）の時間が出発〜終業にかかる日は、その時間を空けて組みます（訪問も移動もしない）。休憩は稼働時間の中に含みます<br>
           ※ 本日納期超過の恐れがある場合は📛納期優先モードをご使用ください
         </div>
       </div>
@@ -3193,7 +3190,7 @@ function saveWorkHours(){
     var el = document.getElementById('depart-time-'+i);
     return (el && el.value) ? el.value : '08:30';
   });
-  var brk = [0,1,2].map(function(i){ return getBreakStartMin(i); });
+  var brk = [0,1,2].map(function(i){ return getBreakStarts(i); });
   try{ localStorage.setItem(WORK_HOURS_KEY, JSON.stringify({wh:wh, dep:dep, brk:brk})); }catch(e){}
 }
 
@@ -3207,10 +3204,14 @@ function loadWorkHours(){
         document.getElementById('work-hours-1').value = d.wh[1];
         document.getElementById('work-hours-2').value = d.wh[2];
       }
+      // brk は日ごとの休憩開始（分）の配列。旧形式（1つの数値）は読まずに既定（10〜11時・17〜18時）のまま
       if(d.brk && d.brk.length===3){
         [0,1,2].forEach(function(i){
-          var el = document.getElementById('break-time-'+i);
-          if(el && [600,720,1020].indexOf(d.brk[i]) >= 0) el.value = String(d.brk[i]);
+          if(!Array.isArray(d.brk[i])) return;
+          BREAK_CHOICES.forEach(function(v){
+            var el = document.getElementById('brk-'+i+'-'+v);
+            if(el) el.checked = d.brk[i].indexOf(v) >= 0;
+          });
         });
       }
       if(d.dep && d.dep.length===3){
@@ -3223,11 +3224,14 @@ function loadWorkHours(){
   }catch(e){}
 }
 
-// 日別の休憩開始時刻（分）。10〜11時／12〜13時／17〜18時から選ぶ。既定は12〜13時
-function getBreakStartMin(dayIdx){
-  var el = document.getElementById('break-time-'+dayIdx);
-  var v = el ? parseInt(el.value, 10) : 720;
-  return [600,720,1020].indexOf(v) >= 0 ? v : 720;
+// 日別の休憩（食事）開始時刻（分）の配列。10〜11時／12〜13時／17〜18時をチェックで選ぶ（複数可）。
+// 既定は10〜11時と17〜18時（本人の食事の時間）。12〜13時はイレギュラーの日だけ
+var BREAK_CHOICES = [600, 720, 1020];
+function getBreakStarts(dayIdx){
+  return BREAK_CHOICES.filter(function(v){
+    var el = document.getElementById('brk-'+dayIdx+'-'+v);
+    return el ? el.checked : v !== 720;
+  });
 }
 
 // 日別の出発時刻（分）を取得。未入力・不正値は08:30
@@ -4520,6 +4524,18 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
   if(sched.length >= 3 && !(window._farFirst && !window._fastMode)){
     var calBlocksFor2opt = calBlocks.filter(function(b){ return !b.isReservation; });
     sched = twoOptImprove(sched, startAdr, startMin, spd, calBlocksFor2opt, FREE_START, FREE_DAY_END);
+    // 並べ替えで帰りが早まり終業まで時間が空いた時は、もう一度詰めてから並べ替える
+    // （休憩で1日が区切られると空きが大きくなりやすい）
+    var _lastS = sched[sched.length-1];
+    if(_lastS && _lastS.st + _lastS.dur < FREE_DAY_END){
+      cur = _lastS.st + _lastS.dur; prev = _lastS.adr; prevC = _lastS;
+      var _nBefore = sched.length;
+      fillFree(FREE_DAY_END);
+      if(sched.length > _nBefore){
+        sched.sort(function(a,b){ return a.st-b.st; });
+        sched = twoOptImprove(sched, startAdr, startMin, spd, calBlocksFor2opt, FREE_START, FREE_DAY_END);
+      }
+    }
   }
 
   var consumedIds = {};
@@ -4877,7 +4893,7 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
   h+='<div class="sum-row">'+
     '<div class="sum-box"><div class="n">'+sched.length+'</div><div class="l">訪問件数</div></div>'+
     '<div class="sum-box"><div class="n">'+Math.floor(tw/60)+'h'+(tw%60?tw%60+'m':'')+'</div><div class="l">作業時間</div></div>'+
-    '<div class="sum-box"><div class="n">'+fmt(end)+'</div><div class="l">終了予定'+(hasBreak?'<br><span style="font-size:.68rem">（休憩1h込み）</span>':'')+'</div></div>'+
+    '<div class="sum-box"><div class="n">'+fmt(end)+'</div><div class="l">終了予定'+(hasBreak?'<br><span style="font-size:.68rem">（休憩込み）</span>':'')+'</div></div>'+
     (homeArrival !== null ? '<div class="sum-box"><div class="n" style="color:#c05621">'+fmt(homeArrival)+'</div><div class="l">🏠 自宅着</div></div>' : '')+
     '</div>';
   if(totalKm>0) h+='<div style="text-align:center;margin-bottom:10px;font-size:.82rem;color:#4a5568">🗺 総移動距離（直線）: 約'+totalKm.toFixed(1)+'km</div>';
@@ -4924,7 +4940,7 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
         var isB = it.k === 'brk';
         return '<div class="mv" style="background:'+(isB?'#fffbeb':'#faf5ff')+';border:1.5px dashed '+(isB?'#f6ad55':'#d6bcfa')+';border-radius:6px;margin:4px 0">'
           +'<div style="min-width:68px;text-align:right;color:'+(isB?'#c05621':'#553c9a')+';font-size:.72rem;font-weight:700">'+fmt(it.s)+'<br>〜'+fmt(it.e)+'</div>'
-          +'<div style="color:'+(isB?'#c05621':'#553c9a')+';font-weight:700">'+(isB?'☕ 休憩（1時間）':'💻 制作可能（'+(it.e-it.s)+'分）')+'</div>'
+          +'<div style="color:'+(isB?'#c05621':'#553c9a')+';font-weight:700">'+(isB?'☕ 休憩（'+(it.e-it.s)+'分）':'💻 制作可能（'+(it.e-it.s)+'分）')+'</div>'
           +'</div>';
       }).join('');
     }
@@ -5626,46 +5642,20 @@ function buildAllCore(){
     window._visitBandMap = Object.keys(_bandMap).length ? _bandMap : null;
     if(window._visitBandMap) console.log('[VisitBand] Day'+(d+1)+' '+dStr+' '+JSON.stringify(_bandMap));
 
-    // ── 休憩1時間：訪問を入れない枠として入れる（＝1日に入れる件数の計算に含める）──
-    // 日別設定で選んだ時間（10〜11時／12〜13時／17〜18時）。その時間が出発より前なら出発3時間後から1時間。
-    // 終業時刻（稼働時間＋1時間・20:15）は伸ばさない＝休憩の1時間ぶん入る件数が減る。
-    // 出発〜最終訪問終了が4時間以内に収まった日は休憩なしで組み直す。
-    var _calNoBreak = calBlocksExt.slice(), _endNoBreak = effectiveDayEnd;
-    if(effectiveDayEnd - effectiveStartMin > 4*60){
-      var _bsSel = getBreakStartMin(d);
-      var _bs = effectiveStartMin <= _bsSel ? _bsSel : effectiveStartMin + 3*60;
-      // 選んだ時間がその日の終業時刻までに収まらない（例：17〜18時を選んだが17:30終業）→ 12〜13時、無理なら出発3時間後
-      if(_bs + BREAK_MIN > effectiveDayEnd) _bs = effectiveStartMin <= 12*60 ? 12*60 : effectiveStartMin + 3*60;
-      if(_bs + BREAK_MIN <= effectiveDayEnd){
-        calBlocksExt = calBlocksExt.concat([{
-          start:_bs, end:_bs+BREAK_MIN, title:'☕ 休憩', isBreak:true,
+    // ── 休憩（食事）：日別設定でチェックした時間のうち、出発〜終業にかかるものをすべて「訪問も移動もしない枠」にする ──
+    // 自動の入れ直しはしない（本人は食事の時間を10〜11時・17〜18時に決めている。12〜13時はイレギュラー時だけ）。
+    // 終業時刻（稼働時間＋1時間・20:15）は伸ばさない＝休憩のぶん入る件数が減る。
+    getBreakStarts(d).forEach(function(bs){
+      if(bs + BREAK_MIN > effectiveStartMin && bs < effectiveDayEnd){
+        calBlocksExt.push({
+          start:bs, end:bs+BREAK_MIN, title:'☕ 休憩', isBreak:true,
           location:null, lat:null, lng:null, isCarryOver:false
-        }]).sort(function(a,b){ return a.start - b.start; });
+        });
       }
-    }
+    });
+    calBlocksExt.sort(function(a,b){ return a.start - b.start; });
 
     var result = scheduleDay(todayPool, effectiveStartMin, effectiveStartAdr, spd, date, calBlocksExt, effectiveDayEnd, !isNow && d===0);
-    if(calBlocksExt.some(function(b){ return b.isBreak; })){
-      var _s1 = result.sched;
-      var _span1 = _s1.length ? _s1[_s1.length-1].st + _s1[_s1.length-1].dur - effectiveStartMin : 0;
-      var _brk1 = calBlocksExt.filter(function(b){ return b.isBreak; })[0];
-      var _lastEnd1 = _s1.length ? _s1[_s1.length-1].st + _s1[_s1.length-1].dur : effectiveStartMin;
-      if(_span1 <= 4*60){
-        calBlocksExt = _calNoBreak; effectiveDayEnd = _endNoBreak;
-        result = scheduleDay(todayPool, effectiveStartMin, effectiveStartAdr, spd, date, calBlocksExt, effectiveDayEnd, !isNow && d===0);
-      } else if(_lastEnd1 <= _brk1.start){
-        // 休憩より前に訪問が終わった（例：17〜18時を選んだが14時台で終了）→ 休めないので12〜13時（無理なら出発3時間後）で組み直す
-        var _bs2 = effectiveStartMin <= 12*60 ? 12*60 : effectiveStartMin + 3*60;
-        if(_bs2 !== _brk1.start && _bs2 + BREAK_MIN <= effectiveDayEnd){
-          calBlocksExt = _calNoBreak.concat([Object.assign({}, _brk1, {start:_bs2, end:_bs2+BREAK_MIN})])
-            .sort(function(a,b){ return a.start - b.start; });
-          result = scheduleDay(todayPool, effectiveStartMin, effectiveStartAdr, spd, date, calBlocksExt, effectiveDayEnd, !isNow && d===0);
-        } else {
-          calBlocksExt = _calNoBreak; effectiveDayEnd = _endNoBreak;
-          result = scheduleDay(todayPool, effectiveStartMin, effectiveStartAdr, spd, date, calBlocksExt, effectiveDayEnd, !isNow && d===0);
-        }
-      }
-    }
     var todaySch = result.sched;
     var consumed = result.consumedIds;
     var notAvail = result.notAvailTimed||[];
