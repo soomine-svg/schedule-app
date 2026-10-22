@@ -5690,7 +5690,11 @@ function buildAllCore(){
       if(!used) return;
       var nb = nextVisitBand(used);
       if(!nb) return;
-      if(isMustVisitOnDate(c, dStr)) return;
+      // 今日行かないと納期に間に合わない案件はずらさない。
+      // ただし納期当日でまだ夕方に訪問していない回は、その日の夕方（16〜20時）を狙う
+      // （入りきらなければ本日納期の救済 _placeASAP で時間を問わず当日に入る＝納期優先）
+      // 稼働可能時刻が夕方に届かない日は狙わない（納期当日の時間指定は終業を超えて入るため）
+      if(isMustVisitOnDate(c, dStr) && !(nb === '夕方' && c.d2 && c.d2 <= dStr && effectiveDayEnd >= 16*60 + (c.dur||10))) return;
       if(nb === '夕方'){
         // 納期が組む日の翌日まで＝余裕なし → 16〜20時。それ以外は18〜20時
         var _dl = c.d2 ? Math.round((new Date(c.d2+'T00:00:00') - new Date(dStr+'T00:00:00')) / 86400000) : 99;
