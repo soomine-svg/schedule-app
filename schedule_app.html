@@ -29,6 +29,7 @@ header h1{font-size:1.1rem;font-weight:700}
 .empty{text-align:center;padding:28px;color:#a0aec0}
 .ci{display:flex;align-items:flex-start;gap:8px;padding:10px 12px;background:#f7fafc;border-radius:9px;border-left:4px solid #bee3f8;margin-bottom:7px}
 .ci.ely{border-left-color:#f6ad55;background:#fffbf0}
+.ci.pri{border-left-color:#e53e3e;background:#fff5f5}
 .ci.done-item{border-left-color:#9ae6b4;background:#f0fff4}
 .ci-body{flex:1;min-width:0}
 .ci-name{font-weight:600;font-size:.88rem}
@@ -236,9 +237,10 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
         <div class="fg">
           <label>所要時間（分）</label>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-            <input id="fdur" type="number" value="10" min="5" max="240" step="5" style="width:90px">
+            <input id="fdur" type="number" value="15" min="5" max="240" step="5" style="width:90px">
             <div style="display:flex;gap:4px">
               <button type="button" onclick="document.getElementById('fdur').value=10" style="padding:6px 12px;border:1.5px solid #bee3f8;background:#ebf8ff;color:#2b6cb0;border-radius:7px;font-size:.82rem;font-weight:600;cursor:pointer">10</button>
+              <button type="button" onclick="document.getElementById('fdur').value=15" style="padding:6px 12px;border:1.5px solid #bee3f8;background:#ebf8ff;color:#2b6cb0;border-radius:7px;font-size:.82rem;font-weight:600;cursor:pointer">15</button>
               <button type="button" onclick="document.getElementById('fdur').value=20" style="padding:6px 12px;border:1.5px solid #bee3f8;background:#ebf8ff;color:#2b6cb0;border-radius:7px;font-size:.82rem;font-weight:600;cursor:pointer">20</button>
               <button type="button" onclick="document.getElementById('fdur').value=30" style="padding:6px 12px;border:1.5px solid #bee3f8;background:#ebf8ff;color:#2b6cb0;border-radius:7px;font-size:.82rem;font-weight:600;cursor:pointer">30</button>
             </div>
@@ -248,6 +250,10 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
       <div class="ck">
         <input type="checkbox" id="fely">
         <label for="fely" style="font-size:.88rem;cursor:pointer">⭐ 早朝優先</label>
+      </div>
+      <div class="ck">
+        <input type="checkbox" id="fpri">
+        <label for="fpri" style="font-size:.88rem;cursor:pointer">🔥 優先（納期に余裕があっても先に入れる）</label>
       </div>
       <div class="ck" style="gap:14px">
         <span style="font-size:.88rem;color:#4a5568">🔁 訪問回数</span>
@@ -524,6 +530,7 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
           <input id="eDur" type="number" min="5" max="240" step="5" style="width:90px">
           <div style="display:flex;gap:4px">
             <button type="button" onclick="document.getElementById('eDur').value=10" style="padding:6px 12px;border:1.5px solid #bee3f8;background:#ebf8ff;color:#2b6cb0;border-radius:7px;font-size:.82rem;font-weight:600;cursor:pointer">10</button>
+            <button type="button" onclick="document.getElementById('eDur').value=15" style="padding:6px 12px;border:1.5px solid #bee3f8;background:#ebf8ff;color:#2b6cb0;border-radius:7px;font-size:.82rem;font-weight:600;cursor:pointer">15</button>
             <button type="button" onclick="document.getElementById('eDur').value=20" style="padding:6px 12px;border:1.5px solid #bee3f8;background:#ebf8ff;color:#2b6cb0;border-radius:7px;font-size:.82rem;font-weight:600;cursor:pointer">20</button>
             <button type="button" onclick="document.getElementById('eDur').value=30" style="padding:6px 12px;border:1.5px solid #bee3f8;background:#ebf8ff;color:#2b6cb0;border-radius:7px;font-size:.82rem;font-weight:600;cursor:pointer">30</button>
           </div>
@@ -533,6 +540,10 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
     <div class="ck" style="margin-bottom:14px">
       <input type="checkbox" id="eEly">
       <label for="eEly" style="font-size:.88rem;cursor:pointer">⭐ 早朝優先</label>
+    </div>
+    <div class="ck">
+      <input type="checkbox" id="ePri">
+      <label for="ePri" style="font-size:.88rem;cursor:pointer">🔥 優先（納期に余裕があっても先に入れる）</label>
     </div>
     <div class="ck">
       <input type="checkbox" id="eSeq">
@@ -578,6 +589,9 @@ var TM_RANGE={
 function _blkResume(b){ return b.end + (b.isBreak ? 0 : 15); }
 
 var BREAK_MIN = 60; // 休憩（分）
+
+// 🔥優先・⭐早朝優先：納期に余裕があっても、行ける日に必ず入れる案件
+function isPriority(c){ return !!(c.pri || c.ely); }
 
 // 休憩中は訪問も移動もしない。前の訪問を出てから(cur)次の訪問が終わるまで(st+dur)に休憩がかかる時：
 // 休憩の前に着けるなら、着いてから休憩して休憩明けに訪問。着けないなら休憩明けに出発。
@@ -1397,7 +1411,7 @@ function addCase(){
   var d1=document.getElementById("fd1").value;
   var d2=document.getElementById("fd2").value;
   var tm=document.getElementById("ftm").value;
-  var dur=parseInt(document.getElementById("fdur").value)||10;
+  var dur=parseInt(document.getElementById("fdur").value)||15;
   var ely=document.getElementById("fely").checked;
   var visits=document.getElementById("fvis3").checked?3:(document.getElementById("fvis2").checked?2:1);
   var ord=document.getElementById("fseq").checked; // 初回だけ時間指定・枝番の順に訪問
@@ -1418,6 +1432,7 @@ function addCase(){
   if(!d2){alert("最終納期を入力してください");return;}
   var newCase={no:seq++,id:id,adr:adr,d1:d1,d2:d2,tm:tm,pin:pin,pinDate:pinDate,dur:dur,ely:ely,lat:null,lng:null,geocoded:false};
   if(ord) newCase.ord=true;
+  if(document.getElementById("fpri").checked) newCase.pri=true;
   cases.push(newCase);
   // 訪問回数2回・3回：枝番付きを自動追加（copyCase と同じ付け方。元の案件＋枝番で合計 visits 件）
   var addedRefs=[newCase];
@@ -1464,8 +1479,9 @@ function addCase(){
   document.getElementById("fadr").value="";
   document.getElementById("zip-status").textContent="";
   document.getElementById("fd1").value="";
-  document.getElementById("fdur").value=10;
+  document.getElementById("fdur").value=15;
   document.getElementById("fely").checked=false;
+  document.getElementById("fpri").checked=false;
   document.getElementById("fvis2").checked=false;
   document.getElementById("fvis3").checked=false;
   document.getElementById("fseq").checked=false;
@@ -2119,12 +2135,13 @@ function renderCases(){
     var geoTag=c.geocoded
       ?'<span style="color:#38a169;font-size:.7rem" title="'+c.lat.toFixed(5)+', '+c.lng.toFixed(5)+'">📍 '+c.lat.toFixed(4)+','+c.lng.toFixed(4)+'</span>'
       :'<span style="color:#e53e3e;font-size:.7rem">📍 座標未取得</span>';
-    return '<div class="ci'+(c.ely?" ely":"")+(c.no===_justAddedNo?" just-added":"")+'">'
+    return '<div class="ci'+(c.ely?" ely":"")+(c.pri?" pri":"")+(c.no===_justAddedNo?" just-added":"")+'">'
       +'<div class="ci-body">'
       +'<div class="ci-name">'+deadlineBadgeHtml(c.d2, todayStr, false)+c.id+'　<a href="https://maps.google.com/?q='+encodeURIComponent(c.adr)+'" target="_blank" style="color:inherit;text-decoration:none">'+c.adr+' 🗺️</a></div>'
-      +'<div class="ci-sub">納期:'+c.d2+(c.pin!=null?'　📌'+(c.pinDate?c.pinDate+' ':'')+fmt(c.pin)+'着':(c.tm?'　指定:'+c.tm:''))+'　所要:'+c.dur+'分'+(c.ely?'　⭐':'')+(c.ord?'　🔢順番':'')+'　'+geoTag+'</div>'
+      +'<div class="ci-sub">納期:'+c.d2+(c.pin!=null?'　📌'+(c.pinDate?c.pinDate+' ':'')+fmt(c.pin)+'着':(c.tm?'　指定:'+c.tm:''))+'　所要:'+c.dur+'分'+(c.ely?'　⭐':'')+(c.pri?'　🔥優先':'')+(c.ord?'　🔢順番':'')+'　'+geoTag+'</div>'
       +'</div>'
       +'<div class="ci-btns">'
+      +'<button title="優先" style="'+(c.pri?'background:#e53e3e;color:#fff':'background:#edf2f7;color:#a0aec0')+'" onclick="togglePri('+i+')">🔥</button>'
       +'<button class="bg" onclick="editCase('+i+')">✏️</button>'
       +'<button class="bo" onclick="copyCase('+i+')">📋</button>'
       +(!c.geocoded?'<button style="background:#bee3f8;color:#2b6cb0" title="座標を再取得" onclick="reGeocase('+i+')">📍</button>':'')
@@ -2190,6 +2207,7 @@ function editCase(i){
   document.getElementById("eDd2").value=c.d2||"";
   document.getElementById("eDur").value=c.dur;
   document.getElementById("eEly").checked=c.ely;
+  document.getElementById("ePri").checked=!!c.pri;
   document.getElementById("eSeq").checked=isOrderedGroup(baseId(c.id));
   // ピンポイント判定
   if(c.pin!=null){
@@ -2248,8 +2266,9 @@ function saveEdit(){
     id:newId,adr:newAdr,
     d1:document.getElementById("eDd1").value,d2:document.getElementById("eDd2").value,
     tm:newTm,pin:newPin,pinDate:newPinDate,
-    dur:parseInt(document.getElementById("eDur").value)||10,
-    ely:document.getElementById("eEly").checked
+    dur:parseInt(document.getElementById("eDur").value)||15,
+    ely:document.getElementById("eEly").checked,
+    pri:document.getElementById("ePri").checked
   });
   // 枝番の順に訪問：同じ案件の枝番すべてに反映
   var _ordOn=document.getElementById("eSeq").checked, _ob=baseId(newId);
@@ -2263,6 +2282,13 @@ function saveEdit(){
     });
   }
   renderCases();closeModal("editModal");
+  saveCases();
+}
+
+// ===== 優先の切り替え（一覧の🔥ボタン） =====
+function togglePri(i){
+  cases[i].pri = !cases[i].pri;
+  renderCases();
   saveCases();
 }
 
@@ -2784,7 +2810,7 @@ function parseCSV(text){
     if(!d2)d2=new Date().toISOString().split("T")[0];
     var tm=(c[5]||"").trim();
     var ely=["1","true","はい","○"].indexOf((c[6]||"").trim())>=0;
-    cases.push({no:seq++,id:id,adr:adr,d1:d1||"",d2:d2,tm:tm,dur:parseInt(c[4])||10,ely:ely});
+    cases.push({no:seq++,id:id,adr:adr,d1:d1||"",d2:d2,tm:tm,dur:parseInt(c[4])||15,ely:ely});
     added++;
   });
   renderCases();
@@ -3888,7 +3914,7 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
   if(isDeadlineMode && _dStr){
     var filteredPool = [];
     pool.forEach(function(c){
-      if(isMustVisitOnDate(c, _dStr)){
+      if(isMustVisitOnDate(c, _dStr) || c.pri){
         filteredPool.push(c);
       }
     });
@@ -4132,6 +4158,7 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
         else if(daysLeft <= 3) deadlineBonus = 2.5;
         else if(daysLeft <= 7) deadlineBonus = 1;
       }
+      if(c.pri) deadlineBonus = Math.max(deadlineBonus, 12);
       deadlineBonus *= _kmToMin;
 
       var score;
@@ -4146,7 +4173,9 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
           var mH = _roadMin(c.adr, cPos, HOME_ADR, homePos);
           mHome = mH != null ? mH : 0;
         }
-        score = mFrom + mHome * homeBias - deadlineBonus;
+        // 訪問できる時刻までの空き（早朝案件のあと等）は移動に使えるので、その分の移動は損にならない。遠くを空きに当てる
+        var _gapMin = Math.max(0, FREE_START - cur);
+        score = Math.max(0, mFrom - _gapMin) - Math.min(mFrom, _gapMin) * 0.2 + mHome * homeBias - deadlineBonus;
 
         // 改修3: 寄せ先案件への方向バイアス
         // 現在 fillFree が「次の時間指定案件」のために自由案件を埋めている場合、
@@ -4210,7 +4239,7 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
       }
 
       if(st+next.dur <= deadline){
-        if(cur < FREE_START) cur = FREE_START;
+        if(cur < FREE_START && !sched.length) cur = FREE_START;
         place(next, st);
         skip = {}; // エリアが変わったのでリセット
       } else {
@@ -4255,7 +4284,7 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
   // ピン案件・夜間案件・早朝案件は元々ループ内で個別ハンドリングされるため除外し、
   // 通常時間帯（9:00〜20:00）の本日納期・時間指定案件のみを対象とする。
   var _todayDeadlineTimed = timedAvail.filter(function(tc){
-    if(!isDeadlineToday(tc)) return false;
+    if(!isDeadlineToday(tc) && !isPriority(tc)) return false;
     if(tc.pin != null) return false;
     if(!tc.tm || !TM_RANGE[tc.tm]) return false;
     var ws = TM_RANGE[tc.tm][0], we = TM_RANGE[tc.tm][1];
@@ -4323,6 +4352,10 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
 
     // ── 区分③夜間（wStart >= 20:00）→後で処理 ──
     if(tc.pin == null && tc.tm && TM_RANGE[tc.tm] && TM_RANGE[tc.tm][0] >= 20*60) return;
+
+    // 🔥優先の案件は、早朝案件のあと・ほかの案件より先に入れる
+    if(tc.pin != null || !TM_RANGE[tc.tm] || TM_RANGE[tc.tm][1] > 9*60) _placePriFirst();
+    if(placed[tc.id] || placed[baseId(tc.id)]) return;
 
     // ── ピンポイント時刻案件 ──
     if(tc.pin != null){
@@ -4463,11 +4496,40 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     }
     // 上限判定：通常モードはFREE_DAY_END(20:15)、納期優先モードはDAY_END(22:15)
     var asapLimit = isDeadlineMode ? DAY_END : FREE_DAY_END;
-    if(_st + tc.dur <= asapLimit) place(tc, _st);
+    var _outW = tc.tm && TM_RANGE[tc.tm] && (_st < TM_RANGE[tc.tm][0] || _st + tc.dur > TM_RANGE[tc.tm][1]);
+    if(_st + tc.dur <= asapLimit) place(_outW ? Object.assign({}, tc, {_asap:true}) : tc, _st);
   }
 
-  // 残りの自由案件を最後まで詰める
-  if(cur < FREE_START) cur = FREE_START;
+  // 🔥優先の自由案件を先に入れる（順位は 📌ピン → 🔥優先 → 納期 → その他）
+  // まだ終わっていない📌ピンに間に合わなくなる時は、そのピンの後へ回す
+  function _placePriFirst(){
+    while(true){
+      var _rest = freePool.filter(function(c){ return c.pri && !placed[c.id] && !placed[baseId(c.id)]; });
+      if(!_rest.length) return;
+      _rest.sort(function(a,b){ return trv(prev, prevC, a.adr, a) - trv(prev, prevC, b.adr, b); });
+      var _done = false;
+      for(var _pi = 0; _pi < _rest.length && !_done; _pi++){
+        var _c = _rest[_pi];
+        var _s = Math.max(cur + trv(prev, prevC, _c.adr, _c), FREE_START), _gd = 0;
+        while(_gd++ < calBlocks.length * 2 + 2){
+          var _h = blockHits(_s, _c.dur, _c.id);
+          if(!_h) break;
+          _s = _blkResume(_h);
+        }
+        var _late = timedAvail.some(function(tc){
+          return tc.pin != null && !placed[tc.id] && !placed[baseId(tc.id)] && _s + _c.dur + trv(_c.adr, _c, tc.adr, tc) > tc.pin;
+        });
+        if(_late) continue;
+        _placeASAP(_c);
+        _done = !!(placed[_c.id] || placed[baseId(_c.id)]);
+      }
+      if(!_done) return;
+    }
+  }
+  _placePriFirst();
+
+  // 残りの自由案件を最後まで詰める（訪問のあとの空きは移動に使うので cur は進めない）
+  if(cur < FREE_START && !sched.length) cur = FREE_START;
 
   // ── 【本日納期自由案件】事前時間確保 ──
   // 本日納期の自由案件（freePool内・未配置）の所要時間と移動時間を実距離ベースで計算し、
@@ -4475,7 +4537,7 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
   // 本日納期以外の案件で20:15間際まで埋まってしまうことを防ぐ。
   // 納期優先モードでは関係ない（filteredPoolで既に本日訪問必須のみに絞られている）。
   var _todayDeadlineFree = isDeadlineMode ? [] : freePool.filter(function(c){
-    return !placed[c.id] && !placed[baseId(c.id)] && isDeadlineToday(c);
+    return !placed[c.id] && !placed[baseId(c.id)] && (isDeadlineToday(c) || isPriority(c));
   });
   var _reservedForTodayFree = 0;
   if(_todayDeadlineFree.length > 0){
@@ -4519,8 +4581,8 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
 
   // ── 今日納期・未配置のfreePool案件を強制配置（順序不自然でも当日配置を優先）──
   freePool.filter(function(c){
-    return !placed[c.id] && !placed[baseId(c.id)] && isDeadlineToday(c);
-  }).forEach(function(c){
+    return !placed[c.id] && !placed[baseId(c.id)] && (isDeadlineToday(c) || isPriority(c));
+  }).sort(function(a,b){ return (a.pri?0:isDeadlineToday(a)?1:2) - (b.pri?0:isDeadlineToday(b)?1:2); }).forEach(function(c){ // 🔥優先→納期の順
     _placeASAP(c);
   });
 
@@ -4552,7 +4614,7 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
   // 最遠地スタートモードON時は2-optをスキップ（最遠地→近場の意図を保つため）
   if(sched.length >= 3 && !(window._farFirst && !window._fastMode)){
     var calBlocksFor2opt = calBlocks.filter(function(b){ return !b.isReservation; });
-    sched = twoOptImprove(sched, startAdr, startMin, spd, calBlocksFor2opt, FREE_START, FREE_DAY_END);
+    sched = twoOptImprove(sched, startAdr, startMin, spd, calBlocksFor2opt, FREE_START, FREE_DAY_END, _dStr);
     // 並べ替えで帰りが早まり終業まで時間が空いた時は、もう一度詰めてから並べ替える
     // （休憩で1日が区切られると空きが大きくなりやすい）
     var _lastS = sched[sched.length-1];
@@ -4562,7 +4624,7 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
       fillFree(FREE_DAY_END);
       if(sched.length > _nBefore){
         sched.sort(function(a,b){ return a.st-b.st; });
-        sched = twoOptImprove(sched, startAdr, startMin, spd, calBlocksFor2opt, FREE_START, FREE_DAY_END);
+        sched = twoOptImprove(sched, startAdr, startMin, spd, calBlocksFor2opt, FREE_START, FREE_DAY_END, _dStr);
       }
     }
   }
@@ -4574,9 +4636,8 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
 }
 
 // ===== 2-opt改善：最速完了モード用 =====
-// 自由案件（tm・pin なし）の配置順を局所探索で最適化し、総移動時間を削減する。
-// タイムド案件の時間窓は遵守しながら、自由案件のみ入れ替えを試みる。
-function twoOptImprove(sched, startAdr, startMin, spd, calBlocks, freeStart, freeDayEnd){
+// 訪問順を局所探索で最適化し、ジグザグを減らす。ピン以外は時間指定案件も、窓の中に収まる範囲で動かす。
+function twoOptImprove(sched, startAdr, startMin, spd, calBlocks, freeStart, freeDayEnd, dayStr){
   calBlocks = calBlocks || [];
 
   // 距離ヘルパー（scheduleDay スコープ外なので独立定義）
@@ -4589,8 +4650,21 @@ function twoOptImprove(sched, startAdr, startMin, spd, calBlocks, freeStart, fre
     return Math.min(180, Math.max(3, Math.round(d / spd * 60)));
   }
 
-  // スケジュール全体の開始時刻を再計算する。
-  // タイムド案件の窓違反またはカレンダーブロック衝突があれば null を返す。
+  // 時間の枠がない案件（時間指定なし・「平日」「休日」の全日指定・枠を外して救済した案件）
+  function _isFlexible(c){
+    if(c.pin != null) return false;
+    if(c._asap || !c.tm || !TM_RANGE[c.tm]) return true;
+    return TM_RANGE[c.tm][0] <= 8*60+30 && TM_RANGE[c.tm][1] >= 20*60+15;
+  }
+
+  // 組んだ時点で終業を超えている案件（本日納期の予約枠など）は、超えたままでも認める
+  var _overEnd = {};
+  sched.forEach(function(c){ if(c.st + c.dur > freeDayEnd) _overEnd[c.id] = true; });
+  // 📌ピンは約束の時刻より遅らせない（組んだ時点で遅れているものは、それ以上遅らせない）
+  var _pinLimit = {};
+  sched.forEach(function(c){ if(c.pin != null) _pinLimit[c.id] = Math.max(c.pin, c.st); });
+
+  // スケジュール全体の開始時刻を再計算する。時間指定の枠・終業に収まらない並びは null を返す。
   function recompute(s){
     var cur = startMin;
     var prev = startAdr;
@@ -4599,29 +4673,33 @@ function twoOptImprove(sched, startAdr, startMin, spd, calBlocks, freeStart, fre
     for(var i = 0; i < s.length; i++){
       var c = s[i];
       var t = trvH(prev, prevC, c.adr, c);
-      var st;
+      var flex = _isFlexible(c);
+      var st = c.pin != null ? Math.max(cur + t, c.pin)
+             : flex ? Math.max(cur + t, freeStart)
+             : Math.max(cur + t, TM_RANGE[c.tm][0]);
+      // 休憩・カレンダー予定にかかる時は、その後ろへ送る（📌ピンは動かさない）
+      if(c.pin == null){
+        var moved = true, guard = 0;
+        while(moved && guard++ < calBlocks.length + 2){
+          moved = false;
+          var stB = breakShift(cur, t, st, c.dur, calBlocks);
+          if(stB !== st){ st = stB; moved = true; }
+          for(var b0 = 0; b0 < calBlocks.length; b0++){
+            var bk = calBlocks[b0];
+            if(st < bk.end && st + c.dur > bk.start){ st = _blkResume(bk); moved = true; break; }
+          }
+        }
+      }
       if(c.pin != null){
-        // ピンポイント：時刻を過ぎていればASAP
-        st = Math.max(cur + t, c.pin);
         if(st + c.dur > 22*60+15) return null;
-      } else if(c.tm && TM_RANGE[c.tm]){
-        var wS = TM_RANGE[c.tm][0], wE = TM_RANGE[c.tm][1];
-        st = Math.max(cur + t, wS);
-        var _wLatest = wE - Math.min(15, c.dur);
-        if(st > _wLatest || st + c.dur > wE) return null; // 窓違反
+        if(st > _pinLimit[c.id]) return null;
+      } else if(flex){
+        if(st + c.dur > freeDayEnd && !_overEnd[c.id]) return null;
       } else {
-        st = Math.max(cur + t, freeStart);
-        if(st + c.dur > freeDayEnd) return null; // 終業後
+        var wE = TM_RANGE[c.tm][1];
+        if(st > wE - Math.min(15, c.dur) || st + c.dur > wE) return null; // 窓違反
+        if(TM_RANGE[c.tm][0] < 20*60 && st + c.dur > freeDayEnd && !_overEnd[c.id]) return null; // 夜間窓以外は終業も超えない
       }
-      // 休憩に移動・訪問がかかる並びは、ずらした上で枠・終業に収まるか見直す
-      var stB = c.pin != null ? st : breakShift(cur, t, st, c.dur, calBlocks); // 📌ピンは休憩でずらさない
-      if(stB !== st){
-        st = stB;
-        if(c.pin != null){ if(st + c.dur > 22*60+15) return null; }
-        else if(c.tm && TM_RANGE[c.tm]){ if(st > TM_RANGE[c.tm][1] - Math.min(15, c.dur) || st + c.dur > TM_RANGE[c.tm][1]) return null; }
-        else if(st + c.dur > freeDayEnd) return null;
-      }
-      // カレンダーブロック衝突チェック
       for(var b = 0; b < calBlocks.length; b++){
         if(c.pin != null && calBlocks[b].isBreak) continue; // 📌ピンは休憩と重なってもよい（約束の時刻を優先）
         if(st < calBlocks[b].end && st + c.dur > calBlocks[b].start) return null;
@@ -4637,110 +4715,98 @@ function twoOptImprove(sched, startAdr, startMin, spd, calBlocks, freeStart, fre
   // 自宅住所（評価関数で帰宅時間を含めるため）
   var _homeAdrForEval = (typeof HOME_ADR !== 'undefined') ? HOME_ADR : startAdr;
 
-  // 評価関数：自宅着時刻（最終案件終了時刻 + 帰宅までの移動時間）
-  // 距離が伸びても全体の業務終了が早ければ採用する
-  // → 待機時間の縮小・南→北→南のような経路も総時間が短ければOK
-  function totalElapsed(s){
+  // 評価関数：自宅着時刻 ＋ 移動時間の合計×0.25
+  // 自宅着が同じなら走る距離が短い並びを選ぶ（時間指定の待ちで自宅着が変わらない時のジグザグを防ぐ）。
+  // 待ち時間は自宅着に効くので、空き時間を遠い案件への移動に当てる並びが自然に選ばれる
+  function score(s){
     if(!s || s.length === 0) return startMin;
     var last = s[s.length-1];
-    var endOfLast = last.st + last.dur;
-    var homeT = trvH(last.adr, last, _homeAdrForEval, null);
-    return endOfLast + homeT;
-  }
-
-  // 自由案件インデックス（タイムド・ピン以外）
-  function _freeIndices(s){
-    var idx = [];
-    s.forEach(function(c,i){
-      if(c.pin == null && (!c.tm || !TM_RANGE[c.tm])) idx.push(i);
+    var total = trvH(last.adr, last, _homeAdrForEval, null);
+    var home = last.st + last.dur + total;
+    var late = 0; // 本日納期・優先の案件はなるべく早い時間に（近くにいる時に済ませる）
+    s.forEach(function(c){
+      total += c.trv || 0;
+      if(c.pri || (c.d2 && dayStr && c.d2 <= dayStr)) late += c.st - startMin;
     });
-    return idx;
-  }
-  if(_freeIndices(sched).length < 2) return sched;
-
-  var best = sched;
-  var bestElapsed = totalElapsed(sched);
-  var improved = true;
-  var maxIter = 120;
-
-  while(improved && maxIter-- > 0){
-    improved = false;
-    // 反転・挿入で位置が変わるため毎周re計算（旧実装は初回のみで2周目以降ずれていた）
-    var freeIdx = _freeIndices(best);
-
-    // ── Pass 1: pairwise swap（自由案件の全ペアを入れ替え） ──
-    for(var a = 0; a < freeIdx.length - 1; a++){
-      for(var b = a + 1; b < freeIdx.length; b++){
-        var ia = freeIdx[a], ib = freeIdx[b];
-        var trial = best.slice();
-        var tmp = trial[ia]; trial[ia] = trial[ib]; trial[ib] = tmp;
-        var rec = recompute(trial);
-        if(rec){
-          var tv = totalElapsed(rec);
-          if(tv < bestElapsed - 0.01){
-            best = rec;
-            bestElapsed = tv;
-            improved = true;
-          }
-        }
-      }
-    }
-
-    // ── Pass 1.5: 2-opt区間反転（連続する自由案件の並びを逆順にする） ──
-    // swap・or-optでは解消できない「ルートの交差」をほどく本来の2-opt。
-    // ピン・時間指定案件を含む区間は反転しない（時刻順の意図を壊さないため）
-    function _isFreeItem(c){ return c.pin == null && (!c.tm || !TM_RANGE[c.tm]); }
-    for(var ra = 0; ra < best.length - 2; ra++){
-      if(!_isFreeItem(best[ra])) continue;
-      for(var rb = ra + 2; rb < best.length; rb++){
-        if(!_isFreeItem(best[rb])) break; // 自由案件の連続区間を超えたら終了
-        // best[ra..rb] がすべて自由案件であることは走査順で保証される
-        var trialR = best.slice(0, ra)
-          .concat(best.slice(ra, rb + 1).reverse())
-          .concat(best.slice(rb + 1));
-        var recR = recompute(trialR);
-        if(recR){
-          var tvR = totalElapsed(recR);
-          if(tvR < bestElapsed - 0.01){
-            best = recR;
-            bestElapsed = tvR;
-            improved = true;
-          }
-        }
-      }
-    }
-
-    // ── Pass 2: or-opt（1件を別の位置に挿入） ──
-    // 自由案件のインデックスを再取得（swapで位置が変わった可能性があるため）
-    var freeIdx2 = [];
-    best.forEach(function(c,i){
-      if(c.pin == null && (!c.tm || !TM_RANGE[c.tm])) freeIdx2.push(i);
-    });
-    for(var fi = 0; fi < freeIdx2.length; fi++){
-      var fromIdx = freeIdx2[fi];
-      var item = best[fromIdx];
-      // fromIdx の位置から取り出し、他の全位置へ挿入を試みる
-      for(var ti = 0; ti <= best.length; ti++){
-        if(ti === fromIdx || ti === fromIdx + 1) continue; // 同じ位置は無意味
-        var trial2 = best.slice();
-        trial2.splice(fromIdx, 1);          // 取り出し
-        var insertAt = ti < fromIdx ? ti : ti - 1; // インデックス補正
-        trial2.splice(insertAt, 0, item);   // 挿入
-        var rec2 = recompute(trial2);
-        if(rec2){
-          var tv2 = totalElapsed(rec2);
-          if(tv2 < bestElapsed - 0.01){
-            best = rec2;
-            bestElapsed = tv2;
-            improved = true;
-            break; // 改善したら次のfiへ
-          }
-        }
-      }
-    }
+    return home + total * 0.25 + late * 0.1;
   }
 
-  return best;
+  function _movable(c){ return c.pin == null; }
+  var _nMov = sched.filter(_movable).length;
+  if(_nMov < 2) return sched;
+
+  // iPhone で固まらないよう時間で打ち切る
+  var _limit = Date.now() + 700;
+
+  // 1つの並びから、入れ替え・区間反転・区間の移動で改善がなくなるまで探す
+  function localSearch(seed){
+    var best = seed, bestScore = score(seed);
+    function tryOrder(order){
+      var rec = recompute(order);
+      if(!rec) return false;
+      var v = score(rec);
+      if(v < bestScore - 0.01){ best = rec; bestScore = v; return true; }
+      return false;
+    }
+    var improved = true;
+    while(improved && Date.now() < _limit){
+      improved = false;
+      var n = best.length, i, j;
+      // 入れ替え
+      for(i = 0; i < n - 1; i++){
+        for(j = i + 1; j < n; j++){
+          if(!_movable(best[i]) || !_movable(best[j])) continue;
+          var tr = best.slice(); var tmp = tr[i]; tr[i] = tr[j]; tr[j] = tmp;
+          if(tryOrder(tr)) improved = true;
+        }
+      }
+      // 区間反転（ルートの交差をほどく）。📌ピンをまたがない
+      for(i = 0; i < n - 1; i++){
+        if(!_movable(best[i])) continue;
+        for(j = i + 1; j < n; j++){
+          if(!_movable(best[j])) break;
+          if(tryOrder(best.slice(0, i).concat(best.slice(i, j + 1).reverse()).concat(best.slice(j + 1)))) improved = true;
+        }
+      }
+      // 1〜3件のかたまりを別の位置へ（向きを逆にした形も試す）
+      for(var len = 1; len <= 3; len++){
+        for(i = 0; i + len <= best.length; i++){
+          var seg = best.slice(i, i + len);
+          if(!seg.every(_movable)) continue;
+          var rest = best.slice(0, i).concat(best.slice(i + len));
+          for(j = 0; j <= rest.length; j++){
+            if(j === i) continue;
+            if(tryOrder(rest.slice(0, j).concat(seg).concat(rest.slice(j)))){ improved = true; break; }
+            if(len > 1 && tryOrder(rest.slice(0, j).concat(seg.slice().reverse()).concat(rest.slice(j)))){ improved = true; break; }
+          }
+        }
+      }
+    }
+    return best;
+  }
+
+  // 別の出発点：毎回いちばん早く訪問を始められる案件を選んでいく並び
+  function nearestSeed(){
+    var rem = sched.slice(), seq = [];
+    while(rem.length){
+      var bi = -1, bs = Infinity;
+      for(var i = 0; i < rem.length; i++){
+        var rec = recompute(seq.concat([rem[i]]));
+        if(rec && rec[rec.length-1].st < bs){ bs = rec[rec.length-1].st; bi = i; }
+      }
+      if(bi < 0) return null;
+      seq.push(rem.splice(bi, 1)[0]);
+    }
+    return recompute(seq);
+  }
+
+  var result = localSearch(recompute(sched) || sched);
+  var seed2 = nearestSeed();
+  if(seed2){
+    var r2 = localSearch(seed2);
+    if(score(r2) < score(result) - 0.01) result = r2;
+  }
+  return result;
 }
 
 // ===== 1日分を描画 =====
@@ -5004,7 +5070,7 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
         (last?'':'<div style="width:2px;flex:1;background:#e2e8f0;margin-top:2px;min-height:18px"></div>')+
         '</div>'+
         '<div class="tl-b">'+
-        '<div class="tl-name">'+(c.ely?'⭐ ':'')+
+        '<div class="tl-name">'+(c.ely?'⭐ ':'')+(c.pri?'🔥 ':'')+
         (c.pin!=null?'<span style="background:#9f7aea;color:white;font-size:.72rem;padding:1px 6px;border-radius:10px;margin-right:4px;font-weight:700">📌'+(c.pinDate?c.pinDate.slice(5)+' ':'')+fmt(c.pin)+'着</span>':_tmTheme?'<span style="'+_tmTheme.badge+'font-size:.72rem;padding:1px 6px;border-radius:10px;margin-right:4px;font-weight:700;">'+c.tm+'</span>':'')+
         (i+1)+'. '+c.id+'　<a href="https://maps.google.com/?q='+encodeURIComponent(c.adr)+'" target="_blank" style="color:inherit;text-decoration:none">'+c.adr+' 🗺️</a></div>'+
         '<div class="tl-sub">'+tlDeadlineBadge(c.d2)+'納期:'+c.d2+'　所要:'+c.dur+'分'+
@@ -5058,6 +5124,13 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
 // ===== GPS→全案件のDistanceMatrix取得 =====
 function prefetchGpsDistanceMatrix(callback){
   if(!window._gpsLat || !window._gpsLng){ callback(); return; }
+  // 「現在地(GPS)」の距離は取得した地点でしか正しくない。地点が300m以上変わっていたら捨てて取り直す
+  var _gpsNow = {lat:window._gpsLat, lng:window._gpsLng}, _gpsOrigin = null;
+  try{ _gpsOrigin = JSON.parse(localStorage.getItem('dm_gps_origin')); }catch(e){}
+  if(!_gpsOrigin || km(_gpsOrigin, _gpsNow) > 0.3){
+    invalidateGpsCache();
+    try{ localStorage.setItem('dm_gps_origin', JSON.stringify(_gpsNow)); }catch(e){}
+  }
   var _waitMs = 0;
   var _called = false;
   function _safeCallback(){
@@ -5132,7 +5205,7 @@ function buildAll(){
   if(window._gpsLoading){
     var _gpsWait = (window._gpsWaitCount||0) + 1;
     window._gpsWaitCount = _gpsWait;
-    if(_gpsWait <= 20){ // 500ms × 20 = 最大10秒
+    if(_gpsWait <= 60){ // 500ms × 60 = 最大30秒（onSlocType の3段リトライの合計より長く）
       document.getElementById('sresult').innerHTML='<div class="al al-y">📡 GPS取得中... しばらくお待ちください（'+Math.round(_gpsWait*0.5)+'秒経過）</div>';
       setTimeout(buildAll, 500);
       return;
@@ -5478,8 +5551,8 @@ function buildAllCore(){
     }
     // 今からモードの1日目は現在時刻より前に巻き戻さない
     if(isNow && d===0) adjustedStart = Math.max(adjustedStart, startMin);
-    // 早朝案件のために出発を早めた日も、自由案件は設定した出発時刻から組む
-    var _freeStartDay = hasEarlyWindow ? startMin : null;
+    // 早朝案件がある日は設定の出発時刻を見ない（自由案件は訪問可能になる8:30から）
+    var _freeStartDay = null;
     // カレンダーブロック取得
     var calBlocks = (typeof gcalGetBlocks==='function') ? gcalGetBlocks(dStr) : [];
 
@@ -5526,18 +5599,21 @@ function buildAllCore(){
 
     // 午前予定があればstartMinをその後にシフト（全日対応）
     // ただし早朝指定案件がある場合はシフトしない（早朝出発が必要なため）
-    var hasMorning = calBlocks.some(function(b){ return b.start < 12*60; });
+    // 今からモードの1日目は、現在地・入力した住所を出発地にする（すでに終わった予定の場所で上書きしない）
+    var _keepOrigin = isNow && d===0 && day1Adr !== HOME_ADR;
+    function _isAmBlock(b){ return b.start < 12*60 && !(_keepOrigin && b.end <= startMin); }
+    var hasMorning = calBlocks.some(_isAmBlock);
     var effectiveStartMin = adjustedStart;
     var effectiveStartAdr = startAdr;
     if(hasMorning && !hasEarlyWindow){
       var morningEnd = 0;
       var lastMorningBlock = null;
-      calBlocks.filter(function(b){ return b.start < 12*60; })
+      calBlocks.filter(_isAmBlock)
         .forEach(function(b){
           if(b.end > morningEnd){ morningEnd = b.end; lastMorningBlock = b; }
         });
       // 午前ブロック群にisCarryOver（前日からの滞在継続）が含まれるか判定
-      var hasCarryOverMorning = calBlocks.some(function(b){ return b.start < 12*60 && b.isCarryOver; });
+      var hasCarryOverMorning = !_keepOrigin && calBlocks.some(function(b){ return _isAmBlock(b) && b.isCarryOver; });
       if(hasCarryOverMorning){
         // 前日から遠方滞在中（例: 長崎）→ 午前の予定がすべて終わってから帰宅
         // 帰宅元は isCarryOver ブロックの場所（滞在地）を使う
@@ -5569,7 +5645,7 @@ function buildAllCore(){
     }
     // 直前のカレンダー予定終了地点を出発地として使う（isCarryOverは除外）
     calBlocks.forEach(function(b){
-      if(!b.isCarryOver && b.end <= effectiveStartMin && b.location){
+      if(!_keepOrigin && !b.isCarryOver && b.end <= effectiveStartMin && b.location){
         effectiveStartAdr = b.location;
       }
     });
@@ -5726,7 +5802,7 @@ function buildAllCore(){
     // ===== 実走ベースの後ろ倒し再計算（翌日モードのみ・自宅出発のみ） =====
     // 1回目スケジュール内に大きな wait が発生していたら、その分だけ出発を後ろ倒して再計算
     // 同日訪問不可ルール等で繰越が出る日でも、実態に基づいた正確な後ろ倒しを行うため
-    if(!isNow && effectiveStartAdr === HOME_ADR && todaySch && todaySch.length > 0){
+    if(!isNow && !hasEarlyWindow && effectiveStartAdr === HOME_ADR && todaySch && todaySch.length > 0){
       var PB_BUFFER = 60; // バッファ60分（calcPushBackStart内のPUSH_BACK_BUFFERと同じ）
       // 寄せ先 = 最も早い時間指定/ピン案件で、かつ wait が PB_BUFFER 超のもの
       var maxUsableWait = 0;
@@ -5822,12 +5898,13 @@ function buildAllCore(){
     // 余裕のある案件（今日でなくてよい・ピンなし）を、納期の遠い順に1件ずつ外して組み直す。外した案件は翌日以降へ。
     // 今日行くべき案件が1件も増えないときは元の結果のまま。
     (function(){
+      function _need(c){ return isMustVisitOnDate(c, dStr) || isPriority(c); }
       function mustIds(sch){
         var m = {};
-        sch.forEach(function(sc){ if(isMustVisitOnDate(sc, dStr)) m[sc.id] = true; });
+        sch.forEach(function(sc){ if(_need(sc)) m[sc.id] = true; });
         return m;
       }
-      var must = todayPool.filter(function(c){ return isMustVisitOnDate(c, dStr); });
+      var must = todayPool.filter(function(c){ return _need(c); });
       if(!must.length) return;
       var missing = must.filter(function(c){ return !result.consumedIds[c.id]; });
       if(!missing.length) return;
@@ -5835,12 +5912,12 @@ function buildAllCore(){
       // 候補は「今日行くべき案件・ピン案件・今の結果に入っている案件」だけにする
       // （入っていなかった余裕のある案件が、外した空きに入り直さないように）
       var inRes = {}; result.sched.forEach(function(sc){ inRes[sc.id] = true; });
-      var pool2 = todayPool.filter(function(c){ return inRes[c.id] || c.pin != null || isMustVisitOnDate(c, dStr); });
+      var pool2 = todayPool.filter(function(c){ return inRes[c.id] || c.pin != null || _need(c); });
       var calBase = calBlocksExt.filter(function(b){ return !b.isReservation; });
       for(var it=0; it<15; it++){
         // 今の結果に入っている「余裕のある案件」から、納期の最も遠いものを外す
         var placedFlex = bestRes.sched.filter(function(sc){
-          return sc.pin == null && !isMustVisitOnDate(sc, dStr) && pool2.some(function(c){ return c.id === sc.id; });
+          return sc.pin == null && !_need(sc) && pool2.some(function(c){ return c.id === sc.id; });
         });
         if(!placedFlex.length) break;
         placedFlex.sort(function(a,b){
@@ -5965,6 +6042,9 @@ function buildAllCore(){
       '</div>';
   }
 
+  if(slocType==="current" && day1Adr!=="__GPS__"){
+    summaryHtml = '<div class="al al-y" style="margin-bottom:12px">⚠️ 現在地を取得できなかったため、1日目は自宅から組みました。出発地の「🔄 再取得」のあと作り直してください。</div>' + summaryHtml;
+  }
   document.getElementById("sresult").innerHTML=summaryHtml+html;
 
   // 稼働時間情報・制作可能ウィンドウをカードに注入
