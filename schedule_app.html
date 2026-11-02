@@ -3649,7 +3649,8 @@ function extractCreativeWindows(sched, startMin, calBlocks){
   var breaks = (calBlocks||[]).filter(function(b){ return b.isBreak; });
   sched.forEach(function(c, i){
     if(!c.wait || c.wait <= 0) return;
-    var from = i === 0 ? (startMin != null ? startMin : c.st - c.wait - (c.trv||0)) : sched[i-1].st + sched[i-1].dur;
+    if(i === 0) return; // 最初の訪問の前の待ちは出さない（早朝案件の日の出発は実際の出発時刻ではない）
+    var from = sched[i-1].st + sched[i-1].dur;
     var to = c.st, t = c.trv||0;
     var busy = breaks.filter(function(b){ return b.start < to && b.end > from; }).map(function(b){ return {start:b.start, end:b.end}; });
     var driveFirst = !busy.length || busy.every(function(b){ return from + t <= b.start; });
@@ -5352,7 +5353,7 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
         (c.pin!=null?'<span style="background:#9f7aea;color:white;font-size:.72rem;padding:1px 6px;border-radius:10px;margin-right:4px;font-weight:700">📌'+(c.pinDate?c.pinDate.slice(5)+' ':'')+fmt(c.pin)+'着</span>':_tmTheme?'<span style="'+_tmTheme.badge+'font-size:.72rem;padding:1px 6px;border-radius:10px;margin-right:4px;font-weight:700;">'+c.tm+'</span>':'')+
         (i+1)+'. '+c.id+'　<a href="https://maps.google.com/?q='+encodeURIComponent(c.adr)+'" target="_blank" style="color:inherit;text-decoration:none">'+c.adr+' 🗺️</a></div>'+
         '<div class="tl-sub">'+tlDeadlineBadge(c.d2)+'納期:'+c.d2+'　所要:'+c.dur+'分'+
-        (c.wait>0?'　<span style="color:#d69e2e">⏳待機'+c.wait+'分</span>':'')+
+        (c.wait>0&&i>0?'　<span style="color:#d69e2e">⏳待機'+c.wait+'分</span>':'')+
         (regsForCase(c,dStr).length?(regHit(c,dStr,c.st,c.dur)?'　<span style="color:#c53030;font-weight:700">🚧規制時間にかかっています</span>':'　<span style="color:#c05621">🚧規制範囲内</span>'):'')+
         '</div></div></div>';
       if(!last){
@@ -5363,7 +5364,7 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
         h+='<div class="mv">'+
           '<div style="min-width:68px;text-align:right;color:#a0aec0;font-size:.72rem">▼ 移動</div>'+
           '<div>🚗 約'+sched[i+1].trv+'分　'+nkm+
-          (c.wait>0?'　<span style="color:#d69e2e;font-size:.72rem">⏳待機'+c.wait+'分後</span>':'')+
+          (nextC.wait>0?'　<span style="color:#d69e2e;font-size:.72rem">⏳着いて待機'+nextC.wait+'分</span>':'')+
           '　<span style="color:#a0aec0;font-size:.7rem">'+getArea(c.adr)+'→'+getArea(nextC.adr)+'</span>'+
           '</div></div>';
         if(!_driveLate) h+=_gr;
@@ -6314,7 +6315,8 @@ function buildAllCore(){
         todayPool.forEach(function(c){
           if(consumed[c.id] || inDay[baseId(c.id)] || c.pin != null || skipIds.indexOf(c.id) >= 0) return;
           if(c.tm && TM_RANGE[c.tm] && !isTmAvailable(c.tm, date)) return;
-          var win = c.tm && TM_RANGE[c.tm] ? TM_RANGE[c.tm] : [0, 24*60];
+          // 時間指定のない案件は8:30より前に入れない（早朝案件の後の空きでも訪問時刻は守る）
+          var win = c.tm && TM_RANGE[c.tm] ? TM_RANGE[c.tm] : [Math.max(8*60+30, _freeStartDay||0), 24*60];
           var used = _usedBands[baseId(c.id)];
           for(var i = 1; i < todaySch.length; i++){
             var pv = todaySch[i-1], nx = todaySch[i];
