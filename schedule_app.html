@@ -663,13 +663,16 @@ function regHit(c, dStr, st, dur){
 function _regEsc(t){ return String(t == null ? '' : t).replace(/[&<>"]/g, function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]; }); }
 
 // 休憩中は訪問も移動もしない。前の訪問を出てから(cur)次の訪問が終わるまで(st+dur)に休憩がかかる時：
-// 休憩の前に着けるなら、着いてから休憩して休憩明けに訪問。着けないなら休憩明けに出発。
+// 休憩の前に着けるなら、着いてから休憩して休憩明けに訪問。着けないなら休憩まで走って休憩し、休憩明けに残りを走る。
+// 訪問のあとすぐ休憩に入る時（curが休憩中）は休憩明けに出発。
 // cur: 前の訪問の終了時刻 / t: 移動時間 / st: 予定の訪問開始 / 戻り値: ずらした訪問開始
 function breakShift(cur, t, st, dur, blocks){
   (blocks||[]).forEach(function(b){
     if(!b.isBreak) return;
     if(cur < b.end && st + dur > b.start){
-      st = (cur + t <= b.start) ? Math.max(st, b.end) : Math.max(st, b.end + t);
+      st = (cur + t <= b.start) ? Math.max(st, b.end)
+         : cur < b.start ? Math.max(st, cur + t + (b.end - b.start))
+         : Math.max(st, b.end + t);
     }
   });
   return st;
@@ -680,7 +683,21 @@ function breakShift(cur, t, st, dur, blocks){
 function visitOrderOf(id){ var m = String(id).match(/-(\d+)$/); return m ? parseInt(m[1],10) : 0; }
 // 同じ案件（baseId）のどれかに ord が付いていれば、枝番の順に訪問する
 function isOrderedGroup(b){
-  return cases.some(function(x){ return x.ord && baseId(x.id) === b; }) || done.some(function(x){ return x.ord && baseId(x.id) === b; });
+  return cases.some(function(x){ return x.ord && baseId(x.id) === b; }) || done.some(function(x){ return x.ord && baseId(x.id) === b && isSameCaseDone(x); });
+}
+// 案件番号は完了分と重なることがある。完了履歴は、今の案件と番号も住所も同じ時だけ同じ案件として扱う
+function _adrKey(a){ return String(a||'').replace(/[\s　]/g,''); }
+function _doneTime(d){
+  var m = String(d.doneAt||'').match(/(\d{4})\D(\d{1,2})\D(\d{1,2})\D+(\d{1,2}):(\d{2})/);
+  return m ? new Date(+m[1], +m[2]-1, +m[3], +m[4], +m[5]).getTime() : null;
+}
+function isSameCaseDone(d){
+  var b = baseId(d.id), k = _adrKey(d.adr), t = _doneTime(d);
+  return cases.some(function(x){
+    if(baseId(x.id) !== b || _adrKey(x.adr) !== k) return false;
+    // 今の案件を登録する前に完了した履歴は、前回の別案件（登録日時がない古い案件は番号と住所だけで判定）
+    return !(x.addedAt && t != null && t < x.addedAt - 60000);
+  });
 }
 
 // ===== 複数回訪問（同じ枝番グループ）の時間帯ずらし =====
@@ -1497,9 +1514,16 @@ function addCase(){
   }
   if(!id){alert("IDを入力してください");return;}
   if(!adr||adr.length<4){alert("住所を入力してください（市町村・町名を選択し番地を入力）");return;}
-  if(cases.some(function(c){return c.id===id;})){alert("IDが重複しています");return;}
+  var _dupC=cases.filter(function(c){return c.id===id;})[0];
+  if(_dupC){
+    alert(_adrKey(_dupC.adr)===_adrKey(adr)
+      ? "IDが重複しています（同じ番号・同じ住所の案件がすでにあります）"
+      : "未訪問に同じ番号の別の案件があります。\n\n"+id+"　"+_dupC.adr+"\n\nこの案件は本来の7桁の番号で入力してください。");
+    return;
+  }
   if(!d2){alert("最終納期を入力してください");return;}
   var newCase={no:seq++,id:id,adr:adr,d1:d1,d2:d2,tm:tm,pin:pin,pinDate:pinDate,dur:dur,ely:ely,lat:null,lng:null,geocoded:false};
+  newCase.addedAt=Date.now(); // 登録より前の完了履歴は、同じ番号・住所でも別の案件として扱う
   if(ord) newCase.ord=true;
   if(document.getElementById("fpri").checked) newCase.pri=true;
   cases.push(newCase);
@@ -3626,7 +3650,9 @@ function extractCreativeWindows(sched, startMin, calBlocks){
     var to = c.st, t = c.trv||0;
     var busy = breaks.filter(function(b){ return b.start < to && b.end > from; }).map(function(b){ return {start:b.start, end:b.end}; });
     var driveFirst = !busy.length || busy.every(function(b){ return from + t <= b.start; });
-    busy.push(driveFirst ? {start:from, end:from+t} : {start:to-t, end:to});
+    // 移動が休憩をまたぐ時は、休憩の分も含めて到着から逆算する（走る時間と休憩は空き時間に数えない）
+    var _span = busy.filter(function(b){ return b.start >= from && from + t > b.start; }).reduce(function(n,b){ return n + (b.end - b.start); }, 0);
+    busy.push(driveFirst ? {start:from, end:from+t} : {start:to-t-_span, end:to});
     busy.sort(function(a,b){ return a.start - b.start; });
     var cur = from;
     busy.forEach(function(b){
@@ -4568,6 +4594,9 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     var st = Math.max(wStart, arriveAt);
     var _tcReg = _dStr && regHit(tc, _dStr, st, tc.dur);
     if(_tcReg) st = _tcReg.e; // 通行規制が明けてから（窓に収まらなければ下の判定で外れる）
+    // 休憩・予定にかかる時は、その後ろへ送る（窓に収まらなければ下の判定で外れる）
+    var _tcG = 0, _tcH;
+    while(_tcG++ < calBlocks.length + 2 && (_tcH = blockHits(st, tc.dur, tc.id))) st = _blkResume(_tcH);
     var tcBlocked = blockHits(st, tc.dur, tc.id) != null;
     var tcDeadline = (effectiveDayEnd && effectiveDayEnd < wEnd) ? effectiveDayEnd : wEnd;
     if(!tcBlocked && st <= wLatestArrival && st + tc.dur <= tcDeadline){
@@ -5644,7 +5673,7 @@ function buildAllCore(){
           var m2=raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
           if(m2){
             var doneDate=m2[1]+'-'+('0'+m2[2]).slice(-2)+'-'+('0'+m2[3]).slice(-2);
-            if(doneDate===realTodayStr) doneBasesToday[baseId(c.id)]=true;
+            if(doneDate===realTodayStr && isSameCaseDone(c)) doneBasesToday[baseId(c.id)]=true;
           }
         }
       });
@@ -5953,7 +5982,7 @@ function buildAllCore(){
       var b0 = baseId(cid);
       (_usedBands[b0] = _usedBands[b0] || {})[visitBandOf(min)] = true;
     }
-    done.forEach(function(c){ _addUsed(c.id, doneVisitMin(c)); });
+    done.forEach(function(c){ if(isSameCaseDone(c)) _addUsed(c.id, doneVisitMin(c)); });
     _buildVisits.forEach(function(v){ _addUsed(v.id, v.st); });
     var _bandMap = {};
     todayPool.forEach(function(c){
@@ -6167,7 +6196,7 @@ function buildAllCore(){
       } finally { window._priLater = false; }
     })();
 
-    // 夕方に入りきらなかった2回目は、1回目が午前だけなら午後にも入れて組み直す（時間帯はずれたまま・本人確認済み）
+    // 夕方に入りきらなかった2回目は、1回目が午前なら午後、午後なら午前にも入れて組み直す（時間帯はずれたまま・本人確認済み）
     (function(){
       if(!window._visitBandMap || !_bandMap) return;
       var moved = false, skipIds = dayPlanOf(dStr).skip;
@@ -6175,8 +6204,8 @@ function buildAllCore(){
         var cur0 = _bandMap[c.id];
         if(!cur0 || cur0.indexOf('夕方18〜20時') < 0 || result.consumedIds[c.id] || skipIds.indexOf(c.id) >= 0) return;
         var used = _usedBands[baseId(c.id)];
-        if(!used || !used['午前'] || used['午後']) return;
-        _bandMap[c.id] = (c.tm||'') + '午後' + VISIT_BAND_SUFFIX;
+        if(!used || used['夕方'] || (used['午前'] && used['午後'])) return;
+        _bandMap[c.id] = (c.tm||'') + (used['午前'] ? '午後' : '午前') + VISIT_BAND_SUFFIX; // 1回目と違う時間帯へ
         moved = true;
       });
       if(!moved) return;
@@ -6194,6 +6223,34 @@ function buildAllCore(){
         consumed = result.consumedIds;
         notAvail = result.notAvailTimed||[];
       }
+    })();
+
+    // 最初の待ち時間（時間指定の訪問待ち）は現地で待たず、その分だけ出発を遅らせる（自宅で作業できる）
+    (function(){
+      if(isNow && d===0) return;
+      var blocks = calBlocksExt.filter(function(b){ return !b.isReservation; });
+      var k = -1;
+      for(var i=1; i<todaySch.length; i++){
+        if((todaySch[i].wait||0) >= 30){ k = i; break; }
+      }
+      if(k < 1) return;
+      var gapFrom = todaySch[k-1].st + todaySch[k-1].dur;
+      if(blocks.some(function(b){ return b.start < todaySch[k].st && b.end > gapFrom; })) return; // 休憩などによる待ちは対象外
+      var shift = todaySch[k].wait;
+      for(var j=0; j<k; j++){
+        var c = todaySch[j];
+        if(c.pin != null) return;
+        if(c.tm && TM_RANGE[c.tm]) shift = Math.min(shift, TM_RANGE[c.tm][1] - c.st - c.dur);
+        if(shift < 30) return;
+      }
+      var head = todaySch[0];
+      if(blocks.some(function(b){ return b.start < gapFrom + shift && b.end > head.st - (head.trv||0); })) return;
+      for(var j2=0; j2<k; j2++) todaySch[j2].st += shift;
+      todaySch[k].wait -= shift;
+      effectiveStartMin += shift;
+      var _pbi = window._pushBackInfo && window._pushBackInfo[d];
+      if(_pbi){ _pbi.shouldPushBack = false; _pbi.debugReason = '待ち時間の分（'+shift+'分）出発を遅らせました'; }
+      console.log('[LateStart] Day'+(d+1)+' '+dStr+' 出発を'+shift+'分遅らせる');
     })();
 
     window._visitBandMap = null;
