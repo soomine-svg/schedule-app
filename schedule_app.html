@@ -592,6 +592,7 @@ var BREAK_MIN = 60; // 休憩（分）
 
 // 🔥優先・⭐早朝優先：納期に余裕があっても、行ける日に必ず入れる案件
 function isPriority(c){ return !!(c.pri || c.ely); }
+function _isAllDayTm(tm){ return TM_RANGE[tm][0] <= 8*60+30 && TM_RANGE[tm][1] >= 20*60+15; }
 
 // ── 日ごとの指定（🎯先に行く・✕この日は外す）──
 // {"YYYY-MM-DD":{first:[案件ID…順番どおり], skip:[案件ID…]}}。その日だけに効く
@@ -4769,6 +4770,20 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     }
   }
 
+  // 1日の最後に足した遠い案件は外す（納期に余裕があり、その1件のために移動が60分以上増える時）。翌日以降に回る
+  while(sched.length >= 2 && !window._fastMode && !window._farFirst){
+    var _tail = sched[sched.length-1], _before = sched[sched.length-2];
+    if(_tail.pin != null || _tail.pri || _tail.ely || _tail._first) break;
+    if(_tail.st < 18*60) break; // 日中の案件は残す（夜に足した分だけ外す）
+    if(_tail.tm && TM_RANGE[_tail.tm] && !_isAllDayTm(_tail.tm)) break;
+    if(_dStr && isMustVisitOnDate(_tail, _dStr)) break;
+    var _dLeft = _tail.d2 && _dStr ? Math.round((new Date(_tail.d2+'T00:00:00') - new Date(_dStr+'T00:00:00')) / 86400000) : 99;
+    if(_dLeft < 2) break;
+    var _extra = trv(_before.adr, _before, _tail.adr, _tail) + trv(_tail.adr, _tail, HOME_ADR, null) - trv(_before.adr, _before, HOME_ADR, null);
+    if(_extra < 60) break;
+    sched.pop();
+  }
+
   var consumedIds = {};
   sched.forEach(function(c){ consumedIds[c.id]=true; }); // 完全IDで管理（枝番ごとに独立）
 
@@ -5133,7 +5148,7 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
       homeTrv = cachedHome;
     } else if(lastC2.lat && lastC2.lng){
       var dHome = km({lat:lastC2.lat, lng:lastC2.lng}, HOME_POS);
-      homeTrv = Math.max(3, Math.round(dHome * 1.5 / 80 * 60));
+      homeTrv = Math.max(3, Math.round(dHome / spd * 60)); // 訪問間の移動と同じ計算（距離が取れない時の概算）
     } else {
       var lastPos2 = getPos(lastC2.adr, lastC2);
       if(lastPos2 && lastPos2.lat){
@@ -6150,6 +6165,35 @@ function buildAllCore(){
           notAvail = result.notAvailTimed||[];
         }
       } finally { window._priLater = false; }
+    })();
+
+    // 夕方に入りきらなかった2回目は、1回目が午前だけなら午後にも入れて組み直す（時間帯はずれたまま・本人確認済み）
+    (function(){
+      if(!window._visitBandMap || !_bandMap) return;
+      var moved = false, skipIds = dayPlanOf(dStr).skip;
+      todayPool.forEach(function(c){
+        var cur0 = _bandMap[c.id];
+        if(!cur0 || cur0.indexOf('夕方18〜20時') < 0 || result.consumedIds[c.id] || skipIds.indexOf(c.id) >= 0) return;
+        var used = _usedBands[baseId(c.id)];
+        if(!used || !used['午前'] || used['午後']) return;
+        _bandMap[c.id] = (c.tm||'') + '午後' + VISIT_BAND_SUFFIX;
+        moved = true;
+      });
+      if(!moved) return;
+      var calB = calBlocksExt.filter(function(b){ return !b.isReservation; });
+      // 夕方まで出発を遅らせていた日は、元の出発時刻に戻して午後から回れるようにする
+      var _pb = window._pushBackInfo && window._pushBackInfo[d];
+      var startB = _pb && _pb.shouldPushBack && _pb.originalStartMin != null ? _pb.originalStartMin : effectiveStartMin;
+      var rB = scheduleDay(todayPool, startB, effectiveStartAdr, spd, date, calB, effectiveDayEnd, !isNow && d===0, _freeStartDay);
+      function keep(sch){ return sch.filter(function(sc){ return isMustVisitOnDate(sc, dStr) || sc.pri || sc._first || sc.pin != null; }).length; }
+      console.log('[BandAfternoon] Day'+(d+1)+' '+dStr+' 配置 '+result.sched.length+'→'+rB.sched.length+'件');
+      if(rB.sched.length > result.sched.length && keep(rB.sched) >= keep(result.sched)){
+        if(startB !== effectiveStartMin){ effectiveStartMin = startB; _pb.shouldPushBack = false; }
+        result = rB;
+        todaySch = result.sched;
+        consumed = result.consumedIds;
+        notAvail = result.notAvailTimed||[];
+      }
     })();
 
     window._visitBandMap = null;
