@@ -6236,6 +6236,50 @@ function buildAllCore(){
       }
     })();
 
+    // 訪問と訪問の間に大きな空きが残った時は、残りの案件をそのまま入れる（並びは動かさない）
+    // 1日1件のルールと、2回目以降は1回目と違う時間帯というルールは守る。移動の増えが少ない案件から入れる
+    (function(){
+      function tt(a, ac, b, bc){
+        var m = dmGet(a, b);
+        if(m != null) return Math.min(180, Math.max(3, m));
+        return Math.min(180, Math.max(3, Math.round(km(getPos(a, ac), getPos(b, bc)) / spd * 60)));
+      }
+      var blocks = calBlocksExt.filter(function(b){ return !b.isReservation; });
+      var skipIds = dayPlanOf(dStr).skip;
+      for(var round = 0; round < 12; round++){
+        var inDay = {};
+        todaySch.forEach(function(sc){ inDay[baseId(sc.id)] = true; });
+        var best = null;
+        todayPool.forEach(function(c){
+          if(consumed[c.id] || inDay[baseId(c.id)] || c.pin != null || skipIds.indexOf(c.id) >= 0) return;
+          if(c.tm && TM_RANGE[c.tm] && !isTmAvailable(c.tm, date)) return;
+          var win = c.tm && TM_RANGE[c.tm] ? TM_RANGE[c.tm] : [0, 24*60];
+          var used = _usedBands[baseId(c.id)];
+          for(var i = 1; i < todaySch.length; i++){
+            var pv = todaySch[i-1], nx = todaySch[i];
+            if((nx.wait||0) < 30) continue;
+            var from = pv.st + pv.dur;
+            var t1 = tt(pv.adr, pv, c.adr, c), t2 = tt(c.adr, c, nx.adr, nx);
+            var st = Math.max(from + t1, win[0]);
+            if(used && used[visitBandOf(st)]) continue;
+            var end = st + c.dur;
+            if(end > win[1] || end + t2 > nx.st) continue;
+            if(blocks.some(function(b){ return b.start < end + t2 && b.end > from; })) continue;
+            if(regHit(c, dStr, st, c.dur)) continue;
+            var extra = t1 + t2 - (nx.trv||0);
+            if(!best || extra < best.extra) best = {c:c, i:i, st:st, t1:t1, t2:t2, from:from, extra:extra};
+          }
+        });
+        if(!best) break;
+        var nx0 = todaySch[best.i];
+        nx0.trv = best.t2;
+        nx0.wait = nx0.st - (best.st + best.c.dur + best.t2);
+        todaySch.splice(best.i, 0, Object.assign({}, best.c, {st:best.st, trv:best.t1, wait:best.st - (best.from + best.t1)}));
+        consumed[best.c.id] = true;
+        console.log('[GapFill] Day'+(d+1)+' '+dStr+' '+best.c.id+' '+best.st);
+      }
+    })();
+
     // 最初の待ち時間（時間指定の訪問待ち）は現地で待たず、その分だけ出発を遅らせる（自宅で作業できる）
     (function(){
       if(isNow && d===0) return;
