@@ -622,13 +622,34 @@ function planFirstAdd(dStr, cid){
   });
 }
 function planFirstRemove(dStr, cid){ _dayPlanSet(dStr, function(v){ v.first = v.first.filter(function(x){ return x !== cid; }); }); }
+// ✕はその1件だけを外す（別の案件は足さない）。自動で埋める時は「スケジュール作成」を押す
 function planSkipAdd(dStr, cid){
-  _dayPlanSet(dStr, function(v){
-    v.first = v.first.filter(function(x){ return x !== cid; });
-    if(v.skip.indexOf(cid) < 0) v.skip.push(cid);
-  });
+  var v = _dayPlan[dStr] || (_dayPlan[dStr] = {first:[], skip:[]});
+  v.first = v.first.filter(function(x){ return x !== cid; });
+  if(v.skip.indexOf(cid) < 0) v.skip.push(cid);
+  _saveDayPlan();
+  var ds = _dayDsOf(dStr);
+  if(!ds){ buildAll(); return; }
+  var removed = ds.sched.filter(function(x){ return x.id === cid; })[0];
+  ds.sched = ds.sched.filter(function(x){ return x.id !== cid; });
+  if(removed){
+    var orig = cases.filter(function(x){ return x.id === cid; })[0] || removed;
+    ds.skip = (ds.skip||[]).filter(function(x){ return x.id !== cid; }).concat([orig]);
+    window._remainingAll = (window._remainingAll||[]).filter(function(x){ return x.id !== cid; }).concat([orig]);
+  }
+  recalcDaySched(ds);
+  _redrawDayCards([window._dayScheds.indexOf(ds)]);
 }
-function planSkipRemove(dStr, cid){ _dayPlanSet(dStr, function(v){ v.skip = v.skip.filter(function(x){ return x !== cid; }); }); }
+function planSkipRemove(dStr, cid){
+  var v = _dayPlan[dStr];
+  if(v) v.skip = v.skip.filter(function(x){ return x !== cid; });
+  _saveDayPlan();
+  var ds = _dayDsOf(dStr);
+  if(!ds){ buildAll(); return; }
+  var c = cases.filter(function(x){ return x.id === cid; })[0];
+  if(c && !ds.sched.some(function(x){ return x.id === cid; })) addCaseToDayKeepOrder(window._dayScheds.indexOf(ds), c);
+  else _redrawDayCards([window._dayScheds.indexOf(ds)]);
+}
 
 // ── 通行規制メモ（regulations.json）──
 // 1件＝{title, date:"YYYY-MM-DD", start:"HH:MM", end:"HH:MM", lat, lng, km(半径), area(範囲の説明), note, url}
@@ -2412,6 +2433,97 @@ function doneCase(i){
 }
 
 // ===== スケジュール並び替え =====
+// ===== 手での変更（✕外す・➕追加・▲▼）：並びを保ったまま時刻を計算し直す =====
+function _dayDsOf(dStr){
+  return (window._dayScheds||[]).filter(function(x){ return x && x.dStr === dStr && x.sched; })[0] || null;
+}
+function _redrawDayCards(idxs){
+  idxs.forEach(function(i){
+    var ds = window._dayScheds[i];
+    var card = document.getElementById('day-card-'+i);
+    if(ds && card) card.outerHTML = renderDay(ds.dayNum, ds.dStr, ds.sched, ds.skip, ds.spd, ds.startMin, ds.isNow, ds.calBlocks, i, ds.startAdr);
+  });
+  setTimeout(function(){ injectWorkHoursInfo(); }, 30);
+}
+function _dayTrv(ds, fromAdr, fromC, toAdr, toC){
+  var cached = dmGet(fromAdr === '__GPS__' ? '現在地(GPS)' : fromAdr, toAdr);
+  if(cached != null) return Math.min(180, Math.max(3, cached));
+  var p1 = (fromAdr === '__GPS__' && window._gpsLat)
+    ? {lat:window._gpsLat, lng:window._gpsLng}
+    : (fromC && fromC.lat && fromC.lng ? {lat:fromC.lat, lng:fromC.lng} : getPos(fromAdr, null));
+  var p2 = (toC && toC.lat && toC.lng) ? {lat:toC.lat, lng:toC.lng} : getPos(toAdr, toC);
+  if(!p1 || !p2) return 5;
+  return Math.min(180, Math.max(3, Math.round(km(p1, p2) / (ds.spd||40) * 60)));
+}
+function recalcDaySched(ds, list){
+  list = list || ds.sched;
+  var blocks = (ds.calBlocks||[]).filter(function(b){ return !b.isReservation; });
+  var floorMin = Math.max(ds.startMin, 8*60+30); // 時間指定のない案件は8:30より前に入れない
+  var cur = ds.startMin, prevAdr = ds.startAdr, prevC = null;
+  list.forEach(function(c){
+    var t = _dayTrv(ds, prevAdr, prevC, c.adr, c);
+    var arrived = cur + t;
+    var st;
+    if(c.pin != null){
+      st = Math.max(arrived, c.pin); // 📌ピンは休憩で動かさない
+    } else {
+      st = Math.max(arrived, (c.tm && TM_RANGE[c.tm]) ? TM_RANGE[c.tm][0] : floorMin);
+      if(c._minSt && c.st != null && !(c.tm && TM_RANGE[c.tm] && c._minSt + c.dur > TM_RANGE[c.tm][1])) st = Math.max(st, c._minSt); // 出発を遅らせた分は手での変更でも保つ
+      var moved = true, guard = 0;
+      while(moved && guard++ < blocks.length + 4){
+        moved = false;
+        var stB = breakShift(cur, t, st, c.dur, blocks);
+        if(stB !== st){ st = stB; moved = true; }
+        for(var i = 0; i < blocks.length; i++){
+          if(st < blocks[i].end && st + c.dur > blocks[i].start){ st = _blkResume(blocks[i]); moved = true; break; }
+        }
+        var rg = regHit(c, ds.dStr, st, c.dur);
+        if(rg){ st = rg.e; moved = true; }
+      }
+    }
+    c.trv = t; c.st = st; c.wait = Math.max(0, st - arrived);
+    cur = st + c.dur; prevAdr = c.adr; prevC = c;
+  });
+  return list;
+}
+// ピンに遅れる・時間指定の枠に入らない件数
+function _dayViolations(list){
+  return list.filter(function(c){
+    if(c.pin != null) return c.st > c.pin;
+    return c.tm && TM_RANGE[c.tm] && c.st + c.dur > TM_RANGE[c.tm][1];
+  }).length;
+}
+// 他の案件の並びを変えず、無理がなく移動が一番少ない位置に入れる。他の日の同じ案件は外す（1日1件のまま）
+function addCaseToDayKeepOrder(dayIdx, c){
+  var ds = window._dayScheds[dayIdx];
+  if(!ds) return;
+  var clone = function(x){ return Object.assign({}, x); };
+  var base = _dayViolations(recalcDaySched(ds, ds.sched.map(clone)));
+  var best = null;
+  for(var i = 0; i <= ds.sched.length; i++){
+    var list = ds.sched.map(clone);
+    list.splice(i, 0, Object.assign({}, c, {st:0, trv:0, wait:0}));
+    recalcDaySched(ds, list);
+    var last = list[list.length-1];
+    var cost = list.reduce(function(n, x){ return n + x.trv; }, 0) + _dayTrv(ds, last.adr, last, HOME_ADR, null);
+    var bad = _dayViolations(list);
+    if(!best || bad < best.bad || (bad === best.bad && cost < best.cost)) best = {list:list, bad:bad, cost:cost};
+  }
+  ds.sched = best.list;
+  ds.skip = (ds.skip||[]).filter(function(x){ return x.id !== c.id; });
+  window._remainingAll = (window._remainingAll||[]).filter(function(x){ return x.id !== c.id; });
+  var v = _dayPlan[ds.dStr];
+  if(v && v.skip.indexOf(c.id) >= 0){ v.skip = v.skip.filter(function(x){ return x !== c.id; }); _saveDayPlan(); }
+  var redraw = [dayIdx], b = baseId(c.id);
+  window._dayScheds.forEach(function(other, i){
+    if(i === dayIdx || !other || !other.sched) return;
+    var kept = other.sched.filter(function(sc){ return baseId(sc.id) !== b; });
+    if(kept.length < other.sched.length){ other.sched = kept; recalcDaySched(other); redraw.push(i); }
+  });
+  _redrawDayCards(redraw);
+  if(best.bad > base) alert('時間指定に間に合う位置がありませんでした。無理の少ない位置に入れています。時刻を確かめてください。');
+}
+
 // ===== スケジュール後の手動追加 =====
 function openAddCaseModal(dayIdx){
   var ds = window._dayScheds && window._dayScheds[dayIdx];
@@ -2478,158 +2590,7 @@ function addCaseToDayConfirm(){
   var ds = window._dayScheds[dayIdx];
   if(!ds) return;
 
-  var spd = ds.spd || 40;
-  var calB_ac = ds.calBlocks || [];
-
-  function avoidCalBlock_ac(st, dur){
-    var loopGuard = 0;
-    while(loopGuard++ < calB_ac.length * 2 + 2){
-      var hit = null;
-      for(var bi = 0; bi < calB_ac.length; bi++){
-        if(st < calB_ac[bi].end && (st + dur) > calB_ac[bi].start){ hit = calB_ac[bi]; break; }
-      }
-      if(!hit) break;
-      st = _blkResume(hit);
-    }
-    return st;
-  }
-
-  function trvBetween(fromAdr, fromC, toAdr, toC){
-    // Distance Matrixキャッシュ優先
-    var fa = (fromAdr === '__GPS__' && window._gpsLat) ? '現在地(GPS)' : fromAdr;
-    var cached = dmGet(fa, toAdr);
-    if(cached != null) return Math.min(180, Math.max(3, cached));
-    var p1=(fromAdr==='__GPS__'&&window._gpsLat)?{lat:window._gpsLat,lng:window._gpsLng}:(fromC&&fromC.lat&&fromC.lng?{lat:fromC.lat,lng:fromC.lng}:getPos(fromAdr,fromC));
-    var p2=(toC&&toC.lat&&toC.lng)?{lat:toC.lat,lng:toC.lng}:getPos(toAdr,toC);
-    if(!p1||!p2) return 5;
-    return Math.min(180,Math.max(3,Math.round(km(p1,p2)/spd*60)));
-  }
-
-  // ── 挿入位置を決定 ──
-  // 時間指定・ピン案件は想定開始時刻でソート位置を決める
-  // 自由案件は末尾に追加（後でtwoOptが並び替える）
-  var insertIdx = ds.sched.length; // デフォルト末尾
-  var cHasTime = (c.pin != null) || (c.tm && TM_RANGE[c.tm]);
-  if(cHasTime){
-    var cExpectedStart = (c.pin != null) ? c.pin : TM_RANGE[c.tm][0];
-    // st順で正しい位置を探す
-    for(var si = 0; si < ds.sched.length; si++){
-      var scSt = ds.sched[si].st || 0;
-      var scHasTime = (ds.sched[si].pin != null) || (ds.sched[si].tm && TM_RANGE[ds.sched[si].tm]);
-      // 時間指定案件の前に時間指定案件がある場合、expected_startで比較
-      if(scHasTime){
-        var scExpected = (ds.sched[si].pin != null) ? ds.sched[si].pin : TM_RANGE[ds.sched[si].tm][0];
-        if(cExpectedStart < scExpected){ insertIdx = si; break; }
-      } else {
-        // 自由案件より前に時間指定案件を挿入
-        if(cExpectedStart < (scSt || cExpectedStart + 1)){ insertIdx = si; break; }
-      }
-    }
-  }
-
-  // 仮の開始時刻で挿入（後で全体再計算）
-  ds.sched.splice(insertIdx, 0, Object.assign({}, c, {st:0, trv:0, wait:0}));
-  // skipから除去
-  ds.skip = (ds.skip||[]).filter(function(x){ return x.id !== cid; });
-  // _remainingAllからも除去
-  window._remainingAll = (window._remainingAll||[]).filter(function(x){ return x.id !== cid; });
-
-  // ── 追加後に全件の時刻を先頭から再計算 ──
-  var DAY_START_MIN2 = 8*60+30;
-  var cur2 = ds.startMin;
-  var prevAdr2 = ds.startAdr;
-  var prevC3 = null;
-
-  ds.sched.forEach(function(sc){
-    var p1 = (prevAdr2 === '__GPS__' && window._gpsLat)
-      ? {lat:window._gpsLat, lng:window._gpsLng}
-      : (prevC3 && prevC3.lat && prevC3.lng ? {lat:prevC3.lat, lng:prevC3.lng} : getPos(prevAdr2, null));
-    var p2 = (sc.lat && sc.lng) ? {lat:sc.lat, lng:sc.lng} : getPos(sc.adr, sc);
-    var _cachedAc = dmGet(prevAdr2 === '__GPS__' ? '現在地(GPS)' : prevAdr2, sc.adr);
-    var tCalc = (_cachedAc != null) ? Math.min(180, Math.max(3, _cachedAc))
-      : (p1 && p2) ? Math.min(180, Math.max(3, Math.round(km(p1, p2) / (ds.spd||40) * 60))) : 5;
-    sc.trv = tCalc;
-    var arrived2 = cur2 + tCalc;
-    if(sc.pin != null){
-      sc.wait = Math.max(0, sc.pin - arrived2);
-      sc.st   = Math.max(arrived2, sc.pin);
-    } else if(sc.tm && TM_RANGE[sc.tm]){
-      var stTm2 = Math.max(arrived2, TM_RANGE[sc.tm][0]);
-      stTm2 = avoidCalBlock_ac(stTm2, sc.dur);
-      sc.wait = Math.max(0, stTm2 - arrived2);
-      sc.st   = stTm2;
-    } else {
-      var floorMin2 = Math.max(ds.startMin, DAY_START_MIN2);
-      var stFree2 = Math.max(arrived2, floorMin2);
-      stFree2 = avoidCalBlock_ac(stFree2, sc.dur);
-      sc.wait = 0;
-      sc.st   = stFree2;
-    }
-    cur2 = sc.st + sc.dur;
-    prevAdr2 = sc.adr;
-    prevC3   = sc;
-  });
-
-  // ── ① 他の日のスケジュールから同じbaseIDの案件を削除 ──
-  var addedBaseId = baseId(cid);
-  if(window._dayScheds){
-    window._dayScheds.forEach(function(other, otherIdx){
-      if(otherIdx === dayIdx || !other) return;
-      var before = other.sched.length;
-      other.sched = other.sched.filter(function(sc){
-        return baseId(sc.id) !== addedBaseId;
-      });
-      if(other.sched.length < before){
-        // 他日の時刻も先頭から再計算
-        var cur3 = other.startMin, prevAdr3 = other.startAdr, prevC4 = null;
-        var calB3 = other.calBlocks || [];
-        function avoidCal3(st, dur){
-          var g=0;
-          while(g++<calB3.length*2+2){
-            var hit=null;
-            for(var bi=0;bi<calB3.length;bi++){
-              if(st<calB3[bi].end&&(st+dur)>calB3[bi].start){hit=calB3[bi];break;}
-            }
-            if(!hit) break; st=_blkResume(hit);
-          }
-          return st;
-        }
-        other.sched.forEach(function(sc){
-          var p1=(prevAdr3==='__GPS__'&&window._gpsLat)?{lat:window._gpsLat,lng:window._gpsLng}:(prevC4&&prevC4.lat&&prevC4.lng?{lat:prevC4.lat,lng:prevC4.lng}:getPos(prevAdr3,null));
-          var p2=(sc.lat&&sc.lng)?{lat:sc.lat,lng:sc.lng}:getPos(sc.adr,sc);
-          var _cachedOD=dmGet(prevAdr3==='__GPS__'?'現在地(GPS)':prevAdr3,sc.adr);
-          var t3=(_cachedOD!=null)?Math.min(180,Math.max(3,_cachedOD)):(p1&&p2)?Math.min(180,Math.max(3,Math.round(km(p1,p2)/(other.spd||40)*60))):5;
-          sc.trv=t3;
-          var arr3=cur3+t3;
-          if(sc.pin!=null){sc.wait=Math.max(0,sc.pin-arr3);sc.st=Math.max(arr3,sc.pin);}
-          else if(sc.tm&&TM_RANGE[sc.tm]){var stTm3=Math.max(arr3,TM_RANGE[sc.tm][0]);stTm3=avoidCal3(stTm3,sc.dur);sc.wait=Math.max(0,stTm3-arr3);sc.st=stTm3;}
-          else{var st3=Math.max(arr3,other.startMin);st3=avoidCal3(st3,sc.dur);sc.wait=0;sc.st=st3;}
-          cur3=sc.st+sc.dur; prevAdr3=sc.adr; prevC4=sc;
-        });
-        // 他日のカードを再描画
-        var otherCard = document.getElementById('day-card-'+otherIdx);
-        if(otherCard){
-          otherCard.outerHTML = renderDay(other.dayNum, other.dStr, other.sched, other.skip, other.spd, other.startMin, other.isNow, other.calBlocks, otherIdx, other.startAdr);
-        }
-      }
-    });
-  }
-
-  // ── ② 追加した日のルートを2-optで最適化 ──
-  // 最遠地スタートモードON時は2-optをスキップ
-  if(!(window._farFirst && !window._fastMode)){
-    var FREE_DAY_END_AC = 20*60+15;
-    var optimized = twoOptImprove(ds.sched, ds.startAdr, ds.startMin, ds.spd, ds.calBlocks, ds.startMin, FREE_DAY_END_AC);
-    ds.sched = optimized;
-  }
-
-  // そのカードを再描画
-  var cardId = 'day-card-'+dayIdx;
-  var card = document.getElementById(cardId);
-  if(card){
-    card.outerHTML = renderDay(ds.dayNum, ds.dStr, ds.sched, ds.skip, ds.spd, ds.startMin, ds.isNow, ds.calBlocks, dayIdx, ds.startAdr);
-  }
-  saveSchedResult();
+  addCaseToDayKeepOrder(dayIdx, c);
   closeModal('addCaseModal');
 }
 
@@ -2643,71 +2604,9 @@ function reorderSched(dayIdx, itemIdx, dir){
   // swap
   var tmp = sched[itemIdx]; sched[itemIdx] = sched[target]; sched[target] = tmp;
 
-  // 時刻を先頭から再計算
-  var cur = ds.startMin;
-  var prevAdr = ds.startAdr;
-  var prevC2 = null; // 直前案件オブジェクト（座標取得に使用）
-  var spd = ds.spd;
-  var DAY_START_MIN = 8*60+30; // 08:30 通常訪問開始下限
-  var calB_ro = ds.calBlocks || [];
+  recalcDaySched(ds);
 
-  // カレンダーブロックと衝突する場合、ブロック後に後ろ倒しする
-  function avoidCalBlock_ro(st, dur){
-    var loopGuard = 0;
-    while(loopGuard++ < calB_ro.length * 2 + 2){
-      var hit = null;
-      for(var bi = 0; bi < calB_ro.length; bi++){
-        if(st < calB_ro[bi].end && (st + dur) > calB_ro[bi].start){ hit = calB_ro[bi]; break; }
-      }
-      if(!hit) break;
-      st = _blkResume(hit);
-    }
-    return st;
-  }
-
-  sched.forEach(function(c, i){
-    var t = 0;
-    var p1 = (prevAdr === '__GPS__' && window._gpsLat)
-      ? {lat:window._gpsLat, lng:window._gpsLng}
-      : (prevC2 && prevC2.lat && prevC2.lng ? {lat:prevC2.lat, lng:prevC2.lng} : getPos(prevAdr, null));
-    var p2 = (c.lat && c.lng) ? {lat:c.lat, lng:c.lng} : getPos(c.adr, c);
-    var _cachedRo2 = dmGet(prevAdr === '__GPS__' ? '現在地(GPS)' : prevAdr, c.adr);
-    if(_cachedRo2 != null){ t = Math.min(180, Math.max(3, _cachedRo2)); }
-    else if(p1 && p2){ t = Math.min(180, Math.max(3, Math.round(km(p1, p2) / spd * 60))); }
-    c.trv = t;
-    var arrived = cur + t;
-
-    if(c.pin != null){
-      // ピンポイント：ピン時刻に間に合う場合は待機、過ぎていればASAP
-      c.wait = Math.max(0, c.pin - arrived);
-      c.st   = Math.max(arrived, c.pin);
-    } else if(c.tm && TM_RANGE[c.tm]){
-      // 時間指定：窓開始まで待機 → カレンダーブロック回避
-      var wStart = TM_RANGE[c.tm][0];
-      var stTm = Math.max(arrived, wStart);
-      stTm = avoidCalBlock_ro(stTm, c.dur);
-      c.wait = Math.max(0, stTm - arrived);
-      c.st   = stTm;
-    } else {
-      // 自由案件：08:30以前には訪問しない → カレンダーブロック回避
-      var floorMin = Math.max(ds.startMin, DAY_START_MIN);
-      var stFree = Math.max(arrived, floorMin);
-      stFree = avoidCalBlock_ro(stFree, c.dur);
-      c.wait = 0;
-      c.st   = stFree;
-    }
-    cur = c.st + c.dur;
-    prevAdr = c.adr;
-    prevC2  = c;
-  });
-
-  // その日のカードだけ再描画
-  var cardId = 'day-card-' + dayIdx;
-  var card = document.getElementById(cardId);
-  if(card){
-    card.outerHTML = renderDay(ds.dayNum, ds.dStr, sched, ds.skip, ds.spd, ds.startMin, ds.isNow, ds.calBlocks, dayIdx, ds.startAdr);
-  }
-  saveSchedResult();
+  _redrawDayCards([dayIdx]);
 }
 
 
@@ -5394,6 +5293,10 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
         return '<span style="display:inline-block;margin:2px 4px">'+c.id+'('+getArea(c.adr)+')</span>';
       }).join('')+'</div>';
   }
+  // 手動追加ボタン
+  h+='<div style="margin-top:12px;text-align:right">'+
+    '<button onclick="openAddCaseModal('+(dayIdx!=null?dayIdx:dayNum-1)+')" style="padding:5px 14px;font-size:.82rem;background:#ebf8ff;color:#2b6cb0;border:1.5px solid #bee3f8;border-radius:8px;cursor:pointer;font-weight:600">➕ この日に案件を追加</button>'+
+    '</div>';
   // 🎯先に行く・✕この日は外す
   (function(){
     var v = dayPlanOf(dStr);
@@ -5402,7 +5305,7 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
     var inDay = {}; sched.forEach(function(c){ inDay[c.id] = true; });
     var opts = cases.filter(function(c){ return c.pin == null && v.first.indexOf(c.id) < 0; });
     h+='<div style="margin-top:12px;padding:8px 10px;background:#f7fafc;border-radius:8px;font-size:.8rem">'+
-      '<label>🎯 先に行く案件を追加（押した順に回ります）<br><select onchange="planFirstAdd(\''+dStr+'\',this.value)" style="width:100%;margin-top:4px;padding:5px;font-size:.8rem"><option value="">▼ 案件を選ぶ</option>'+
+      '<label>🎯 順番を指定（全体を組み直します）<br><select onchange="planFirstAdd(\''+dStr+'\',this.value)" style="width:100%;margin-top:4px;padding:5px;font-size:.8rem"><option value="">▼ 案件を選ぶ</option>'+
       opts.map(function(c){ return '<option value="'+_regEsc(c.id)+'">'+_regEsc(c.id+'　'+c.adr.replace('宮崎県',''))+'</option>'; }).join('')+
       '</select></label>';
     if(v.first.length) h+='<div style="margin-top:6px">🎯 '+v.first.map(function(id,i){
@@ -5413,10 +5316,6 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
     if(lost.length) h+='<div style="margin-top:6px;color:#c53030;font-weight:700">⚠️ 納期が今日までの案件が入っていません：'+lost.map(function(c){ return _regEsc(c.id); }).join('、')+'</div>';
     h+='</div>';
   })();
-  // 手動追加ボタン
-  h+='<div style="margin-top:12px;text-align:right">'+
-    '<button onclick="openAddCaseModal('+(dayIdx!=null?dayIdx:dayNum-1)+')" style="padding:5px 14px;font-size:.82rem;background:#ebf8ff;color:#2b6cb0;border:1.5px solid #bee3f8;border-radius:8px;cursor:pointer;font-weight:600">➕ この日に案件を追加</button>'+
-    '</div>';
   return h+'</div>';
 }
 
@@ -6363,7 +6262,7 @@ function buildAllCore(){
       }
       var head = todaySch[0];
       if(blocks.some(function(b){ return b.start < gapFrom + shift && b.end > head.st - (head.trv||0); })) return;
-      for(var j2=0; j2<k; j2++) todaySch[j2].st += shift;
+      for(var j2=0; j2<k; j2++){ todaySch[j2].st += shift; todaySch[j2]._minSt = todaySch[j2].st; }
       todaySch[k].wait -= shift;
       effectiveStartMin += shift;
       var _pbi = window._pushBackInfo && window._pushBackInfo[d];
@@ -6980,56 +6879,8 @@ function reorderSchedDirect(dayIdx, fromIdx, toIdx){
   var item = ds.sched.splice(fromIdx, 1)[0];
   ds.sched.splice(toIdx, 0, item);
 
-  // 時刻を先頭から再計算（reorderSchedと同じロジック）
-  var DAY_START_MIN = 8*60+30;
-  var cur = ds.startMin;
-  var prevAdr = ds.startAdr;
-  var prevC = null;
-  var calB = ds.calBlocks || [];
-
-  function avoidCal(st, dur){
-    var g=0;
-    while(g++<calB.length*2+2){
-      var hit=null;
-      for(var bi=0;bi<calB.length;bi++){
-        if(st<calB[bi].end&&(st+dur)>calB[bi].start){hit=calB[bi];break;}
-      }
-      if(!hit) break;
-      st=_blkResume(hit);
-    }
-    return st;
-  }
-
-  ds.sched.forEach(function(sc){
-    var p1=(prevAdr==='__GPS__'&&window._gpsLat)?{lat:window._gpsLat,lng:window._gpsLng}:(prevC&&prevC.lat&&prevC.lng?{lat:prevC.lat,lng:prevC.lng}:getPos(prevAdr,null));
-    var p2=(sc.lat&&sc.lng)?{lat:sc.lat,lng:sc.lng}:getPos(sc.adr,sc);
-    var spd = ds.spd||40;
-    var cached = dmGet((prevAdr==='__GPS__'&&window._gpsLat)?'現在地(GPS)':prevAdr, sc.adr);
-    var t = cached!=null ? Math.min(180,Math.max(3,cached))
-          : ((p1&&p2) ? Math.min(180,Math.max(3,Math.round(km(p1,p2)/spd*60))) : 5);
-    sc.trv = t;
-    var arrived = cur + t;
-    if(sc.pin!=null){
-      sc.wait=Math.max(0,sc.pin-arrived); sc.st=Math.max(arrived,sc.pin);
-    } else if(sc.tm&&TM_RANGE[sc.tm]){
-      var stTm=Math.max(arrived,TM_RANGE[sc.tm][0]);
-      stTm=avoidCal(stTm,sc.dur);
-      sc.wait=Math.max(0,stTm-arrived); sc.st=stTm;
-    } else {
-      var stF=Math.max(arrived,Math.max(ds.startMin,DAY_START_MIN));
-      stF=avoidCal(stF,sc.dur);
-      sc.wait=0; sc.st=stF;
-    }
-    cur=sc.st+sc.dur; prevAdr=sc.adr; prevC=sc;
-  });
-
-  // カードを再描画
-  var card = document.getElementById('day-card-'+dayIdx);
-  if(card){
-    card.outerHTML = renderDay(ds.dayNum, ds.dStr, ds.sched, ds.skip, ds.spd, ds.startMin, ds.isNow, ds.calBlocks, dayIdx, ds.startAdr);
-    // 再描画後に稼働時間情報を再注入
-    setTimeout(function(){ injectWorkHoursInfo(); }, 30);
-  }
+  recalcDaySched(ds);
+  _redrawDayCards([dayIdx]);
 }
 
 // ===== 初期化 =====
