@@ -593,6 +593,41 @@ var BREAK_MIN = 60; // 休憩（分）
 // 🔥優先・⭐早朝優先：納期に余裕があっても、行ける日に必ず入れる案件
 function isPriority(c){ return !!(c.pri || c.ely); }
 
+// ── 日ごとの指定（🎯先に行く・✕この日は外す）──
+// {"YYYY-MM-DD":{first:[案件ID…順番どおり], skip:[案件ID…]}}。その日だけに効く
+var _dayPlan = {};
+try{ _dayPlan = JSON.parse(localStorage.getItem('schedule_day_plan_v1')) || {}; }catch(e){}
+function dayPlanOf(dStr){ return _dayPlan[dStr] || {first:[], skip:[]}; }
+function _saveDayPlan(){
+  var d = new Date(), today = d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);
+  Object.keys(_dayPlan).forEach(function(k){
+    var v = _dayPlan[k];
+    if(k < today || (!v.first.length && !v.skip.length)) delete _dayPlan[k];
+  });
+  try{ localStorage.setItem('schedule_day_plan_v1', JSON.stringify(_dayPlan)); }catch(e){}
+}
+function _dayPlanSet(dStr, fn){
+  var v = _dayPlan[dStr] || (_dayPlan[dStr] = {first:[], skip:[]});
+  fn(v);
+  _saveDayPlan();
+  buildAll();
+}
+function planFirstAdd(dStr, cid){
+  if(!cid) return;
+  _dayPlanSet(dStr, function(v){
+    v.skip = v.skip.filter(function(x){ return x !== cid; });
+    if(v.first.indexOf(cid) < 0) v.first.push(cid);
+  });
+}
+function planFirstRemove(dStr, cid){ _dayPlanSet(dStr, function(v){ v.first = v.first.filter(function(x){ return x !== cid; }); }); }
+function planSkipAdd(dStr, cid){
+  _dayPlanSet(dStr, function(v){
+    v.first = v.first.filter(function(x){ return x !== cid; });
+    if(v.skip.indexOf(cid) < 0) v.skip.push(cid);
+  });
+}
+function planSkipRemove(dStr, cid){ _dayPlanSet(dStr, function(v){ v.skip = v.skip.filter(function(x){ return x !== cid; }); }); }
+
 // ── 通行規制メモ（regulations.json）──
 // 1件＝{title, date:"YYYY-MM-DD", start:"HH:MM", end:"HH:MM", lat, lng, km(半径), area(範囲の説明), note, url}
 // 範囲内の案件は規制時間を外して配置する。迂回路は組まない。圏外へ出られない時に通れない道の判定もしない。
@@ -3957,12 +3992,20 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     pool = filteredPool;
   }
 
+  // 🎯先に行く・✕この日は外す
+  var _plan = dayPlanOf(_dStr);
+  if(_plan.skip.length) pool = pool.filter(function(c){ return _plan.skip.indexOf(c.id) < 0; });
+  if(_plan.first.length) pool = pool.map(function(c){
+    var _r = _plan.first.indexOf(c.id);
+    return _r >= 0 && c.pin == null ? Object.assign({}, c, {_first:_r + 1}) : c;
+  });
+
   // ── 複数回訪問の時間帯ずらし（buildAllCore が日ごとに window._visitBandMap を用意）──
   // 元の案件は書き換えず、この日の計算用の写しに時間指定を付ける（id は同じ＝消化判定はそのまま）
   var _bandMap = window._visitBandMap;
   if(_bandMap){
     pool = pool.map(function(c){
-      return _bandMap[c.id] ? Object.assign({}, c, {tm:_bandMap[c.id]}) : c;
+      return _bandMap[c.id] && !c._first ? Object.assign({}, c, {tm:_bandMap[c.id]}) : c;
     });
   }
 
@@ -4014,6 +4057,11 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
   // ③早朝優先(ely)
   // ④時刻順 → 納期順
   timedAvail.sort(function(a,b){
+    // 早朝案件と📌ピンは時刻の早い方から（遅い時刻のピンを先に処理すると早朝案件が入らなくなる）
+    var _ae = a.pin==null && a.tm && TM_RANGE[a.tm] && TM_RANGE[a.tm][1] <= 9*60;
+    var _be = b.pin==null && b.tm && TM_RANGE[b.tm] && TM_RANGE[b.tm][1] <= 9*60;
+    if(_ae && b.pin!=null) return TM_RANGE[a.tm][0] - b.pin;
+    if(_be && a.pin!=null) return a.pin - TM_RANGE[b.tm][0];
     if(a.pin!=null && b.pin==null) return -1;
     if(a.pin==null && b.pin!=null) return 1;
     var aIsEarly = !a.pin && a.tm && TM_RANGE[a.tm] && TM_RANGE[a.tm][1] <= 9*60;
@@ -4341,6 +4389,7 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
   });
   // 重複予約を避けるため記録
   var _reservedIds = {};
+  var _timedTried = {}; // メインループで処理済みの時間指定案件
   _todayDeadlineTimed.forEach(function(tc){
     if(_reservedIds[tc.id]) return;
     var ws = TM_RANGE[tc.tm][0], we = TM_RANGE[tc.tm][1];
@@ -4379,6 +4428,7 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
   // ── メインループ：時間指定案件を処理 ──
   timedAvail.forEach(function(tc, _tcIdx){
     if(placed[tc.id] || placed[baseId(tc.id)]) return;
+    _timedTried[tc.id] = true;
 
     // 改修1サポート: 次の時間指定案件の窓開始時刻（後続を圧迫しないための上限）
     var _nextTimedStart = null;
@@ -4400,7 +4450,7 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     if(tc.pin == null && tc.tm && TM_RANGE[tc.tm] && TM_RANGE[tc.tm][0] >= 20*60) return;
 
     // 🔥優先の案件は、早朝案件のあと・ほかの案件より先に入れる
-    if(tc.pin != null || !TM_RANGE[tc.tm] || TM_RANGE[tc.tm][1] > 9*60) _placePriFirst();
+    if(tc.pin != null || !TM_RANGE[tc.tm] || TM_RANGE[tc.tm][1] > 9*60){ _placeFirstPicks(); _placePriFirst(); }
     if(placed[tc.id] || placed[baseId(tc.id)]) return;
 
     // ── ピンポイント時刻案件 ──
@@ -4548,10 +4598,41 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
     if(_st + tc.dur <= asapLimit) place(_outW ? Object.assign({}, tc, {_asap:true}) : tc, _st);
   }
 
+  // 🎯先に行く案件を指定の順に入れる（早朝案件と、間に合わなくなる📌ピンのあと）
+  function _earlyPending(){
+    return timedAvail.some(function(tc){
+      return tc.pin == null && tc.tm && TM_RANGE[tc.tm] && TM_RANGE[tc.tm][1] <= 9*60 && !_timedTried[tc.id] && !placed[tc.id] && !placed[baseId(tc.id)];
+    });
+  }
+  function _placeFirstPicks(){
+    if(_earlyPending()) return;
+    var _picks = pool.filter(function(c){ return c._first && !placed[c.id] && !placed[baseId(c.id)]; })
+      .sort(function(a,b){ return a._first - b._first; });
+    for(var _i = 0; _i < _picks.length; _i++){
+      var _c = _picks[_i];
+      var _win = _c.tm && TM_RANGE[_c.tm] && !(TM_RANGE[_c.tm][0] <= DAY_START && TM_RANGE[_c.tm][1] >= 20*60+15) ? TM_RANGE[_c.tm] : null;
+      if(_win && timedAvail.indexOf(_c) < 0) return; // この日は行けない指定（順番を崩さないよう後ろも止める）
+      var _s = Math.max(cur + trv(prev, prevC, _c.adr, _c), FREE_START, _win ? _win[0] : 0), _gd = 0;
+      while(_gd++ < calBlocks.length * 2 + 2){
+        var _h = blockHits(_s, _c.dur, _c.id);
+        if(!_h) break;
+        _s = _blkResume(_h);
+      }
+      var _pinLate = timedAvail.some(function(tc){
+        return tc.pin != null && !placed[tc.id] && !placed[baseId(tc.id)] && _s + _c.dur + trv(_c.adr, _c, tc.adr, tc) > tc.pin;
+      });
+      if(_pinLate) return; // ピンのあとで入れ直す
+      if(_win && _s + _c.dur > _win[1]) return;
+      if(_s + _c.dur > (isDeadlineMode ? DAY_END : FREE_DAY_END)) return;
+      place(_c, _s);
+    }
+  }
+
   // 🔥優先の自由案件を先に入れる（順位は 📌ピン → 🔥優先 → 納期 → その他）
   // まだ終わっていない📌ピンに間に合わなくなる時は、そのピンの後へ回す
   function _placePriFirst(){
     if(window._priLater) return; // 納期を守るための組み直し中は、納期の案件のあとに回す
+    if(_earlyPending()) return; // 早朝案件が先
     while(true){
       var _rest = freePool.filter(function(c){ return c.pri && !placed[c.id] && !placed[baseId(c.id)]; });
       if(!_rest.length) return;
@@ -4576,6 +4657,7 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
       if(!_done) return;
     }
   }
+  _placeFirstPicks();
   _placePriFirst();
 
   // 残りの自由案件を最後まで詰める（訪問のあとの空きは移動に使うので cur は進めない）
@@ -4718,6 +4800,7 @@ function twoOptImprove(sched, startAdr, startMin, spd, calBlocks, freeStart, fre
   // 組んだ時点で終業を超えている案件（本日納期の予約枠など）は、超えたままでも認める
   var _overEnd = {};
   sched.forEach(function(c){ if(c.st + c.dur > freeDayEnd) _overEnd[c.id] = true; });
+  var _picksIn = sched.filter(function(c){ return c._first; }).length;
   // 📌ピンは約束の時刻より遅らせない（組んだ時点で遅れているものは、それ以上遅らせない）
   var _pinLimit = {};
   sched.forEach(function(c){ if(c.pin != null) _pinLimit[c.id] = Math.max(c.pin, c.st); });
@@ -4728,8 +4811,15 @@ function twoOptImprove(sched, startAdr, startMin, spd, calBlocks, freeStart, fre
     var prev = startAdr;
     var prevC = null;
     var out = [];
+    var _nextPick = 1;
     for(var i = 0; i < s.length; i++){
       var c = s[i];
+      // 🎯先に行く案件は指定の順のまま、早朝案件と📌ピンのほかは前に入れない
+      if(c._first){
+        if(c._first < _nextPick) return null;
+        _nextPick = c._first + 1;
+      } else if(_picksIn > 0 && out.filter(function(x){ return x._first; }).length < _picksIn
+          && c.pin == null && !(c.tm && TM_RANGE[c.tm] && TM_RANGE[c.tm][1] <= 9*60)) return null;
       var t = trvH(prev, prevC, c.adr, c);
       var flex = _isFlexible(c);
       var st = c.pin != null ? Math.max(cur + t, c.pin)
@@ -5130,6 +5220,10 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
         (i>0?'<button onclick="reorderSched('+(dayIdx!==undefined?dayIdx:0)+','+i+',-1)" title="上へ" style="padding:1px 6px;font-size:.8rem;background:#ebf4ff;color:#2b6cb0;border:none;border-radius:5px;cursor:pointer;line-height:1">▲</button>':'')+
         (!last?'<button onclick="reorderSched('+(dayIdx!==undefined?dayIdx:0)+','+i+',1)" title="下へ" style="padding:1px 6px;font-size:.8rem;background:#ebf4ff;color:#2b6cb0;border:none;border-radius:5px;cursor:pointer;line-height:1">▼</button>':'')+
         '</div>'+
+        '<div style="display:flex;gap:2px">'+
+        (c.pin==null&&!c._first?'<button title="先に行く" onclick="planFirstAdd(\''+dStr+'\',\''+escapedId+'\')" style="padding:2px 6px;font-size:.72rem;background:#fefcbf;color:#744210;border:none;border-radius:6px;cursor:pointer">🎯</button>':'')+
+        '<button title="この日は外す" onclick="planSkipAdd(\''+dStr+'\',\''+escapedId+'\')" style="padding:2px 6px;font-size:.72rem;background:#fed7d7;color:#9b2c2c;border:none;border-radius:6px;cursor:pointer;font-weight:700">✕外す</button>'+
+        '</div>'+
         '<button id="tlbtn-'+safeId+'" onclick="schedDone(\''+escapedId+'\')" style="padding:2px 7px;font-size:.72rem;background:#c6f6d5;color:#276749;border:none;border-radius:6px;cursor:pointer;font-weight:700;white-space:nowrap">✅ 完了</button>'+
         '<div class="drag-handle" title="長押しでドラッグ移動" style="cursor:grab;padding:2px 6px;font-size:.9rem;color:#a0aec0;user-select:none;touch-action:none">☰</div>'+
         '</div>'+
@@ -5138,7 +5232,7 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
         (last?'':'<div style="width:2px;flex:1;background:#e2e8f0;margin-top:2px;min-height:18px"></div>')+
         '</div>'+
         '<div class="tl-b">'+
-        '<div class="tl-name">'+(c.ely?'⭐ ':'')+(c.pri?'🔥 ':'')+
+        '<div class="tl-name">'+(c._first?'🎯 ':'')+(c.ely?'⭐ ':'')+(c.pri?'🔥 ':'')+
         (c.pin!=null?'<span style="background:#9f7aea;color:white;font-size:.72rem;padding:1px 6px;border-radius:10px;margin-right:4px;font-weight:700">📌'+(c.pinDate?c.pinDate.slice(5)+' ':'')+fmt(c.pin)+'着</span>':_tmTheme?'<span style="'+_tmTheme.badge+'font-size:.72rem;padding:1px 6px;border-radius:10px;margin-right:4px;font-weight:700;">'+c.tm+'</span>':'')+
         (i+1)+'. '+c.id+'　<a href="https://maps.google.com/?q='+encodeURIComponent(c.adr)+'" target="_blank" style="color:inherit;text-decoration:none">'+c.adr+' 🗺️</a></div>'+
         '<div class="tl-sub">'+tlDeadlineBadge(c.d2)+'納期:'+c.d2+'　所要:'+c.dur+'分'+
@@ -5183,6 +5277,25 @@ function renderDay(dayNum, dStr, sched, skip, spd, startMin, isNow, calBlocks, d
         return '<span style="display:inline-block;margin:2px 4px">'+c.id+'('+getArea(c.adr)+')</span>';
       }).join('')+'</div>';
   }
+  // 🎯先に行く・✕この日は外す
+  (function(){
+    var v = dayPlanOf(dStr);
+    var q = function(t){ return String(t).replace(/\\/g,'\\\\').replace(/'/g,"\\'"); };
+    var chip = function(label, fn, cid, bg){ return '<button onclick="'+fn+'(\''+dStr+'\',\''+q(cid)+'\')" style="margin:2px 4px 2px 0;padding:3px 8px;font-size:.76rem;background:'+bg+';border:none;border-radius:10px;cursor:pointer">'+_regEsc(label)+' ×</button>'; };
+    var inDay = {}; sched.forEach(function(c){ inDay[c.id] = true; });
+    var opts = cases.filter(function(c){ return c.pin == null && v.first.indexOf(c.id) < 0; });
+    h+='<div style="margin-top:12px;padding:8px 10px;background:#f7fafc;border-radius:8px;font-size:.8rem">'+
+      '<label>🎯 先に行く案件を追加（押した順に回ります）<br><select onchange="planFirstAdd(\''+dStr+'\',this.value)" style="width:100%;margin-top:4px;padding:5px;font-size:.8rem"><option value="">▼ 案件を選ぶ</option>'+
+      opts.map(function(c){ return '<option value="'+_regEsc(c.id)+'">'+_regEsc(c.id+'　'+c.adr.replace('宮崎県',''))+'</option>'; }).join('')+
+      '</select></label>';
+    if(v.first.length) h+='<div style="margin-top:6px">🎯 '+v.first.map(function(id,i){
+      return chip((i+1)+'. '+id+(inDay[id]?'':'（入りません）'), 'planFirstRemove', id, inDay[id]?'#fefcbf':'#fed7d7');
+    }).join('')+'</div>';
+    if(v.skip.length) h+='<div style="margin-top:6px">✕ 外した案件（押すと戻します） '+v.skip.map(function(id){ return chip(id, 'planSkipRemove', id, '#edf2f7'); }).join('')+'</div>';
+    var lost = (v.first.length || v.skip.length) ? cases.filter(function(c){ return !inDay[c.id] && c.d2 && c.d2 <= dStr; }) : [];
+    if(lost.length) h+='<div style="margin-top:6px;color:#c53030;font-weight:700">⚠️ 納期が今日までの案件が入っていません：'+lost.map(function(c){ return _regEsc(c.id); }).join('、')+'</div>';
+    h+='</div>';
+  })();
   // 手動追加ボタン
   h+='<div style="margin-top:12px;text-align:right">'+
     '<button onclick="openAddCaseModal('+(dayIdx!=null?dayIdx:dayNum-1)+')" style="padding:5px 14px;font-size:.82rem;background:#ebf8ff;color:#2b6cb0;border:1.5px solid #bee3f8;border-radius:8px;cursor:pointer;font-weight:600">➕ この日に案件を追加</button>'+
@@ -5967,13 +6080,13 @@ function buildAllCore(){
     // 余裕のある案件（今日でなくてよい・ピンなし）を、納期の遠い順に1件ずつ外して組み直す。外した案件は翌日以降へ。
     // 今日行くべき案件が1件も増えないときは元の結果のまま。
     (function(){
-      function _need(c){ return isMustVisitOnDate(c, dStr) || isPriority(c); }
+      function _need(c){ return isMustVisitOnDate(c, dStr) || isPriority(c) || dayPlanOf(dStr).first.indexOf(c.id) >= 0; }
       function mustIds(sch){
         var m = {};
         sch.forEach(function(sc){ if(_need(sc)) m[sc.id] = true; });
         return m;
       }
-      var must = todayPool.filter(function(c){ return _need(c); });
+      var must = todayPool.filter(function(c){ return _need(c) && dayPlanOf(dStr).skip.indexOf(c.id) < 0; });
       if(!must.length) return;
       var missing = must.filter(function(c){ return !result.consumedIds[c.id]; });
       if(!missing.length) return;
@@ -6011,7 +6124,7 @@ function buildAllCore(){
       // まだ納期の案件が入らない日は、🔥優先を納期の案件のあとに回して組み直す（納期を落とさない）
       // 余裕のある案件も必要なだけ外す。🔥優先は入れば同じ日、入らなければ翌日以降の先頭へ
       function dlCount(sch){ return sch.filter(function(sc){ return isMustVisitOnDate(sc, dStr); }).length; }
-      var dlAll = todayPool.filter(function(c){ return isMustVisitOnDate(c, dStr); });
+      var dlAll = todayPool.filter(function(c){ return isMustVisitOnDate(c, dStr) && dayPlanOf(dStr).skip.indexOf(c.id) < 0; });
       var hasPri = todayPool.some(function(c){ return c.pri && !isMustVisitOnDate(c, dStr); });
       if(!hasPri || dlCount(result.sched) >= dlAll.length) return;
       window._priLater = true;
@@ -6024,7 +6137,7 @@ function buildAllCore(){
           console.log('[PriLater] Day'+(d+1)+' '+dStr+' 納期の配置 '+bestN+'→'+nL+'件');
           if(nL > bestN || (nL === bestN && bestL !== result && _triedPri(rL.sched) > _triedPri(bestL.sched))){ bestL = rL; bestN = nL; }
           if(bestN >= dlAll.length) break;
-          var flexL = rL.sched.filter(function(sc){ return sc.pin == null && !isMustVisitOnDate(sc, dStr) && !sc.pri; });
+          var flexL = rL.sched.filter(function(sc){ return sc.pin == null && !isMustVisitOnDate(sc, dStr) && !sc.pri && !sc._first; });
           if(!flexL.length) break;
           flexL.sort(function(a,b){ var ad = a.d2 || '9999-99-99', bd = b.d2 || '9999-99-99'; return ad < bd ? 1 : ad > bd ? -1 : 0; });
           var dropL = flexL[0].id;
