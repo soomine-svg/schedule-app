@@ -435,6 +435,7 @@ function _gmapsReady(){ window._gmapsLoaded = true; }
       </div>
     </div>
     <div id="work-hours-alert" style="display:none;margin-top:10px"></div>
+    <div id="sresult-note"></div>
     <div id="sresult"></div>
   </div>
 
@@ -2628,6 +2629,7 @@ function addCaseToDayConfirm(){
   if(card){
     card.outerHTML = renderDay(ds.dayNum, ds.dStr, ds.sched, ds.skip, ds.spd, ds.startMin, ds.isNow, ds.calBlocks, dayIdx, ds.startAdr);
   }
+  saveSchedResult();
   closeModal('addCaseModal');
 }
 
@@ -2705,6 +2707,7 @@ function reorderSched(dayIdx, itemIdx, dir){
   if(card){
     card.outerHTML = renderDay(ds.dayNum, ds.dStr, sched, ds.skip, ds.spd, ds.startMin, ds.isNow, ds.calBlocks, dayIdx, ds.startAdr);
   }
+  saveSchedResult();
 }
 
 
@@ -3732,6 +3735,64 @@ function injectWorkHoursInfo(){
       }
     }
   });
+  saveSchedResult();
+}
+
+// ===== 組んだスケジュールの保存と復元（iPhoneがページを読み込み直しても消えないように） =====
+var SCHED_RESULT_KEY = 'schedule_result_v1';
+function saveSchedResult(){
+  var el = document.getElementById('sresult');
+  if(!el || !window._dayScheds || !window._schedBuiltAt) return;
+  try{
+    localStorage.setItem(SCHED_RESULT_KEY, JSON.stringify({
+      at: window._schedBuiltAt,
+      html: el.innerHTML,
+      days: window._dayScheds,
+      remaining: window._remainingAll || [],
+      pushBack: window._pushBackInfo || {},
+      gps: window._buildGps || null
+    }));
+  }catch(e){ console.log('[SchedSave] 保存できませんでした', e); }
+}
+function restoreSchedResult(){
+  try{
+    var raw = localStorage.getItem(SCHED_RESULT_KEY);
+    if(!raw) return;
+    var saved = JSON.parse(raw);
+    var _n = new Date();
+    var today = _n.getFullYear()+'-'+('0'+(_n.getMonth()+1)).slice(-2)+'-'+('0'+_n.getDate()).slice(-2);
+    var alive =(saved.days||[]).some(function(ds){ return ds && ds.dStr >= today; });
+    // 全部の日付が過ぎていたら復元しない
+    if(!alive){ localStorage.removeItem(SCHED_RESULT_KEY); return; }
+    window._dayScheds = saved.days;
+    window._remainingAll = saved.remaining;
+    window._pushBackInfo = saved.pushBack;
+    if(saved.gps) window._buildGps = saved.gps;
+    window._schedBuiltAt = saved.at;
+    document.getElementById('sresult').innerHTML = saved.html;
+    saved.days.forEach(function(ds, dayIdx){
+      if(!ds) return;
+      // 過ぎた日は出さない
+      if(ds.dStr < today){
+        var card = document.getElementById('day-card-'+dayIdx);
+        if(card && card.parentNode) card.parentNode.removeChild(card);
+        return;
+      }
+      // 組んだ後に完了した案件は完了済みの表示にする
+      (ds.sched||[]).forEach(function(sc){
+        var isOpen = cases.some(function(c){ return c.id === sc.id; });
+        var isDone = done.some(function(c){ return c.id === sc.id; });
+        if(isOpen || !isDone) return;
+        var safeId = sc.id.replace(/[^a-zA-Z0-9_\-]/g,'_');
+        var row = document.getElementById('tlrow-'+safeId);
+        if(row) _markRowDone(row, safeId);
+      });
+    });
+    var at = new Date(saved.at);
+    document.getElementById('sresult-note').innerHTML = '<div class="al al-y" style="margin-bottom:10px">🕘 '
+      +(at.getMonth()+1)+'/'+at.getDate()+' '+at.getHours()+':'+('0'+at.getMinutes()).slice(-2)
+      +' に作成したスケジュールです。その後に追加した案件を入れるには、作り直してください。</div>';
+  }catch(e){ console.log('[SchedRestore] 復元できませんでした', e); }
 }
 
 // 後ろ倒し発動時の通知バナー
@@ -6414,6 +6475,8 @@ function buildAllCore(){
     summaryHtml = '<div class="al al-y" style="margin-bottom:12px">⚠️ 現在地を取得できなかったため、1日目は自宅から組みました。出発地の「🔄 再取得」のあと作り直してください。</div>' + summaryHtml;
   }
   document.getElementById("sresult").innerHTML=summaryHtml+html;
+  window._schedBuiltAt = Date.now();
+  document.getElementById('sresult-note').innerHTML = '';
 
   // 稼働時間情報・制作可能ウィンドウをカードに注入
   setTimeout(function(){ injectWorkHoursInfo(); }, 50);
@@ -6681,6 +6744,7 @@ window.addEventListener('load', function(){
   });
   renderCases();
   document.getElementById("hcnt").textContent=done.length;
+  restoreSchedResult();
   // 読み込み件数を表示
   var el = document.getElementById('sync-sheet-status');
   if(el){
