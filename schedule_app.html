@@ -4311,6 +4311,7 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
 
 
   // deadline まで自由案件を詰める（FREE_START以降のみ・カレンダーブロックをまたぐ）
+  var _fillGuard = null; // 空き時間を埋める間、間に合わせる次の訪問 {tc, latest:最も遅い到着}
   function fillFree(deadline){
     var effDeadline = Math.min(deadline, FREE_DAY_END);
     if(effDeadline <= FREE_START) return;
@@ -4353,6 +4354,11 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
         continue;
       }
 
+      // この案件に寄ると、次の時間指定・📌ピンに間に合わなくなる時は選ばない
+      if(_fillGuard && st + next.dur + trv(next.adr, next, _fillGuard.tc.adr, _fillGuard.tc) > _fillGuard.latest){
+        skip[baseId(next.id)] = true;
+        continue;
+      }
       // 通行規制の時間にかかる案件は今は選ばない（別の案件を入れたあとで選び直す）
       if(_dStr && regHit(next, _dStr, st, next.dur)){
         skip[baseId(next.id)] = true;
@@ -4379,7 +4385,8 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
           });
           var tFit=trv(prev,prevC,bestFit.adr,bestFit);
           var stFit=Math.max(cur+tFit,FREE_START);
-          if(stFit+bestFit.dur<=deadline && !(_dStr && regHit(bestFit,_dStr,stFit,bestFit.dur))){
+          if(stFit+bestFit.dur<=deadline && !(_dStr && regHit(bestFit,_dStr,stFit,bestFit.dur))
+              && !(_fillGuard && stFit + bestFit.dur + trv(bestFit.adr, bestFit, _fillGuard.tc.adr, _fillGuard.tc) > _fillGuard.latest)){
             place(bestFit,stFit);
             skip={};
             continue;
@@ -4497,7 +4504,9 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
           // 改修3: 寄せ先案件の座標をpickFreeに伝える
           var _pinPos = getPos(tc.adr, tc);
           if(_pinPos && _pinPos.lat) _pickFreeTarget = _pinPos;
+          _fillGuard = {tc:tc, latest:tc.pin};
           fillFree(latestDepart);
+          _fillGuard = null;
           _pickFreeTarget = null;
         }
         trvToPin = trv(prev, prevC, tc.adr, tc);
@@ -4581,7 +4590,9 @@ function scheduleDay(pool, startMin, startAdr, spd, targetDate, calBlocks, effec
         // 改修3: 寄せ先案件の座標をpickFreeに伝える
         var _tcPos = getPos(tc.adr, tc);
         if(_tcPos && _tcPos.lat) _pickFreeTarget = _tcPos;
+        _fillGuard = {tc:tc, latest:_latestArr};
         fillFree(latestDepart);
+        _fillGuard = null;
         _pickFreeTarget = null; // 解除
         trvToTc = trv(prev, prevC, tc.adr, tc);
         arriveAt = cur + trvToTc;
@@ -6487,7 +6498,8 @@ function gcalFetchEvents(callback){
 
       gcalEvents = (data.items||[]).filter(function(e){
         // 終日予定・時刻なし予定は除外（時刻付き予定のみ）
-        return e.start && e.start.dateTime;
+        // カレンダーで「予定なし」（transparent）にした予定は、訪問の時間計算に入れない
+        return e.start && e.start.dateTime && e.transparency !== 'transparent';
       }).reduce(function(arr, e){
         var startDt = new Date(e.start.dateTime);
         var endDt   = new Date(e.end.dateTime);
