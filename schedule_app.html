@@ -5747,7 +5747,8 @@ function buildAllCore(){
       // 枝番の順に訪問：前の回が未完了で、この作成の前の日にも入っていない枝番は翌日以降へ
       if(isOrderedGroup(b)){
         var _visitedIds = {};
-        done.forEach(function(x){ _visitedIds[x.id] = true; });
+        // 完了履歴は今の案件と同じもの（番号＋住所＋登録後の完了）だけ。番号が重なる昔の完了で初回を済んだ扱いにしない
+        done.forEach(function(x){ if(isSameCaseDone(x)) _visitedIds[x.id] = true; });
         _buildVisits.forEach(function(v){ _visitedIds[v.id] = true; });
         var _blocked = arr.filter(function(c){
           var k = visitOrderOf(c.id);
