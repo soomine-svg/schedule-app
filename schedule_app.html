@@ -90,13 +90,13 @@ header h1{font-size:1.1rem;font-weight:700}
   opacity: 0.25 !important;
   transform: scale(0.97);
 }
-/* ===== 案件入力タブ：一番下へ／一番上へ フローティングボタン ===== */
+/* ===== 全タブ共通：一番下へ／一番上へ フローティングボタン ===== */
 .jump-fab{position:fixed;right:16px;bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:900;
   display:none;align-items:center;gap:6px;padding:12px 18px;min-height:48px;border:none;border-radius:24px;
   background:#2b6cb0;color:white;font-family:inherit;font-size:.9rem;font-weight:700;cursor:pointer;
   box-shadow:0 4px 14px rgba(43,108,176,.35);-webkit-tap-highlight-color:transparent;touch-action:manipulation}
 .jump-fab.on{display:flex}
-#p-input{padding-bottom:64px} /* 最下部の案件がボタンに隠れないよう余白 */
+.panel{padding-bottom:64px} /* 最下部の行がボタンに隠れないよう余白（全タブ） */
 .jump-fab:active{transform:scale(.96);background:#2c5282}
 .ci.just-added{box-shadow:0 0 0 2px #4299e1;background:#ebf8ff;transition:box-shadow .3s,background .3s}
 </style>
@@ -1245,18 +1245,18 @@ function tab(name){
   updateJumpFab();
 }
 
-// ===== 案件入力タブ：一番下へ／一番上へ フローティングボタン =====
+// ===== 全タブ共通：一番下へ／一番上へ フローティングボタン =====
+// 案件入力・スケジュール・完了履歴・訪問記録のどのタブでも、長いページなら出す。
 // 案件一覧は「登録順」既定で新しい順＝新規は最上部。古い案件（最下部）へ1タップで飛ぶ。
 // ページの下半分にいる時は「↑ 一番上へ」（入力フォームへ戻る）に切り替わる。
 var _jumpFabDir = 'down';
 var _justAddedNo = null; // 直前に追加した案件の no（一覧でハイライト）
 function updateJumpFab(){
   var b=document.getElementById('jump-fab'); if(!b) return;
-  var p=document.getElementById('p-input');
   var docH=document.documentElement.scrollHeight, winH=window.innerHeight;
   var y=window.pageYOffset||document.documentElement.scrollTop||0;
-  // 入力タブ以外・スクロール不要な短いページでは出さない
-  var show = p && p.classList.contains('on') && (docH - winH > 200);
+  // スクロール不要な短いページでは出さない（タブは問わない）
+  var show = (docH - winH > 200);
   b.classList.toggle('on', !!show);
   if(!show) return;
   var dir = (y + winH/2 > docH/2) ? 'up' : 'down';
@@ -1272,6 +1272,8 @@ function jumpFabTap(){
 }
 window.addEventListener('scroll', updateJumpFab, {passive:true});
 window.addEventListener('resize', updateJumpFab);
+// スケジュール作成・履歴の描画などでページの長さが変わったら出し直す
+try { new ResizeObserver(function(){ updateJumpFab(); }).observe(document.body); } catch(e){}
 
 // ===== 納期バッジ共通ヘルパー（Y-3: renderCases/renderDay 両方から使用）=====
 // referenceDateStr: 基準日のYYYY-MM-DD文字列。省略時は今日
@@ -6977,7 +6979,7 @@ document.addEventListener('DOMContentLoaded', function(){
 });
 
 </script>
-<!-- 案件入力タブ専用：一番下へ／一番上へ -->
+<!-- 全タブ共通：一番下へ／一番上へ -->
 <button id="jump-fab" class="jump-fab" type="button" onclick="jumpFabTap()" aria-label="一番下へ">↓ 一番下へ</button>
 </body>
 </html>
