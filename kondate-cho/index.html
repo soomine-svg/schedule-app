@@ -351,6 +351,30 @@ h1, h2, h3, h4 { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-we
 .tag.tag-matcha { background: rgba(90, 107, 66, 0.1); color: var(--matcha); }
 .tag.tag-ai { background: rgba(45, 74, 107, 0.1); color: var(--ai); }
 
+/* お気に入りボタン */
+.fav-btn {
+  flex: 0 0 auto;
+  background: none;
+  border: none;
+  font-size: 22px;
+  line-height: 1;
+  padding: 2px 4px;
+  color: var(--sumi-soft);
+  cursor: pointer;
+}
+.fav-btn.on { color: #e5677a; }
+.fav-detail-btn {
+  background: var(--washi-dark);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 6px 14px;
+  font-size: 13px;
+  color: var(--sumi-light);
+  cursor: pointer;
+  margin-bottom: 16px;
+}
+.fav-detail-btn.on { background: rgba(229, 103, 122, 0.12); color: #d14d63; border-color: rgba(229, 103, 122, 0.4); }
+
 /* レシピカードのヘッダー行（タイトル + マッチ率） */
 .recipe-card-head {
   display: flex;
@@ -1171,7 +1195,7 @@ h1, h2, h3, h4 { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-we
     </div>
 
     <div class="search-box">
-      <input type="text" class="form-input" id="recipe-search" placeholder="レシピを検索..." oninput="renderRecipes()">
+      <input type="text" class="form-input" id="recipe-search" placeholder="食材やレシピ名（例：鶏 たまねぎ）" oninput="renderRecipes()">
     </div>
 
     <div class="ingredient-category-tabs" id="recipe-tag-filter"></div>
@@ -2196,41 +2220,55 @@ async function importRecipeFromImages() {
 function renderRecipes() {
   const listEl = document.getElementById('recipe-list');
   const tagFilterEl = document.getElementById('recipe-tag-filter');
-  const query = document.getElementById('recipe-search').value.trim().toLowerCase();
+  const query = document.getElementById('recipe-search').value;
 
-  // タグの使用回数を集計
-  const tagCount = {};
-  state.recipes.forEach(r => r.tags.forEach(t => {
-    tagCount[t] = (tagCount[t] || 0) + 1;
-  }));
-  const sortedTags = Object.keys(tagCount).sort((a, b) => tagCount[b] - tagCount[a]);
-  const TOP_N = 5;
-  const topTags = sortedTags.slice(0, TOP_N);
-  const restTags = sortedTags.slice(TOP_N);
-
-  // 「もっと見る」が展開されているか、または現在選択中のタグがrest内にあれば全表示
-  const needsExpand = tagsExpanded || (restTags.includes(currentRecipeTag));
-  const visibleTags = needsExpand ? sortedTags : topTags;
+  // カテゴリのタブ（決まったカテゴリだけ。登録されているものだけ出す）＋お気に入り
+  const usedTags = new Set();
+  state.recipes.forEach(r => (r.tags || []).forEach(t => usedTags.add(t)));
+  const visibleCats = RECIPE_CATEGORY_TABS.filter(t => usedTags.has(t));
+  if (currentRecipeTag !== 'all' && currentRecipeTag !== '__fav' && !visibleCats.includes(currentRecipeTag)) currentRecipeTag = 'all';
+  const favCount = state.recipes.filter(r => r.favorite).length;
 
   let tagsHtml = `<button class="cat-tab ${currentRecipeTag === 'all' ? 'active' : ''}" onclick="filterRecipesByTag('all')">すべて</button>`;
-  tagsHtml += visibleTags.map(t =>
+  tagsHtml += `<button class="cat-tab ${currentRecipeTag === '__fav' ? 'active' : ''}" onclick="filterRecipesByTag('__fav')">♥ お気に入り${favCount ? `（${favCount}）` : ''}</button>`;
+  tagsHtml += visibleCats.map(t =>
     `<button class="cat-tab ${currentRecipeTag === t ? 'active' : ''}" onclick="filterRecipesByTag('${escapeHtml(t)}')">${escapeHtml(t)}</button>`
   ).join('');
-  if (restTags.length > 0) {
-    tagsHtml += needsExpand
-      ? `<button class="cat-tab" onclick="toggleTagsExpand()">少なく表示</button>`
-      : `<button class="cat-tab" onclick="toggleTagsExpand()">他${restTags.length}件 ＋</button>`;
-  }
   tagFilterEl.innerHTML = tagsHtml;
 
   let recipes = state.recipes;
-  if (currentRecipeTag !== 'all') recipes = recipes.filter(r => r.tags.includes(currentRecipeTag));
-  if (query) recipes = recipes.filter(r => r.name.toLowerCase().includes(query) || r.ingredients.some(i => i.name.toLowerCase().includes(query)));
+  if (currentRecipeTag === '__fav') recipes = recipes.filter(r => r.favorite);
+  else if (currentRecipeTag !== 'all') recipes = recipes.filter(r => (r.tags || []).includes(currentRecipeTag));
+
+  // 食材検索：スペース・読点で区切った言葉が「全部」入っているレシピだけ残す
+  // レシピ名と材料名の両方を見る。ひらがな／カタカナ／漢字・全角半角の違いは吸収する
+  const terms = splitSearchTerms(query);
+  let nameHitIds = null;
+  if (terms.length > 0) {
+    const variantsList = terms.map(expandSearchTerm);
+    nameHitIds = new Set();
+    recipes = recipes.filter(r => {
+      const nameN = normalizeForSearch(r.name);
+      const ingN = (r.ingredients || []).map(i => normalizeForSearch(i.name)).join('|');
+      let allInName = true;
+      const ok = variantsList.every(vs => {
+        const inName = vs.some(v => nameN.includes(v));
+        if (!inName) allInName = false;
+        return inName || vs.some(v => ingN.includes(v));
+      });
+      if (ok && allInName) nameHitIds.add(r.id);
+      return ok;
+    });
+  }
 
   // 在庫マッチ度でソート（在庫があれば）
   if (state.stock.length > 0) {
     recipes = recipes.map(r => ({ ...r, _match: calcMatchScore(r) }));
     recipes.sort((a, b) => b._match - a._match);
+  }
+  // 検索中は「レシピ名に入っているもの」を先に
+  if (nameHitIds) {
+    recipes = [...recipes].sort((a, b) => (nameHitIds.has(b.id) ? 1 : 0) - (nameHitIds.has(a.id) ? 1 : 0));
   }
 
   if (recipes.length === 0) {
@@ -2258,6 +2296,7 @@ function renderRecipes() {
         <div class="recipe-card-head">
           <div class="recipe-card-title">${escapeHtml(r.name)}</div>
           ${matchBadge}
+          <button class="fav-btn ${r.favorite ? 'on' : ''}" onclick="event.stopPropagation(); toggleFavorite('${r.id}')" aria-label="お気に入り">${r.favorite ? '♥' : '♡'}</button>
         </div>
         <div class="recipe-card-meta">
           <span>${r.servings}人分</span>
@@ -2272,6 +2311,129 @@ function renderRecipes() {
       </div>
     `;
   }).join('');
+}
+
+// -------- お気に入り --------
+function toggleFavorite(id) {
+  const r = state.recipes.find(x => x.id === id);
+  if (!r) return;
+  r.favorite = !r.favorite;
+  saveState();
+  renderRecipes();
+  const detailFav = document.getElementById('detail-fav-btn');
+  if (detailFav) {
+    detailFav.textContent = r.favorite ? '♥ お気に入り' : '♡ お気に入りに入れる';
+    detailFav.classList.toggle('on', !!r.favorite);
+  }
+  showToast(r.favorite ? 'お気に入りに入れました' : 'お気に入りから外しました', 1500);
+}
+
+// -------- 検索（表記ゆれを吸収） --------
+// レシピタブに出すカテゴリ（これ以外のタグはタブにしない）
+const RECIPE_CATEGORY_TABS = ['主菜', '副菜', 'お弁当', '作り置き', '献立提案'];
+
+// 全角半角・大小・カタカナ→ひらがな・空白や記号を揃える
+function normalizeForSearch(s) {
+  return String(s || '')
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[ァ-ヶ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60))
+    .replace(/[\s・･\-ー_()（）「」『』【】\[\]]/g, '');
+}
+
+function splitSearchTerms(q) {
+  return String(q || '').normalize('NFKC').split(/[\s,、，・/／]+/).map(normalizeForSearch).filter(t => t);
+}
+
+// 同じ食材の別の書き方（ひらがなに直した形で比べる）
+const SEARCH_SYNONYMS = [
+  ['鶏', 'とり', '鳥', 'ちきん'],
+  ['豚', 'ぶた', 'ぽーく'],
+  ['牛', 'ぎゅう', 'びーふ'],
+  ['ひき肉', '挽き肉', '挽肉', 'ひきにく', 'みんち', '合挽', '合いびき', 'あいびき'],
+  ['玉ねぎ', 'たまねぎ', '玉葱', 'たま葱', 'おにおん'],
+  ['ねぎ', '葱', '長ねぎ', '長葱', '青ねぎ'],
+  ['人参', 'にんじん', 'きゃろっと'],
+  ['じゃがいも', 'じゃが芋', 'ジャガイモ', '馬鈴薯', 'ぽてと'],
+  ['さつまいも', 'さつま芋', '薩摩芋'],
+  ['里芋', 'さといも'],
+  ['卵', '玉子', 'たまご', 'えっぐ'],
+  ['大根', 'だいこん'],
+  ['白菜', 'はくさい'],
+  ['茄子', 'なす', 'なすび'],
+  ['胡瓜', 'きゅうり'],
+  ['南瓜', 'かぼちゃ'],
+  ['ほうれん草', 'ほうれんそう', '法蓮草'],
+  ['小松菜', 'こまつな'],
+  ['椎茸', 'しいたけ'],
+  ['しめじ', '占地'],
+  ['舞茸', 'まいたけ'],
+  ['えのき', '榎'],
+  ['きのこ', '茸'],
+  ['蓮根', 'れんこん'],
+  ['牛蒡', 'ごぼう'],
+  ['生姜', 'しょうが'],
+  ['大蒜', 'にんにく', 'がーりっく'],
+  ['豆腐', 'とうふ'],
+  ['油揚げ', 'あぶらあげ', '油あげ'],
+  ['厚揚げ', 'あつあげ'],
+  ['鮭', 'さけ', 'しゃけ', 'さーもん'],
+  ['鯖', 'さば'],
+  ['鰤', 'ぶり'],
+  ['鱈', 'たら'],
+  ['鯵', 'あじ'],
+  ['海老', 'えび', '蝦'],
+  ['烏賊', 'いか'],
+  ['蛸', 'たこ'],
+  ['あさり', '浅蜊'],
+  ['ツナ', 'つな', 'しーちきん'],
+  ['竹輪', 'ちくわ'],
+  ['蒟蒻', 'こんにゃく'],
+  ['春雨', 'はるさめ'],
+  ['胡麻', 'ごま'],
+  ['もやし', '萌やし'],
+  ['ピーマン', 'ぴーまん'],
+  ['トマト', 'とまと'],
+  ['ブロッコリー', 'ぶろっこりー', 'ぶろっこり'],
+  ['キャベツ', 'きゃべつ'],
+  ['アスパラ', 'あすぱら'],
+  ['ベーコン', 'べーこん'],
+  ['ウインナー', 'ウィンナー', 'そーせーじ'],
+  ['ハム', 'はむ'],
+  ['チーズ', 'ちーず'],
+  ['牛乳', 'ぎゅうにゅう', 'みるく'],
+  ['ごはん', 'ご飯', '御飯', 'ライス'],
+  ['パスタ', 'スパゲッティ', 'スパゲティ'],
+].map(group => [...new Set(group.map(normalizeForSearch))]);
+
+// 広い言葉 → 中身（「きのこ」で椎茸やしめじも出す。逆向きには広げない）
+const SEARCH_BROADER = {
+  'きのこ': ['しいたけ', '椎茸', 'しめじ', 'えのき', 'まいたけ', '舞茸', 'えりんぎ', 'まっしゅるーむ', 'なめこ'],
+  '鶏': ['ささみ', '手羽'],
+  '麺': ['うどん', 'そば', 'パスタ', 'スパゲッティ', 'ラーメン', 'そうめん', '焼きそば'],
+  '魚': ['鮭', 'さけ', 'さば', '鯖', 'ぶり', '鰤', 'たら', '鱈', 'あじ', '鯵', 'さんま', 'いわし', 'サーモン'],
+};
+const SEARCH_BROADER_N = Object.fromEntries(Object.entries(SEARCH_BROADER).map(([k, vs]) => [normalizeForSearch(k), vs.map(normalizeForSearch)]));
+
+function expandSearchTerm(term) {
+  // 「鶏肉」「とりにく」は「鶏もも肉」にも当たるように、語尾の「肉／にく」を外した形も使う
+  const bases = [term];
+  const stripped = term.replace(/(肉|にく)$/, '');
+  if (stripped && stripped !== term && !/(ひき|挽き|挽|合挽|あいびき|合いびき)$/.test(stripped)) bases.push(stripped);
+  const set = new Set(bases);
+  // 言葉の一部が別の書き方なら置きかえた形も足す（例：「鶏もも」→「とりもも」、「たまねぎ」→「玉ねぎ」）
+  bases.forEach(base => SEARCH_SYNONYMS.forEach(group => {
+    group.forEach(v => {
+      if (base.includes(v)) group.forEach(w => set.add(base.replace(v, w)));
+    });
+  }));
+  [...set].forEach(t => {
+    Object.entries(SEARCH_BROADER_N).forEach(([k, vs]) => {
+      const g = SEARCH_SYNONYMS.find(gr => gr.includes(k)) || [k];
+      if (t === k || g.includes(t)) vs.forEach(v => set.add(v));
+    });
+  });
+  return [...set];
 }
 
 // レシピの★評価統計を取得
@@ -2745,6 +2907,8 @@ function openRecipeDetail(id) {
       ${recipe.cookTime ? `<span>${recipe.cookTime}分</span>` : ''}
       ${stats.count > 0 ? `<span class="rating-display">${renderStars(stats.avg)} <span class="rating-count">(${stats.count}回)</span></span>` : ''}
     </div>
+
+    <button id="detail-fav-btn" class="fav-detail-btn ${recipe.favorite ? 'on' : ''}" onclick="toggleFavorite('${recipe.id}')">${recipe.favorite ? '♥ お気に入り' : '♡ お気に入りに入れる'}</button>
 
     <div class="recipe-card-tags" style="margin-bottom: 20px;">
       ${recipe.tags.map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('')}
