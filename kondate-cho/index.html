@@ -1638,9 +1638,7 @@ h1, h2, h3, h4 { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-we
         </div>
         <div>
           <label class="form-label">単位</label>
-          <select class="form-select" id="stock-unit-input">
-            <option>個</option><option>g</option><option>kg</option><option>ml</option><option>L</option><option>本</option><option>枚</option><option>束</option><option>パック</option><option>缶</option>
-          </select>
+          <select class="form-select" id="stock-unit-input"></select>
         </div>
       </div>
       <div class="form-group">
@@ -1782,6 +1780,14 @@ h1, h2, h3, h4 { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-we
 <div class="toast" id="toast"></div>
 
 <script>
+// 食材の単位（在庫・レシピ・写真認識で共通）。数える単位は「袋・玉・尾・切れ…」
+const STOCK_UNITS = ['個','g','kg','ml','L','本','枚','束','袋','パック','缶','瓶','箱','玉','尾','切れ','丁','株','房','片','合'];
+// 一覧にない単位（写真認識などで入ったもの）も選択肢に残し、保存で別の単位に化けないようにする
+function unitOptions(list, current) {
+  const all = current && !list.includes(current) ? [...list, current] : list;
+  return all.map(u => `<option ${u===current?'selected':''}>${u}</option>`).join('');
+}
+document.getElementById('stock-unit-input').innerHTML = unitOptions(STOCK_UNITS, '個');
 // ============================================================
 // Prep - レシピ・在庫・献立管理アプリ
 // ============================================================
@@ -1949,7 +1955,7 @@ function addIngredientRow(name = '', amount = '', unit = '個') {
     <input type="text" class="form-input" placeholder="食材名" value="${escapeHtml(name)}" data-ing-field="name">
     <input type="text" class="form-input" placeholder="分量" value="${escapeHtml(amount)}" data-ing-field="amount">
     <select class="form-select" data-ing-field="unit">
-      ${['個','g','kg','ml','L','本','枚','束','パック','缶','大さじ','小さじ','少々','適量'].map(u => `<option ${u===unit?'selected':''}>${u}</option>`).join('')}
+      ${unitOptions([...STOCK_UNITS,'大さじ','小さじ','少々','適量'], unit)}
     </select>
     <button class="ingredient-row-btn" onclick="this.parentElement.remove()">×</button>
   `;
@@ -3582,7 +3588,7 @@ function renderStockRecognitionResult() {
   }
 
   const categories = ['野菜', '肉・魚', '卵・乳製品', '調味料', '乾物・麺', 'その他'];
-  const units = ['g', 'kg', 'ml', 'L', '個', '本', '枚', '束', 'パック', '缶', '袋'];
+  const units = STOCK_UNITS;
 
   resultEl.style.display = 'block';
   resultEl.innerHTML = `
@@ -3601,7 +3607,7 @@ function renderStockRecognitionResult() {
           <input type="text" class="form-input" value="${escapeHtml(item.name)}" placeholder="食材名" onchange="updateRecognitionItem(${idx}, 'name', this.value)">
           <input type="number" class="form-input" value="${item.amount}" step="0.1" min="0" onchange="updateRecognitionItem(${idx}, 'amount', parseFloat(this.value) || 0)">
           <select class="form-select" onchange="updateRecognitionItem(${idx}, 'unit', this.value)">
-            ${units.map(u => `<option value="${u}" ${item.unit === u ? 'selected' : ''}>${u}</option>`).join('')}
+            ${unitOptions(units, item.unit)}
           </select>
         </div>
       </div>
@@ -3842,7 +3848,7 @@ function openEditStock(id) {
       <div>
         <label class="form-label">単位</label>
         <select class="form-select" id="edit-stock-unit">
-          ${['個','g','kg','ml','L','本','枚','束','パック','缶'].map(u => `<option ${u===item.unit?'selected':''}>${u}</option>`).join('')}
+          ${unitOptions(STOCK_UNITS, item.unit)}
         </select>
       </div>
     </div>
