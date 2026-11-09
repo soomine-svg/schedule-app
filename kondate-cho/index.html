@@ -667,6 +667,10 @@ h1, h2, h3, h4 { font-family: 'Varela Round', 'Kosugi Maru', sans-serif; font-we
 
 /* ========== レシピ詳細 ========== */
 .recipe-detail-section { margin-bottom: 20px; }
+.qa-item { padding: 10px 0; border-top: 1px solid rgba(0,0,0,0.06); }
+.qa-q { font-size: 13px; font-weight: 600; display: flex; justify-content: space-between; gap: 8px; }
+.qa-a { font-size: 13px; line-height: 1.7; margin-top: 4px; white-space: pre-wrap; }
+.qa-del { background: none; border: none; color: var(--sumi-soft); font-size: 14px; cursor: pointer; padding: 0 4px; }
 .recipe-detail-heading {
   font-family: 'Varela Round', 'Kosugi Maru', sans-serif;
   font-size: 13px;
@@ -2932,6 +2936,13 @@ function openRecipeDetail(id) {
       <ol class="step-list">${stepsHtml}</ol>
     </div>
 
+    <div class="recipe-detail-section">
+      <div class="recipe-detail-heading">わからないときに質問</div>
+      <textarea class="form-textarea" id="qa-input-${recipe.id}" rows="2" style="min-height: 56px;" placeholder="例：手順3の「煮絡める」ってどのくらい？／みりんがない時は？"></textarea>
+      <button class="btn btn-ghost btn-full btn-sm" style="margin-top: 6px;" id="qa-btn-${recipe.id}" onclick="askRecipeQuestion('${recipe.id}')">質問する</button>
+      <div id="qa-list-${recipe.id}">${renderRecipeQA(recipe)}</div>
+    </div>
+
     ${recipe.notes ? `
     <div class="recipe-detail-section">
       <div class="recipe-detail-heading">メモ</div>
@@ -2974,6 +2985,78 @@ let pendingCookRecipeId = null;
 let pendingRating = 0;
 
 // ========== レシピのAI構造化（既存レシピを手順詳細化＆材料グループ化） ==========
+// ── わからないときに質問（レシピごとに質問と答えを残す。新しい順） ──
+function renderRecipeQA(recipe) {
+  const qa = recipe.qa || [];
+  if (qa.length === 0) return '';
+  return qa.map((x, i) => `
+    <div class="qa-item">
+      <div class="qa-q"><span>Q. ${escapeHtml(x.q)}</span><button class="qa-del" title="消す" onclick="deleteRecipeQA('${recipe.id}', ${i})">×</button></div>
+      <div class="qa-a">${escapeHtml(x.a)}</div>
+    </div>`).join('');
+}
+
+function deleteRecipeQA(recipeId, idx) {
+  const recipe = state.recipes.find(r => r.id === recipeId);
+  if (!recipe || !recipe.qa) return;
+  recipe.qa.splice(idx, 1);
+  saveState();
+  document.getElementById(`qa-list-${recipeId}`).innerHTML = renderRecipeQA(recipe);
+}
+
+async function askRecipeQuestion(recipeId) {
+  const recipe = state.recipes.find(r => r.id === recipeId);
+  if (!recipe) return;
+  const input = document.getElementById(`qa-input-${recipeId}`);
+  const btn = document.getElementById(`qa-btn-${recipeId}`);
+  const q = input.value.trim();
+  if (!q) { showToast('質問を入力してください'); return; }
+  if (!apiKey) { showToast('APIキーが未設定です。設定画面で登録してください'); return; }
+
+  const ings = (recipe.ingredients || []).map(i =>
+    `- ${i.name}${i.amount || i.unit ? ` ${i.amount || ''}${i.unit || ''}` : ''}${i.group ? `（${i.group}）` : ''}`).join('\n');
+  const steps = (recipe.steps || []).map((st, i) => `${i + 1}. ${st}`).join('\n');
+  const recipeText = `料理名: ${recipe.name}\n人数: ${recipe.servings}人分\n\n材料:\n${ings}\n\n手順:\n${steps}${recipe.notes ? `\n\nメモ:\n${recipe.notes}` : ''}`;
+
+  // 直前の質問3件を会話として渡し、続けて聞けるようにする
+  const messages = [];
+  (recipe.qa || []).slice(0, 3).reverse().forEach(x => {
+    messages.push({ role: 'user', content: x.q }, { role: 'assistant', content: x.a });
+  });
+  messages.push({ role: 'user', content: q });
+
+  btn.disabled = true;
+  btn.textContent = '考えています…';
+  try {
+    const response = await callClaudeAPI({
+      model: 'claude-sonnet-4-5',
+      max_tokens: 800,
+      system: `あなたは家庭料理に詳しい料理の先生です。台所で調理中の人から、次のレシピについて質問されています。
+
+${recipeText}
+
+答え方:
+- このレシピの材料・分量・手順に沿って、具体的に答える（火加減・時間・見た目の目安・代わりの材料など）
+- 短く。長くても300字程度。前置きやあいさつは不要
+- マークダウン記号（#、*、** など）は使わず、普通の文章と「・」の箇条書きで
+- 食中毒など安全に関わる点（肉の中心まで火を通す等）があれば必ず添える
+- わからないことは推測で断定せず、確かめ方を伝える`,
+      messages,
+    });
+    const a = extractText(response).trim();
+    if (!a) throw new Error('空の応答');
+    recipe.qa = [{ q, a, at: new Date().toISOString() }, ...(recipe.qa || [])].slice(0, 30);
+    saveState();
+    input.value = '';
+    document.getElementById(`qa-list-${recipeId}`).innerHTML = renderRecipeQA(recipe);
+  } catch (e) {
+    showToast('質問に失敗しました: ' + e.message, 4000);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '質問する';
+  }
+}
+
 async function restructureRecipeWithAI(recipeId) {
   const recipe = state.recipes.find(r => r.id === recipeId);
   if (!recipe) {
