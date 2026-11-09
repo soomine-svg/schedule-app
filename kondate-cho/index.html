@@ -4634,6 +4634,7 @@ ${recipeInfo || 'なし'}
     // 履歴用の追加メタ情報を付与（生成時刻、表示用ID）
     data.id = uuid();
     data.createdAt = new Date().toISOString();
+    data.servings = familyServings(); // この献立を作ったときの人前（保存時に使う）
 
     state.mealPlan = data;
 
@@ -4828,7 +4829,7 @@ function savePlanRecipe(dayIdx) {
   const recipe = {
     id: recipeId,
     name: d.name,
-    servings: 2,
+    servings: (state.mealPlan && state.mealPlan.servings) || 2,
     cookTime: null,
     tags: ['献立提案'],
     ingredients: d.ingredients || [],
@@ -4885,7 +4886,7 @@ function savePlanDish(dishIdx) {
   const recipe = {
     id: recipeId,
     name: d.name,
-    servings: 2,
+    servings: (state.mealPlan && state.mealPlan.servings) || 2,
     cookTime: null,
     tags: tags,
     ingredients: d.ingredients || [],
@@ -5138,11 +5139,18 @@ function saveFamily() {
 }
 
 // AI提案・献立提案で使う家族構成のプロンプト断片を生成
+// 家族設定から「実質◯人前」を出す（未設定なら大人2人前）。レシピの人数は整数で持つので四捨五入
+function familyServings() {
+  const f = state.family || {};
+  const equiv = (f.adults || 0) * 1.0 + (f.teens || 0) * 1.5 + (f.schoolKids || 0) * 0.8 + (f.preschoolers || 0) * 0.5;
+  return equiv > 0 ? Math.max(1, Math.round(equiv)) : 2;
+}
+
 function buildFamilyPromptInfo() {
   const f = state.family;
   if (!f) return '';
   const total = (f.adults || 0) + (f.teens || 0) + (f.schoolKids || 0) + (f.preschoolers || 0);
-  if (total === 0) return '';
+  if (total === 0) return `\n家族構成: 未設定\n- 分量は大人2人前で提案すること（servings は 2）`;
 
   const equiv = (f.adults || 0) * 1.0
     + (f.teens || 0) * 1.5
@@ -5157,6 +5165,7 @@ function buildFamilyPromptInfo() {
 
   let info = `\n家族構成: ${parts.join('、')}（合計${total}人）`;
   info += `\n- 分量は実質 ${equiv.toFixed(1)} 人前で提案すること（年齢別の食事量を考慮済み）`;
+  info += `\n- servings は ${familyServings()} とすること`;
   if (f.preschoolers > 0) {
     info += `\n- 未就学児がいるため、強い辛味・刺激物・アルコール（煮切らないもの）は避け、誤嚥リスクのある食材（ナッツ・餅・大きく丸い食材）は使わないか配慮すること`;
   }
